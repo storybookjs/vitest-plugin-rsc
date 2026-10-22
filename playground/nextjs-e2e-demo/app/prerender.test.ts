@@ -169,7 +169,7 @@ test("answers a path that `generateStaticParams` does not list with the not-foun
   expect(listed.status).toBe(200);
   expect(listed.text).toContain("listed, rendered as");
   // In development the plugin does not run `generateStaticParams`, where
-  // `next dev` does for each request: see docs/next-routes.md.
+  // `next dev` does for each request: see docs/internals/next-routes.md.
   if (production) {
     expect(unlisted.status).toBe(404);
     expect(unlisted.text).toContain("Nothing here");

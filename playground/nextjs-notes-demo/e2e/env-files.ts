@@ -4,7 +4,7 @@ import type { Frame } from "playwright";
 
 // A value in each env file of a copy of the project, and one in the shell of
 // its Storybook: which of them the page has says which files were read
-// (docs/next-routes.md, "Environment Variables"). `.env.local` has a name of
+// (docs/internals/next-routes.md, "Environment Variables"). `.env.local` has a name of
 // `.env.test` too, as a machine has its real database next to the test one,
 // and so does the shell, which Next would prefer to the files.
 // And a module that the preview imports first, which reads `process.env` as

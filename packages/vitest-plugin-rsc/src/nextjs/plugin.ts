@@ -44,7 +44,7 @@ import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
-// browser (docs/next-routes.md). Where Next's own bundler config says a module
+// browser (docs/internals/next-routes.md). Where Next's own bundler config says a module
 // belongs to another layer, it is bridged to that environment through
 // `registry` (registry.ts).
 const environmentOf: Record<NextLayer, string> = {
@@ -672,7 +672,7 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * `next start` runs it after `next build`. Production renders faster,
    * without what the development code checks and reports. In a test run
    * the app's `process.env.NODE_ENV` stays as it is, in a static build it is
-   * the build. See docs/next-routes.md, "Development Or Production".
+   * the build. See docs/internals/next-routes.md, "Development Or Production".
    *
    * @default `"development"` for a test run and a dev server, `"production"`
    * for `vite build`, a static build of the app

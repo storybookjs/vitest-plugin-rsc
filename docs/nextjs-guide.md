@@ -1,6 +1,6 @@
 # Testing a Next.js app
 
-This guide shows what you can test with `vitest-plugin-rsc/nextjs/testing-library`, and how. It assumes the setup from the [quick start](../README.md#quick-start). For what happens under the hood, see [Next.js: How It Works](next-routes.md). Every function and option is listed in the [API reference](api.md).
+Everything you can do with `vitest-plugin-rsc/nextjs/testing-library`, one example at a time. This assumes you've done the [quick start](../README.md#quick-start). Need the exact signature of something? That's in the [API reference](api.md).
 
 - [Render a component](#render-a-component)
 - [Open a whole route](#open-a-whole-route)
@@ -20,25 +20,26 @@ This guide shows what you can test with `vitest-plugin-rsc/nextjs/testing-librar
 - [Development or production](#development-or-production)
 - [Watch mode](#watch-mode)
 
-Client Components that only take props, like the parts of a design system, can also be tested on their own, without Next: see [Testing Client Components in a `"use client"` test file](use-client-test-files.md).
+> [!TIP]
+> Got a Client Component that only takes props, like a button from your design system? You can test it without Next at all. See [Testing Client Components](use-client-test-files.md).
 
 ## Render a component
 
-Pass a node to `renderServer` to test one component instead of a whole page:
+Pass a node to `renderServer` to test one component:
 
 ```tsx
 await renderServer(<CreateNoteForm />);
 ```
 
-It renders the way Testing Library renders a component: in a `<div>` container in `document.body`, without your app's layouts. Everything around it is still Next, though: the request, the cookies, Server Actions, the cache and the router.
+It lands in a `<div>` in `document.body`, just like with Testing Library, and without your layouts. But everything around it is real Next: the request, cookies, Server Actions, the cache and the router.
 
-Without a `url`, the node renders at `/`. With a `url`, the pathname, search params and route params come from it, with the params that your app's route has for that URL. The request goes straight to your route and skips `proxy.ts`, so a component that sits behind a sign-in renders without one.
+By default the node renders at `/`. Pass a `url` and the pathname, search params and route params come from that URL instead. A node skips `proxy.ts`, so a component behind a sign-in renders without one.
 
-The node lives in the test's page, not in a page of your app. So a component that reloads the page reloads the test's tab, just as it would without the plugin: one that calls `location.reload()`, for example, or one that navigates to its own URL, like a `<form method="get">` without an `action`.
+One thing to keep in mind: the node lives in the test's own page. A component that reloads the page (with `location.reload()`, or a `<form method="get">` without an `action`) reloads the test's tab, exactly like it would without the plugin.
 
 ### Wrap it in providers
 
-`wrapper` wraps the node on the server, to give it the providers that a layout would. It can be a Server Component:
+Use `wrapper` to give a node the providers a layout would. It can even be a Server Component:
 
 ```tsx
 import { headers } from "next/headers";
@@ -61,7 +62,7 @@ test("wraps a node in a wrapper, which can be a Server Component", async () => {
 
 ### Render it inside your layouts
 
-`layouts: true` renders the node inside your app's layouts for that `url`, with everything they give it: providers, global CSS and the data a layout reads.
+Or skip the wrapper and use the real thing. `layouts: true` puts the node inside your app's layouts for that `url`, with their providers, global CSS and data:
 
 ```tsx
 import { RouterState } from "./components/router-state.tsx";
@@ -76,18 +77,18 @@ test("renders a node in place of a page, inside the layouts of the app", async (
 });
 ```
 
-Without `layouts`, a node only has the CSS that its test file and the setup files import. To get your root layout's global CSS there too, import it in a setup file.
+Without `layouts`, a node only gets the CSS that its test file and setup files import. Want your global CSS everywhere? Import it in a setup file.
 
 ### How much of the app is around it
 
-Two options decide how much of your app surrounds what you render. `proxy` runs `proxy.ts`, together with the redirects, rewrites and headers in `next.config`, and `layouts` renders your layouts. Their defaults:
+Two options decide that: `proxy` runs `proxy.ts` plus the redirects, rewrites and headers from `next.config`, and `layouts` renders your layouts. The defaults:
 
 |                                   | `proxy` | `layouts` |
 | --------------------------------- | ------- | --------- |
 | `renderServer({ url })`           | `true`  | `true`    |
 | `renderServer(<Node />, { url })` | `false` | `false`   |
 
-For a node, you can set both per test. A route always renders inside its layouts, but you can turn its `proxy` off. For example, to render a component inside its route's layouts, behind the proxy that guards it:
+For a node you can turn on both. For example, to render a component inside its route's layouts, behind the proxy that guards it:
 
 ```tsx
 import { headers } from "next/headers";
@@ -109,11 +110,11 @@ test("renders a node in the layouts of a route, behind the proxy", async () => {
 });
 ```
 
-To render a node again with other props, without a page load, use `rerender()`: see the [API reference](api.md#rerenderui).
+To render a node again with new props, without a page load, use [`rerender()`](api.md#rerenderui).
 
 ## Open a whole route
 
-`renderServer({ url })` opens a route the way a browser does. The request goes to Next's request handler, the browser shows the HTML it sends back, and Next's client code hydrates it. `renderServer` resolves once the page has hydrated. From then on, Next's router is in charge, so links, forms and redirects behave as they do in your app.
+`renderServer({ url })` opens a route like a browser does. Next's request handler renders it, the browser shows the HTML, and Next's client hydrates it. Once `renderServer` resolves, Next's router is in charge, so links, forms and redirects behave as in your app.
 
 ```tsx
 import { expect, test } from "vitest";
@@ -136,9 +137,7 @@ test("navigates on the client with next/link", async () => {
 });
 ```
 
-The plugin shows a page once its whole document has arrived, so a page's first load doesn't show a `loading.tsx` or a Suspense fallback. A navigation inside the app does.
-
-`renderServer` resolves with `{ response, errors, unmount }`: the server's `Response` to the document request, the errors React reported on the page, and a function that leaves the page.
+It resolves with `{ response, errors, unmount }`: the server's `Response`, any errors React reported, and a function to leave the page.
 
 ```tsx
 const { response } = await renderServer({ url: "/" });
@@ -146,7 +145,7 @@ const { response } = await renderServer({ url: "/" });
 expect(response.status).toBe(200);
 ```
 
-The `headers` you pass are sent with the request, and with every later request from the page. A `cookie` header sets cookies for your app (see [Headers and cookies](#headers-and-cookies)):
+Headers you pass go along with this request and every later one from the page. A `cookie` header sets cookies (more on that in [Headers and cookies](#headers-and-cookies)):
 
 ```tsx
 test("sends the cookies of a cookie header with the page", async () => {
@@ -156,13 +155,14 @@ test("sends the cookies of a cookie header with the page", async () => {
 });
 ```
 
-A URL that isn't a route gets your app's not-found page, with status `404`.
+A few things worth knowing:
+
+- The first load of a page waits for the whole document, so you won't see `loading.tsx` or a Suspense fallback. Navigations inside the app do show them.
+- A URL that isn't a route gets your not-found page, with a `404`.
 
 ## Forms and Server Actions
 
-This example tests a full `page.tsx` route, but the same pattern works for any component, form or flow.
-
-The page is a Server Component with a Server Action. On a validation error, the action writes the message to a cookie and calls `refresh()`:
+This is where the plugin shines: seed some state, use the form, check what happened. Here's a page with a Server Action that writes a validation error to a cookie:
 
 ```tsx
 // app/notes/new/page.tsx
@@ -209,7 +209,7 @@ export default async function NewNotePage() {
 }
 ```
 
-The test seeds both server-side state (the signed-in user and a database row) and browser-side state (`localStorage`). Then it renders the page, uses the form, and asserts on the rerendered UI:
+The test seeds server state (a signed-in user, a database row) _and_ browser state (`localStorage`), then uses the form:
 
 ```tsx
 import { expect, test } from "vitest";
@@ -241,13 +241,13 @@ test("validates a new note without losing entered content", async () => {
 });
 ```
 
-A pure unit test can't set server and browser state in the same setup, and a full E2E test can only do it through the real UI.
+A unit test can't set up server and browser state together. An E2E test can only get there by clicking through the UI. This test just... does it.
 
-In the setup file, `vi.mock("#lib/db.ts")` replaces the production database adapter with the `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exports `db`, backed by an in-memory PGlite database, and `resetDb()`, which empties every table. The setup file calls `resetDb()` before each test. See [Databases](databases.md) for how the recipes wire this up.
+Where does `db` come from? A setup file calls `vi.mock("#lib/db.ts")`, which swaps in `lib/__mocks__/db.ts`: the same ORM on an in-memory PGlite database, plus a `resetDb()` that runs before each test. See [Databases](databases.md).
 
 ## Router hooks and links
 
-Pass a `url` when a component needs to know where it is: `usePathname`, `useSearchParams`, `useParams`, `next/link`, or code that depends on the request URL. The params come from your app's route for that URL. A Client Component uses the normal Next APIs:
+Pass a `url` when a component needs to know where it is. `usePathname`, `useSearchParams`, `useParams` and `next/link` all work as usual:
 
 ```tsx
 "use client";
@@ -292,13 +292,11 @@ test("reads router state and navigates", async () => {
 });
 ```
 
-Navigating to another route of your app opens that page with its layouts, just as a click in the browser does.
+The params come from your app's route for that URL. Navigating to another route opens that page, with its layouts, just like a click in the browser.
 
 ## Headers and cookies
 
-Headers and cookies belong to the request and live in `AsyncLocalStorage`, as in Next. Pass request headers to `renderServer`, and use Next's `headers()` and `cookies()` in Server Components, Server Actions, route handlers and `proxy.ts` as you normally would. Next creates its request store for every request the plugin sends it, as it does on a server.
-
-The headers you pass go with every request the browser sends to your app from then on, not only the first one. Server Actions, `router.refresh()`, navigations and `fetch` calls get them too, until the test opens something else or ends. That's what you want for a header that a server in front of your app adds to every request, like `x-forwarded-for`. A request keeps the headers it sets itself, and an `accept` header only applies to the first request.
+Use `headers()` and `cookies()` in your server code as you always do. In the test, pass request headers to `renderServer`:
 
 ```tsx
 import { expect, test } from "vitest";
@@ -350,29 +348,29 @@ export async function FlashProbe() {
 }
 ```
 
+The headers you pass stick around: Server Actions, `router.refresh()`, navigations and `fetch` calls from the page all get them, until the test opens something else. Handy for headers a server in front of your app would add, like `x-forwarded-for`. (An `accept` header only applies to the first request.)
+
 ### How cookies work
 
-The plugin keeps your app's cookies for the test, the way a browser keeps a site's cookies:
+The plugin keeps cookies for your app just like a browser keeps them for a site:
 
-- **A `cookie` header** in the `headers` of `renderServer` sets cookies, as a `Set-Cookie` without attributes would. They're added to the cookies your app already has, and they stay until your app changes them or the test ends. They aren't `HttpOnly`, so `document.cookie` shows them. To set an `HttpOnly` cookie, call `(await cookies()).set(name, value, { httpOnly: true })` in `runInServerAction`.
-- **Every request to your app carries them**: page loads, navigations, `router.refresh()`, Server Actions, route handlers, and `fetch` calls from Client Components.
-- **A `Set-Cookie` from your server** sets a cookie, and one that has expired (with `Max-Age=0` or an `Expires` in the past) deletes it. A cookie is only a name and a value. Its `Path`, `Domain` and `Secure` don't matter, since every request goes to your app, as if it were served over `https:`.
-- **A `cookie` header passed to `handleRequest` or `runInServerAction`** applies to that one request, and is sent instead of your app's cookies. It's also sent with the redirects that `handleRequest` follows, together with the cookies those redirects set. The cookies the server sets become your app's cookies from then on.
-- **A request with `credentials: "omit"`**, from `fetch` or `handleRequest`, doesn't send your app's cookies, and the cookies its response sets aren't kept.
-- **Each test starts without cookies.**
+- **A `cookie` header** passed to `renderServer` sets cookies, and they stay until your app changes them or the test ends.
+- **Every request to your app sends them**: page loads, navigations, Server Actions, route handlers, `fetch`.
+- **`Set-Cookie` from your server** sets or deletes cookies, as you'd expect.
+- **A cookie is just a name and a value here.** `Path`, `Domain` and `Secure` don't matter.
+- **Each test starts with no cookies.**
 
-`document.cookie` is a view of your app's cookies, as in a browser:
+`document.cookie` shows your app's cookies, minus the `HttpOnly` ones, just like a browser. So a Client Component that stores state in a cookie (like shadcn/ui's sidebar) works.
 
-- Your Client Components can read the cookies that aren't `HttpOnly` there. A cookie they write there reaches your server, like the state that shadcn/ui's sidebar keeps.
-- A script can't write or change an `HttpOnly` cookie, and a `fetch` from client code doesn't see a `Set-Cookie` header, just as in a browser.
-- The page has no `cookieStore`, like a browser without the Cookie Store API.
-- MSW writes the `Set-Cookie` of a response it mocks into `document.cookie`. So a mocked API's cookie that isn't `HttpOnly` becomes your app's cookie, even when your server sent the request.
+Need an `HttpOnly` cookie in a test? Set it from a Server Action with `runInServerAction`:
 
-The browser's own cookies for the origin are not your app's cookies. Those are the cookies that Vitest's UI, another host or another app on `localhost` set. Your app doesn't get them, and the plugin leaves them alone.
+```ts
+await runInServerAction(async () => (await cookies()).set("session", "ada", { httpOnly: true }));
+```
 
 ### Reading and changing cookies in a test
 
-To read a cookie, assert on what a page renders, read the `Set-Cookie` headers of a response, read `document.cookie` (for a cookie that isn't `HttpOnly`), or call `cookies()` in a Server Action:
+Assert on what the page renders, read the response's `Set-Cookie`, or read `cookies()` from a Server Action:
 
 ```ts
 import { cookies } from "next/headers";
@@ -388,30 +386,36 @@ test("keeps the cookie a route handler sets", async () => {
 });
 ```
 
-To change or delete a single cookie in the middle of a test, do what a Server Action would do:
+Deleting a cookie mid-test works the same way:
 
 ```ts
 await runInServerAction(async () => (await cookies()).delete("session"));
 ```
 
+A few details, in case you need them:
+
+- A `cookie` header passed to `handleRequest` or `runInServerAction` is used _instead of_ your app's cookies, for that one request.
+- A request with `credentials: "omit"` sends no cookies and keeps none.
+- There's no `cookieStore` on the page.
+- MSW writes cookies from mocked responses into `document.cookie`, so a non-`HttpOnly` cookie from a mocked API becomes your app's cookie.
+- The browser's own cookies for `localhost` (from Vitest's UI, say) are separate. Your app never sees them.
+
 ## localStorage and sessionStorage
 
-`localStorage` and `sessionStorage` belong to your app too, just like its cookies. Each is a `Storage` object from the plugin, not the browser's storage for the origin.
+Same idea as cookies: `localStorage` and `sessionStorage` belong to your app, and every test starts with both empty. Each test gets a fresh browser context, a bit like a new Playwright context.
 
-- Every test in a file without `"use client"` gets its own browser context for your app, like a new Playwright context, from before its `beforeEach()` hooks until it ends. So each test starts with both storages empty, apart from what the test or a `beforeEach()` writes there.
-- What your app stores stays in the test's document. No other document of the origin sees it, and your app sees nothing that another document stores.
-- Your app hears the browser's `storage` events, which are about the host's storage, never its own.
-- Each storage is one object for as long as the document lives. So a library that grabbed `localStorage` in one context, like one that a page loads, sees the items of the test that's currently running.
-- A `beforeAll()` or the top level of a test file runs outside a context. What it writes to `localStorage` or `document.cookie` belongs to the origin, and stays there. Seed in a `beforeEach()` instead.
-- Spy on `fetch` in the test or in a `beforeEach()`. A spy set up before the context opens sits under the context's `fetch`, and only sees the requests that aren't your app's.
-- The browser's DevTools and Playwright's `storageState()` show the browser's storage, not your app's.
-- A spy on `Storage.prototype` sees none of your app's calls. Spy on `localStorage` instead.
+Some practical tips:
 
-See [Web Storage](next-routes.md#web-storage) for what else differs.
+- **Seed in `beforeEach()` or the test itself.** Anything written in `beforeAll()` or at the top level of a file goes to the browser's own storage, not your app's.
+- **Spy on `localStorage`, not `Storage.prototype`.** Your app's storage is the plugin's own object.
+- **Spy on `fetch` in the test or a `beforeEach()`.** A spy set up earlier sits underneath your app's `fetch`.
+- **DevTools and Playwright's `storageState()`** show the browser's storage, not your app's.
+
+See [Web Storage](internals/next-routes.md#web-storage) for the finer points.
 
 ## Caching and revalidation
 
-Server Components can use tagged, cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. In tests, [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) intercepts the outgoing `fetch`. See [`playground/nextjs-notes-demo`](../playground/nextjs-notes-demo) for a worked setup.
+Cached `fetch`, tags, `revalidateTag()`, `updateTag()` and `refresh()` all work. Use [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) to answer the outgoing `fetch`. The [notes demo](../playground/nextjs-notes-demo) has a full setup.
 
 ```tsx
 import { refresh, revalidatePath, revalidateTag, updateTag } from "next/cache";
@@ -475,7 +479,7 @@ export async function NotesPanel() {
 }
 ```
 
-The test still looks like a unit test. After the click, `updateTag("notes")` invalidates the cached fetch, the panel renders again, and the assertion sees the new count:
+The test still reads like a unit test. Click, and `updateTag("notes")` busts the cache, the panel renders again, and the count goes up:
 
 ```tsx
 import { expect, test } from "vitest";
@@ -495,7 +499,7 @@ test("creating a note invalidates the notes cache", async () => {
 
 ### `"use cache"`
 
-In an app with `cacheComponents` in its `next.config`, a function with `"use cache"` is cached too. That can be a function, a component, or every function of a module with the directive at its top. You can call `cacheTag()` and `cacheLife()` in it, also after an `await`. This one is from `playground/nextjs-cache-components-demo`:
+With `cacheComponents` in your `next.config`, `"use cache"` works too, on a function, a component, or a whole module. `cacheTag()` and `cacheLife()` work, even after an `await`. From `playground/nextjs-cache-components-demo`:
 
 ```ts
 // app/lib/quotes.ts
@@ -510,17 +514,11 @@ export async function getQuote(topic: string) {
 }
 ```
 
-A cached function has a scope of its own, as in a deployment: `cookies()` throws in it, and in any component it renders. A cached component that it renders adds its tags to its entry. With Cache Components, Cached Navigations is off and nothing is prerendered, so a page that reads the request outside a `<Suspense>` boundary still renders. See [Caching](next-routes.md#caching) for the details.
+Just like in a deployment, `cookies()` throws inside a cached function. Nothing is prerendered, so a page that reads the request outside a `<Suspense>` boundary still renders. More in [Caching](internals/next-routes.md#caching).
 
 ## Route handlers
 
-`handleRequest(url, init)` sends one request to your app and resolves with the response. It takes the same arguments as `fetch`. Use it when you want to assert on the response itself: a status, a header, the HTML or the Flight payload.
-
-- The request carries your app's cookies, and the cookies the server sets become your app's cookies from then on.
-- A `cookie` header is sent instead of your app's cookies, with this request and with the redirects it follows.
-- The request also carries the `headers` of whatever `renderServer` opened, under its own headers, so a header it sets itself wins.
-
-Route handlers (`app/**/route.ts`) are served too, and `handleRequest` is how a test calls one:
+`handleRequest(url, init)` sends one request to your app and gives you the `Response`. Same arguments as `fetch`. Use it when you care about the response itself: a status, a header, some JSON.
 
 ```ts
 import { expect, test } from "vitest";
@@ -546,11 +544,13 @@ test("gives a route handler the body of a request and its cookie header", async 
 });
 ```
 
-A `fetch` from a Client Component to a route handler reaches it too, with your app's cookies. As in a browser, that `fetch` doesn't see the response's `Set-Cookie` headers, but `handleRequest` does.
+The request carries your app's cookies (unless you pass a `cookie` header), plus any headers from whatever `renderServer` opened. Cookies the response sets are kept.
+
+A `fetch` from a Client Component reaches your route handlers too. Like in a browser, it can't see `Set-Cookie` headers. `handleRequest` can.
 
 ## Code that a Server Action calls
 
-A form's Server Action is best tested through its page: fill in the form and submit it. For the code that a Server Action calls, use `runInServerAction(fn, { url })`. It runs a function as a Server Action of the page at `url`, inside the action's request, so you can set `cookies()` there, and `redirect()`, `refresh()` and `after()` work. It resolves with what the function returns, and rejects with what it throws, including the error of a `redirect()` or a `notFound()`:
+The best way to test a form's action is through its page: fill in the form, submit. But for the code an action _calls_, there's `runInServerAction(fn, { url })`. It runs your function as a Server Action of the page at `url`, so `cookies()`, `redirect()`, `refresh()` and `after()` all work. You get back whatever it returns, or the error it throws (including `redirect()` and `notFound()`):
 
 ```ts
 import { isRedirectError } from "next/dist/client/components/redirect-error";
@@ -578,19 +578,19 @@ test("creates the note and redirects", async () => {
 });
 ```
 
-It sends a Server Action request like the one Next's router sends, to a route at `url` that renders nothing. It opens no page and starts no app, so it's much faster than a page with a form.
+It opens no page, so it's much faster than rendering a form. Some notes:
 
-- After a `redirect()`, the call rejects with its error, and no page renders. To check the page the action redirects to, open it in your test with `renderServer({ url })` or `handleRequest()`.
+- After a `redirect()` no page renders. To check where it went, open that URL with `renderServer({ url })`.
 - A page that's already open stays open.
-- The function and its result belong to the test, so they don't go through Flight.
-
-The request carries your app's cookies, the `headers` of whatever `renderServer()` opened, and the headers you pass. The cookies the action sets become your app's cookies from then on. A `cookie` header among those headers is sent instead of your app's cookies, with this request only, not with later ones. With `proxy: true`, the request goes through the proxy, and a redirect there makes the call reject, since the action didn't run.
-
-The function runs inside the action's request, so it can't send a request to your app itself: that request would wait for this one. Call your app's code directly instead. Next also reports whatever the function throws with `console.error`, as it does for any Server Action.
+- Your function and its result stay in the test. They don't go through Flight.
+- Cookies the action sets are kept for the rest of the test. A `cookie` header you pass is used instead of your app's cookies, for this one call.
+- With `proxy: true` the call goes through the proxy, and a redirect there rejects the call, since the action never ran.
+- Your function can't send a request to your app itself: that request would wait for this one forever. Call your app's code directly instead.
+- Like any Server Action, Next logs whatever your function throws with `console.error`.
 
 ## The proxy, redirects and rewrites
 
-`proxy.ts` and the `redirects`, `rewrites` and `headers` in `next.config` run here too, through Next's own route resolution, [`@next/routing`](https://www.npmjs.com/package/@next/routing).
+`proxy.ts` and the `redirects`, `rewrites` and `headers` in `next.config` run too, through Next's own routing package, [`@next/routing`](https://www.npmjs.com/package/@next/routing).
 
 ```ts
 // proxy.ts
@@ -636,7 +636,7 @@ test("serves the route the proxy rewrites to, at the URL that was asked for", as
 });
 ```
 
-`proxy: false` opens the route at exactly the URL you give, without the proxy and without the redirects, rewrites and headers in `next.config`. So a protected page opens without signing in first:
+Want to skip the proxy? `proxy: false` opens exactly the URL you give, so a protected page opens without signing in:
 
 ```tsx
 test("opens a page without the proxy", async () => {
@@ -646,15 +646,13 @@ test("opens a page without the proxy", async () => {
 });
 ```
 
-The page's Server Actions and `router.refresh()` skip the proxy too, but a navigation to another route goes through it, as in your app. A node skips the proxy by default: see [Render a component](#render-a-component).
+The page's Server Actions and `router.refresh()` skip the proxy too, but navigating to another route goes through it, like in your app.
 
-The proxy runs in the test runtime, in the same modules as the test. So a module it imports is the same instance the test imports, and `vi.mock()` replaces it for both. You can mock the session it reads, or assert on what it wrote.
-
-See [The Server In Front Of The App](next-routes.md#the-server-in-front-of-the-app) for how this works.
+Nice bonus: the proxy runs in the same module graph as your test. So `vi.mock()` reaches the modules it imports, and you can mock the session it reads or check what it wrote.
 
 ## Mocks
 
-`vi.mock()` replaces the module that your Server Components, Server Actions and route handlers import. It doesn't reach a Client Component in the browser, and a test file with `"use client"` can't call it. Put mocks of your app's modules in a setup file. With `isolate: false`, the test files in a worker share their modules, so a module is mocked for all of them or for none, and whichever file loads it first decides. A setup file runs before every test file, so every file sees the same mocks.
+`vi.mock()` replaces modules that your Server Components, Server Actions, route handlers and proxy import. Put mocks in a **setup file**: with `isolate: false`, the test files in a worker share modules, so a mock in one test file would leak into (or miss) the others.
 
 A bare `vi.mock()` is enough:
 
@@ -672,7 +670,7 @@ test: {
 }
 ```
 
-Each test then says what the mock does, through `vi.mocked()`:
+Then each test decides what the mock does:
 
 ```tsx
 import { expect, test, vi } from "vitest";
@@ -690,17 +688,17 @@ test("renders a route with a server module mocked in the setup file", async () =
 });
 ```
 
-For requests to other servers, use [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) rather than a module mock.
+Two things `vi.mock()` can't do: reach Client Components in the browser, or run in a `"use client"` test file. For requests to other servers, use [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) rather than a module mock.
 
 ## Fonts, images and styles
 
-Next's own compiler compiles your app's source files, in each of Next's three layers:
+Your source files go through Next's own compiler, so all of this works out of the box:
 
-- **`next/font/local` and `next/font/google`**, with the class names and font files that Next generates.
-- **`next/image`**, including imported images and Next's image optimizer.
-- **`next/dynamic`**, **`next/script`**, **styled-jsx**, global CSS, and CSS modules.
-- **`next build`'s checks**: a client hook in a Server Component, or `server-only` code in a Client Component, fails the test with Next's error.
-- **`paths`** from your `tsconfig.json`, like `@/components/button`.
+- `next/font/local` and `next/font/google`, with Next's class names and font files.
+- `next/image`, including imported images and the image optimizer.
+- `next/dynamic`, `next/script`, styled-jsx, global CSS and CSS modules.
+- `paths` from your `tsconfig.json`, like `@/components/button`.
+- `next build`'s checks. A client hook in a Server Component, or `server-only` code in a Client Component, fails the test with Next's own error.
 
 ```tsx
 // app/fonts/fonts.ts
@@ -728,9 +726,9 @@ test("sets text in a font of next/font/local, a file of the app", async () => {
 
 ## Server code in the browser
 
-The server runs in the browser, but your server code is told it runs on a server, the way Next's build tells it: `typeof window` is `"undefined"`, and `fetch` is the one that Next patches. Test files keep the browser's `window` and `fetch`. For what server code gets in place of Node.js, see [Node.js in the browser](nodejs-in-the-browser.md).
+Your server code runs in the browser, but it's told it runs on a server, the same way Next's build tells it: `typeof window` is `"undefined"`, and `fetch` is Next's patched one. Your test files keep the real `window` and `fetch`. For which Node.js APIs are available, see [Node.js in the browser](nodejs-in-the-browser.md).
 
-If a module needs to know that it runs in a browser, list it in `browserModules`:
+If a module really needs to know it's in a browser, list it in `browserModules`:
 
 ```ts
 // test/browser.ts
@@ -743,9 +741,11 @@ export function scrollToTop(): void {
 vitestPluginNext({ browserModules: ["test/**"] });
 ```
 
-The patterns are globs relative to the project root. Files are matched by their real path, which for a package is seldom `node_modules/<name>` under the root, so start a pattern for a package with `**`. See [`browserModules`](next-routes.md#browsermodules).
+The patterns are globs from the project root, matched against real file paths. For a package, start the pattern with `**`, since it rarely lives at `node_modules/<name>` under your root. Details in [`browserModules`](internals/next-routes.md#browsermodules).
 
-A Client Component that renders something different on the server than in the browser fails the way it does in production, with a hydration mismatch. React reports the mismatch with `console.error`, so it's worth failing tests on any `console.error`, as the playgrounds do:
+### Catch hydration mismatches
+
+A Client Component that renders differently on the server than in the browser fails just like in production: with a hydration mismatch, reported through `console.error`. So it's a good idea to fail tests on any `console.error`, like the playgrounds do:
 
 ```ts
 let consoleError: MockInstance<typeof console.error>;
@@ -761,34 +761,51 @@ afterEach(() => {
 
 ## Environment variables
 
-Your app's server code reads `process.env` from the project's test env, the way Next's test mode reads it: `.env.test.local`, `.env.test` and `.env` in a test run, and `.env.test` and `.env` in a build. It never reads `.env.local`, another mode's file, or a value from the shell, unless `env` in `next.config` puts it in. `NEXT_PUBLIC_` variables and `env` from `next.config` are in `process.env` too. A build puts the values into the site, so keep secrets out of `.env.test` and `.env`. See [Environment Variables](next-routes.md#environment-variables).
+Your server code reads `process.env` the way Next's test mode does:
+
+- In a test run: `.env.test.local`, `.env.test` and `.env`.
+- In a build: `.env.test` and `.env`.
+
+It never reads `.env.local`, other modes' files, or your shell, unless `env` in `next.config` puts a value in. `NEXT_PUBLIC_` variables and `env` from `next.config` are there too.
+
+> [!WARNING]
+> A static build bakes these values into the site. Keep secrets out of `.env.test` and `.env`.
+
+More in [Environment Variables](internals/next-routes.md#environment-variables).
 
 ## Test isolation
 
-Vitest runs test files in parallel, each worker in a browser tab of its own, and each tab has its own server, database, disk, cookies and storage. So workers share nothing, and you don't need a shared test database.
+Vitest runs test files in parallel, each worker in its own browser tab, and each tab has its own server, database, disk, cookies and storage. Workers share nothing, so there's no shared test database to fight over.
 
-Within one worker, test files run one after another. With `isolate: false` they share the worker's modules, so they share its database too, and the reset before each test is what keeps them apart.
+Before every test, the plugin:
 
-Before each test, the plugin empties the in-memory disk and Next's Data Cache, and opens a new browser context for your app: none of its cookies, and empty `localStorage` and `sessionStorage`. A test file with `"use client"` has the browser's own cookies and storage instead, as with Testing Library. A database recipe's setup file puts the database back to what its migrations made, and fixes the clock with `vi.setSystemTime()`. On Postgres and MySQL, the database's `now()` follows that clock.
+- empties the in-memory disk and Next's Data Cache,
+- opens a fresh browser context for your app: no cookies, empty storage.
 
-What the plugin doesn't reset is the state of your own modules, like a `Map` in memory or a mock's implementation. Reset that in a `beforeEach()`.
+A database recipe's setup file also resets the database and fixes the clock with `vi.setSystemTime()`. On Postgres and MySQL, even `now()` follows that clock.
+
+What the plugin _doesn't_ reset is your own module state, like a `Map` in memory or a mock's implementation. Reset that in a `beforeEach()`.
+
+Within one worker, test files run one after another and (with `isolate: false`) share modules, and so the database. The reset before each test keeps them apart.
 
 ### No `test.concurrent`
 
-The tests in a file run one after another. [`test.concurrent`](https://vitest.dev/api/#test-concurrent) doesn't work for tests that read `AsyncLocalStorage`, and that includes anything that touches Next.js App Router internals: `headers()`, `cookies()`, `next/cache` and Server Actions. The plugin's `AsyncLocalStorage` runs one request at a time, so concurrent tests would leak context into each other. Sequential tests within a file are fine, and test files still run in parallel.
+Tests within a file run one at a time. [`test.concurrent`](https://vitest.dev/api/#test-concurrent) doesn't work with anything that reads Next's request context: `headers()`, `cookies()`, `next/cache` and Server Actions. Concurrent tests would see each other's requests. Test files still run in parallel, so you're not losing much.
 
 ### Slow first test
 
-A worker loads Next's runtime for all three layers before its first test, so that test is slower. With as many workers as cores, it can time out: `playground/nextjs-notes-demo` sets `maxWorkers: 4` for that.
+Each worker loads Next's runtime before its first test, so that one's slower. With as many workers as CPU cores, it can even time out. The notes demo sets `maxWorkers: 4` to avoid that.
 
 ## Development or production
 
-By default, Next's runtime and React run their development builds, as with `next dev`. `vitestPluginNext({ build: "production" })` runs them as `next start` does after `next build`: faster, and without their warnings. It's experimental. See [development or production](next-routes.md#development-or-production) in the internals for what changes.
+By default, Next and React run their development builds, like `next dev`. Set `vitestPluginNext({ build: "production" })` to run them like `next start`: faster, and without dev warnings. It's still experimental.
 
-The development build has a catch. Next takes itself to be a production server, but React's development build sends the client the message of an error that a Server Component throws, so `error.tsx` can show it. A deployment sends a digest and a message that says nothing. So a test that reads the text of such an error passes here, but not against a deployment. With `build: "production"`, both behave as in a deployment.
+Why might you want it? In development, React sends a Server Component's error message to the client, so `error.tsx` can show it. A deployment sends only a digest. So a test that checks such an error message passes here but wouldn't match production. With `build: "production"`, it behaves like a deployment.
+
+See [Development or production](internals/next-routes.md#development-or-production) for everything that changes.
 
 ## Watch mode
 
-A test that opens a route with `renderServer({ url })` doesn't import the route's files, so Vitest can't tell which routes a test file covers. In watch mode, saving a file of your app reruns every test file that opens a route, and saving a file that a test file imports itself reruns that test file too.
+In watch mode, saving any file of your app reruns every test file that opens a route, plus any test file that imports the saved file.
 
-`vitest --changed` and `vitest related` pick test files from Vitest's own import graph, so they find a test file by what it imports, not by the routes it opens. To be sure a change to a route is tested, run the test files that open routes, or the whole suite. See [watch mode](next-routes.md#watch-mode) in the internals.
+Why every route test? A test that calls `renderServer({ url })` doesn't import the route's files, so Vitest can't tell which routes it covers. For the same reason, `vitest --changed` and `vitest related` only find tests by their imports. When in doubt, run the route tests or the whole suite. More in [Watch mode](internals/next-routes.md#watch-mode).

@@ -4,7 +4,7 @@ import { normalizePath, transformWithOxc, type Rolldown } from "vite";
  * The code that Next's runtime and React run: their development code, as
  * `next dev` runs it, or their production code, as `next start` runs it after
  * `next build`. The app's own `process.env.NODE_ENV` is the same for both:
- * see docs/next-routes.md, "Development Or Production".
+ * see docs/internals/next-routes.md, "Development Or Production".
  */
 export type NextBuild = "development" | "production";
 

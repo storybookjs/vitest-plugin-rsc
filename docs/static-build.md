@@ -1,83 +1,91 @@
-# A static build
+# Static builds
 
-`vite build` builds your app into a static site. The site contains all three layers, so the server runs in the browser of whoever opens the page, and there's no server behind it. That's what a host that publishes your app's pages needs, such as a deployed Storybook, and the build directory can go to any static host.
+`vite build` turns your app into a static site. All three of Next's layers go in, so the "server" runs in the browser of whoever opens the page. No server needed.
 
-The plugin builds with Vite's app builder, as `vite build` does: `await (await createBuilder(config, null)).buildApp()`. Vite's `build()` builds only one environment, so the plugin stops it with an error that says so. The plugin doesn't build in `--watch` mode.
+Why would you want that? For a host that publishes your app's pages, like a deployed Storybook. The output directory can go on any static host.
 
-## What differs from the dev server
+The plugin builds with Vite's app builder, like `vite build` does:
 
-Everything that runs on the dev server also runs from the build: pages and nodes, Client Components and their references, Server Actions, route handlers, the proxy, cookies, fonts, images and stylesheets. These are the differences.
+```ts
+await (await createBuilder(config, null)).buildApp();
+```
 
-### Production code
+Vite's plain `build()` only builds one environment, so the plugin stops it with an error. `--watch` mode isn't supported.
 
-Next's runtime and React are their production builds, as after `next build`:
+## What's different from the dev server
 
-- A page of the e2e demo's build loads in about 60% of the time of the development build, with about 60% of the bytes, as measured by `pnpm perf:static`.
-- A page has no React warnings, no owner stacks, no second `<StrictMode>` render and none of Next's development checks. React's error messages are a number and a link, and the browser gets a Server Component's error as a digest, without its message.
-- `build: "development"` builds the development code instead, for a build you want to debug. See the table in [Development Or Production](next-routes.md#development-or-production).
-- Neither build has Next's dev overlay, because the plugin doesn't render it.
-- Your app's own `process.env.NODE_ENV` matches the build, not `"test"`.
+Everything that runs on the dev server runs from a build too: pages, nodes, Client Components, Server Actions, route handlers, the proxy, cookies, fonts, images and stylesheets. The differences:
+
+### It's production code
+
+Next and React use their production builds, like after `next build`:
+
+- **Faster and smaller.** A page of the e2e demo loads in about 60% of the time, with about 60% of the bytes (measured with `pnpm perf:static`).
+- **No dev extras.** No React warnings, no owner stacks, no double `<StrictMode>` render, no Next dev checks and no dev overlay.
+- **Production errors.** A Server Component's error reaches the browser as a digest, without its message.
+- **`process.env.NODE_ENV`** matches the build, not `"test"`.
+
+Need to debug a build? `build: "development"` builds the development code instead.
 
 ### Images and environment variables
 
-- `images.unoptimized` is on, unless your app has its own image loader, because there's no image optimizer to ask.
-- Your app's `process.env` has the variables of `.env.test` and `.env`, which end up in the files of the build, and none of a `.local` file. The build logs the names of the variables it puts in. Keep secrets out of those files: see [Environment Variables](next-routes.md#environment-variables).
+- `images.unoptimized` is on (unless you have your own image loader), since there's no image optimizer to ask.
+- `process.env` gets the variables from `.env.test` and `.env`, never from a `.local` file. The build logs which names it includes.
 
-### How the code is loaded
-
-The code of the `ssr` layer and of the `browser` layer is one file each, `vitest-plugin-rsc/*/modules.json`. A tab fetches each file once:
-
-- The `browser` layer's file right away. The HTML of a host page starts that fetch with a preload.
-- The `ssr` layer's file when the page imports `vitest-plugin-rsc/nextjs/testing-library`, or with the first request that Next's server handles. A page that only imports `vitest-plugin-rsc/nextjs/client-components` and sends the app no request never fetches it.
-
-A request of the host's own that your proxy's matcher matches, like a request for a host file, is a request to the app too, so the proxy runs on it.
-
-The preload uses the browser's default cache mode, so the `no-cache` header [below](#serving-the-build) is what makes the browser check whether its copy is current. The names of the `modules.json` files don't change with their content, and neither does the name of `vitest-plugin-rsc/next-files.json`, so serve these files like `index.html`. Serve them compressed, too: the two layers are 1.5 MB of JavaScript in production and 3 MB in development.
-
-### Stylesheets
-
-- Next links a route's CSS as it does with a dev server: one file per stylesheet under `/_next/static/css/`. `vitest-plugin-rsc/next-files.json` lists the stylesheets of every route and every host file, and the modules of every route. A page load starts loading its route's modules right away, together with its stylesheets.
-- A node gets the CSS of the host files that the host names as rendering it (`hostFiles` of `renderServer()`), as with a dev server. In a build, the host files are whatever `host.files` matches, because there's no Vitest config to say so.
-- `experimental.inlineCss` isn't honoured in a build: the stylesheets are linked.
+> [!WARNING]
+> Those values end up in the files of the build. Keep secrets out of `.env.test` and `.env`.
 
 ### Paths
 
-- The build's files refer to each other by relative paths. To serve the build from a subpath, build it with that `base`, or with `base: "./"`.
-- The plugin puts no paths of your machine into the build:
-  - A route's files are named from the project root (`app/layout.tsx`), and so are the Next config paths in the layers, like `configFile`, and the files that a compile error quotes.
-  - So the same source tree builds into the same files, byte for byte, in another directory or on another machine, and their content hashes hold.
-  - Paths that your app puts in itself stay, like a path in `env` of `next.config`.
-  - A source map (with `build.sourcemap`) names its sources by their path relative to the map, as Vite names them.
+- Files refer to each other by relative paths. To serve from a subpath, build with that `base`, or with `base: "./"`.
+- No paths from your machine end up in the build. The same source builds into byte-for-byte the same files anywhere.
 
-### Host files and packages
+### Stylesheets
 
-- A host file with `"use client"`, like a file the host renders, runs in the `browser` layer, as with a dev server. Its stylesheets come from `next-files.json`. It runs once for the document, because a build has one module of the file.
-- The `ssr` layer has the Client Components that server code reaches: the ones your routes render, and the ones that a host file without the directive imports, which can render them in a node. A file with the directive that only the host's runtime imports (a module that isn't a file of `host.files`) belongs to the `browser` layer alone, so the `ssr` layer's file doesn't carry it, or anything only it imports. See [how a static build works](next-routes.md#a-static-build) in the internals.
-- The host's packages (`host.packages`) are the page's own in the build, too. The `browser` layer imports them from the host's build, so the host and its files with the directive share one instance, like the spies of a host's testing package.
-- A host with its own pages, like `index.html` and `callout.html` in `build.rolldownOptions.input`, gets them built as its pages. The layers build their own entries.
+Next links a route's CSS just like with a dev server: one file per stylesheet under `/_next/static/css/`. One exception: `experimental.inlineCss` is ignored, so stylesheets are always linked.
 
 ## Serving the build
 
-A static host should serve the build with these headers, chosen by the path of the file in the build directory:
+Set these headers on your static host, based on the file's path in the build:
 
-- `cache-control: no-cache` and an `ETag` for `index.html` and the host's other pages, `vitest-plugin-rsc/*/modules.json`, `vitest-plugin-rsc/next-files.json`, and any other file without a content hash in its name, like a file in `public/`. The browser asks again for a file whose name stays the same from build to build, and the server answers with a 304 when the browser's copy is current.
-- `cache-control: public, max-age=31536000, immutable` for `assets/`, `_next/static/` and `vitest-plugin-rsc/*/assets/`. Their names contain a content hash, so the browser keeps them without asking.
-- Compressed, with brotli for a browser that accepts it.
+| Files                                                                                                                                        | Headers                                              |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `assets/`, `_next/static/`, `vitest-plugin-rsc/*/assets/`                                                                                    | `cache-control: public, max-age=31536000, immutable` |
+| Everything else: `index.html` and other pages, `vitest-plugin-rsc/*/modules.json`, `vitest-plugin-rsc/next-files.json`, files from `public/` | `cache-control: no-cache`, plus an `ETag`            |
 
-`pnpm perf:static` serves its builds this way.
+And compress everything, with brotli where the browser accepts it.
+
+Why? Files in the first group have a content hash in their name, so browsers can keep them forever. Files in the second group keep the same name from build to build, so the browser should check for a new version (and get a quick 304 when there isn't one).
+
+Compression matters here: the `modules.json` files hold the code of the server layers, about 1.5 MB of JavaScript in production and 3 MB in development.
+
+`pnpm perf:static` serves its builds exactly this way.
+
+## For hosts
+
+If you're building a host (like a component workshop) that ships its own pages alongside the app:
+
+- **Pages of your own**, like `index.html` and `callout.html` in `build.rolldownOptions.input`, get built as your pages. The layers build their own entries.
+- **Host files with `"use client"`** run in the `browser` layer, just like with the dev server, once per document.
+- **Host packages** (`host.packages`) are shared between your host and its `"use client"` files, so a testing package's spies are one instance.
+- **Code loading**: each layer's code is one file, `vitest-plugin-rsc/*/modules.json`. The `browser` layer's loads right away. The `ssr` layer's loads only when the page imports `vitest-plugin-rsc/nextjs/testing-library` or sends a request to the app. A page that only uses `vitest-plugin-rsc/nextjs/client-components` never fetches it.
+- **The proxy runs** on any request of yours that its matcher matches.
+- **A node's CSS** comes from the host files that render it (`hostFiles`). In a build, that's whatever `host.files` matches.
+
+The nitty-gritty is in [A Static Build](internals/next-routes.md#a-static-build) and [Another Host Than Vitest](internals/next-routes.md#another-host-than-vitest).
 
 ## Without Next.js
 
-`vitestPluginRSC()` on its own builds the same way. It builds its two layers from a project page that calls `renderServer()` from `vitest-plugin-rsc/testing-library`, and Server Components, Client Components, Server Actions and the CSS of both run from the build, with React's production code. See [A Static Build](architecture.md#a-static-build) and `playground/rsc-vitest-demo`.
+`vitestPluginRSC()` on its own builds the same way: from a project page that calls `renderServer()` from `vitest-plugin-rsc/testing-library`. Server Components, Client Components, Server Actions and CSS all run from the build, on React's production code. See [A Static Build](internals/architecture.md#a-static-build) and `playground/rsc-vitest-demo`.
 
 ## Examples
 
 `playground/nextjs-e2e-demo` builds its app with three pages of its own:
 
-- `index.html`, which calls `renderServer()` as a test does.
-- `client.html`, which renders a Client Component with `loadClientModule()`.
-- `example.html`, whose own module script does the same.
+- `index.html` calls `renderServer()`, like a test does.
+- `client.html` renders a Client Component with `loadClientModule()`.
+- `example.html` does the same from its own module script.
 
-A test project opens the build in a browser from a file server: see its `build-test/`. `playground/nextjs-host-demo` builds its two pages the same way, with its host files that have `"use client"` and a host package, and opens them in its own `build-test/`.
+Its `build-test/` opens the build in a browser from a file server. `playground/nextjs-host-demo` does the same for a host with `"use client"` files and a host package.
 
-`pnpm perf:static` measures what one page load of the e2e demo's build costs per route, in bytes, requests, round trips and time. It measures both builds, on localhost and over an emulated network: see [docs/performance.md](performance.md#a-static-build-per-page-load).
+`pnpm perf:static` measures the cost of loading one page from the build, per route: bytes, requests, round trips and time. See [the benchmarks](internals/performance.md#a-static-build-per-page-load).

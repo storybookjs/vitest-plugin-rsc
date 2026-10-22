@@ -316,7 +316,7 @@ export function renderDocument(
   const after = rest?.split(end)[1];
   if (before === undefined || after === undefined) {
     throw new Error(
-      `docs/next-conformance.md has no ${start} and ${end} to write the results between.`,
+      `docs/internals/next-conformance.md has no ${start} and ${end} to write the results between.`,
     );
   }
   const counts = count(comparison);
