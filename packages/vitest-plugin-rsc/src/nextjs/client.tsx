@@ -54,8 +54,7 @@ function isNextControlFlow(error: unknown): boolean {
 
 /**
  * Hydrates the document, or with a `container`, the node of a test in it.
- * Resolves once it has, with how to leave the page. Calls `loaded` once Next's
- * client has loaded, before a module of the app has. A page of a node tells
+ * Resolves once it has, with how to leave the page. A page of a node tells
  * `nodeOnPage` what it does with the node: see node-rendered.tsx. The errors
  * that React reports on the root of the app go in `errors`, in order, but
  * for those of Next's control flow.
@@ -65,7 +64,6 @@ function isNextControlFlow(error: unknown): boolean {
  * A root that Next would create after that renders nothing.
  */
 export async function start(
-  loaded: () => void,
   container: Element | undefined,
   signal: AbortSignal,
   nodeOnPage: NodeOnPage | undefined,
@@ -155,7 +153,6 @@ export async function start(
     // is left meanwhile: the payload it reads is the one of its own document
     // only until it has loaded.
     const { hydrate } = await loadAppIndex();
-    loaded();
     nextLoaded();
     signal.throwIfAborted();
     // Next reads its asset prefix off the URL of the script that is running,

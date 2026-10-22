@@ -88,13 +88,12 @@ export default defineConfig({
       instances: [{ browser: "chromium" }],
     },
     include: ["**/*.test.{ts,tsx}"],
-    isolate: false,
   },
 });
 ```
 
 - No setup file needed: the plugin cleans up around every test.
-- `isolate: false` loads your app's server once per worker instead of once per file. It does mean the test files in a worker share modules, so put mocks in a [setup file](docs/nextjs-guide.md#mocks).
+- `isolate: false` in `test` loads your app's server once per worker instead of once per file, which saves 0.6 to 1.4 s per file in the playgrounds. Either setting works: when a test leaves a page, the plugin takes back what Next.js and React left behind, so pages don't pile up in a worker. The test files in a worker then share modules, so put mocks in a [setup file](docs/nextjs-guide.md#mocks). See [Test isolation](docs/nextjs-guide.md#test-isolation).
 - `.mts` makes the config load as ESM, which matters if your `package.json` has no `"type": "module"`.
 - `include` keeps Playwright's `*.spec.ts` files out.
 - Add `.vitest/` to `.gitignore`. That's where screenshots of failed tests go.

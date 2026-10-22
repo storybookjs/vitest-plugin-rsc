@@ -784,9 +784,37 @@ Before every test, the plugin:
 
 A database recipe's setup file also resets the database and fixes the clock with `vi.setSystemTime()`. On Postgres and MySQL, even `now()` follows that clock.
 
-What the plugin _doesn't_ reset is your own module state, like a `Map` in memory or a mock's implementation. Reset that in a `beforeEach()`.
+### `isolate: false`
 
-Within one worker, test files run one after another and (with `isolate: false`) share modules, and so the database. The reset before each test keeps them apart.
+By default, Vitest starts every test file in a new iframe, which loads Next's runtime again: about 0.6 to 1.4 s per test file in the playgrounds. With `isolate: false`, the test files of a worker run one after another in the same iframe. They share its modules, so the runtime loads once per worker, and they share its database, so the reset before each test is what keeps them apart.
+
+Every `renderServer()` is a page load in that one document, and leaving a page is the plugin's job, where a browser would drop the page whole. So that pages don't pile up in a worker, the plugin:
+
+- gives every page a module graph of its own for the browser layer, and lets go of it when the page is left: React, Next's router and your Client Components are evaluated again for each page;
+- takes back what Next.js and the React it ships registered with the browser: their timers, animation frames, message ports, performance observers, and listeners on `window` and `document`;
+- removes React's root and its listeners, the properties React DOM keeps on the document and on the page's nodes, the globals that Next's client and React's inline scripts set on `window`, and the page's nodes, URL, history entry and Flight payload.
+
+What it doesn't take back is under [Not Yet](internals/next-routes.md#not-yet).
+
+### Avoiding isolation bugs
+
+What your own code and its libraries leave behind is yours, as in any test setup. With `isolate: false` it stays for the test files after it:
+
+- **Mock in a setup file.** The test files of a worker share their modules, so a mock is for all of them, or for none. See [Mocks](#mocks).
+- **Reset your own module state in a `beforeEach()`**, like a `Map` in memory or a mock's implementation. The plugin doesn't.
+- **Clean up in your effects.** A listener on `window`, an interval or an observer that an effect never removes keeps its whole page in memory, as in an app that never reloads: 0.5 to 2.8 MB a page in the playgrounds.
+- **Keep the elements of a page in the test that uses them.** One in a variable of the test file, or in the calls of a mock that is never cleared, keeps its page.
+- **Wait for a page that the app loads itself**, like after a link without Next's router, with an `expect.element()` on that page before the test ends.
+- **Use `isolate: true` for the test files that still need it**, in a Vitest project of their own. The rest keeps the speed.
+
+### A timer that outlives its page
+
+Leaving a page takes back the timers of Next.js and React, but not those of your app or its libraries: those are yours, as in any test setup. A timer that is due after its test has ended fires during the next test, and if it touches its page, it throws there. Vitest reports the error under whichever test is running.
+
+`next-themes` with `disableTransitionOnChange` is one. As it mounts, and at every change of theme, it adds a style that turns off transitions, and removes it again 1 ms later. Ten page loads in a row in the notes demo threw 36 errors that way. Ways out, the first one first:
+
+- **Don't ask for the timer.** For a library, that is often an option. `disableTransitionOnChange` exists so that a change of theme doesn't animate, which a test doesn't need. Turn off motion for the whole app in the setup file instead, with a stylesheet, as [the notes demo's setup file](../playground/nextjs-notes-demo/vitest.setup.ts) does. That is a change to the app: a change of theme then animates for its users too, where the app's CSS has a transition. Your stories keep that motion: Storybook doesn't run this setup file.
+- **Wait for it.** A test that ends right after a page has mounted, like the page a link goes to, which the app loads itself, can wait for the timer to be due before it ends.
 
 ### No `test.concurrent`
 
@@ -794,7 +822,7 @@ Tests within a file run one at a time. [`test.concurrent`](https://vitest.dev/ap
 
 ### Slow first test
 
-Each worker loads Next's runtime before its first test, so that one's slower. With as many workers as CPU cores, it can even time out. The notes demo sets `maxWorkers: 4` to avoid that.
+Next's runtime loads before the first test of a file, or with `isolate: false` before the first test of a worker, so that test is slower. With as many workers as CPU cores, it can even time out. The notes demo sets `maxWorkers: 4` to avoid that.
 
 ## Development or production
 
