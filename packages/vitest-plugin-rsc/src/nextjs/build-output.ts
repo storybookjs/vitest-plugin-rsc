@@ -1,12 +1,14 @@
-import type { PrerenderManifest } from "next/dist/build";
-import { RSC_SUFFIX } from "next/dist/lib/constants";
-import { normalizePagePath } from "next/dist/shared/lib/page-path/normalize-page-path";
 import {
   nextConfig,
   preview,
   routesManifest,
   routing,
 } from "virtual:vitest-plugin-rsc/next-manifest";
+import {
+  normalizePagePath,
+  RSC_SUFFIX,
+  type PrerenderManifest,
+} from "./compat/ssr/build-output.ts";
 import { actionModulePrefix, registry, type PrerenderVerdict } from "./registry.ts";
 import type { Stylesheets } from "./styles-shared.ts";
 

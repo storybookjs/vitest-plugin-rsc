@@ -118,6 +118,9 @@ export default defineConfig([
       "src/nextjs/rsc.ts",
       "src/nextjs/ssr.ts",
       "src/nextjs/client.tsx",
+      // Imported by its file, with `build: "production"`: see `prerenderId`
+      // of src/nextjs/plugin.ts.
+      "src/nextjs/prerender-verdict.ts",
       "src/nextjs/internal.ts",
       // A thread of its own: see src/nextjs/project/env.ts.
       "src/nextjs/project/env-worker.ts",

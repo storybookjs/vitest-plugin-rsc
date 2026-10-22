@@ -1,13 +1,17 @@
-import { collectSegments } from "next/dist/build/segment-config/app/app-segments";
-import { collectRootParamKeys } from "next/dist/build/segment-config/app/collect-root-param-keys";
-import { buildAppStaticPaths } from "next/dist/build/static-paths/app";
-import { fallbackModeToFallbackField, type FallbackMode } from "next/dist/lib/fallback";
-import { isEdgeRuntime } from "next/dist/lib/is-edge-runtime";
-import { isMetadataRoute, isStaticMetadataFile } from "next/dist/lib/metadata/is-metadata-route";
-import type { AppRouteRouteModule } from "next/dist/server/route-modules/app-route/module";
-import { isStaticGenEnabled } from "next/dist/server/route-modules/app-route/helpers/is-static-gen-enabled";
-import { parseNormalizedAppRoute } from "next/dist/shared/lib/router/routes/app";
 import { nextConfig, routing } from "virtual:vitest-plugin-rsc/next-manifest";
+import {
+  buildAppStaticPaths,
+  collectRootParamKeys,
+  collectSegments,
+  fallbackModeToFallbackField,
+  isEdgeRuntime,
+  isMetadataRoute,
+  isStaticGenEnabled,
+  isStaticMetadataFile,
+  parseNormalizedAppRoute,
+  type AppRouteRouteModule,
+  type FallbackMode,
+} from "./compat/rsc/prerender.ts";
 import { registry, type PrerenderVerdict } from "./registry.ts";
 
 // Which pathnames of a route `next build` prerenders, from its

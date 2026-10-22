@@ -1,0 +1,116 @@
+name: Next.js canary
+
+# Every night, the plugin against the canary of Next.js: the Next.js
+# playgrounds in development and in production, as the `next` job of CI runs
+# them for each push, and then a type check of the plugin against canary's
+# declarations, which tells of a change before it breaks a run. A failure
+# opens an issue, or comments on the one that is open. The weekly conformance
+# run against canary is next-conformance.yml.
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+  # A change of this workflow runs it on its pull request, as a dispatch
+  # can only run a workflow that the default branch has.
+  pull_request:
+    paths:
+      - ".github/workflows/next-canary.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Not the nightly run for a run by hand: a cancelled run reports nothing.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Next.js canary
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # One version for every step: canary may publish while the job runs.
+      - id: version
+        run: echo "version=$(npm view next@canary version)" >> "$GITHUB_OUTPUT"
+      # pnpm waits a day before it installs a new release; this run is for
+      # the one canary names now. The packages that go with `next` are at
+      # its version.
+      - name: Install Next.js ${{ steps.version.outputs.version }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@$VERSION @next/routing@$VERSION
+          pnpm --filter nextjs-cache-components-demo add --config.minimum-release-age=0 next@$VERSION @next/routing@$VERSION
+          pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$VERSION @next/env@$VERSION @next/routing@$VERSION
+          pnpm --filter nextjs-db-recipes add --config.minimum-release-age=0 next@$VERSION @next/routing@$VERSION
+          pnpm --filter nextjs-e2e-demo exec node -p "'next@' + require('next/package.json').version"
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm build
+      - name: Test the Next.js playgrounds, development
+        env:
+          VITEST_PLUGIN_RSC_BUILD: development
+        run: |
+          pnpm test:dist \
+            --project nextjs-e2e-demo \
+            --project nextjs-cache-components-demo \
+            --project nextjs-notes-demo-browser \
+            --project nextjs-notes-demo-stories \
+            --project nextjs-db-recipes
+      - name: Test the Next.js playgrounds, production
+        if: ${{ !cancelled() }}
+        env:
+          VITEST_PLUGIN_RSC_BUILD: production
+        run: |
+          pnpm test:dist \
+            --project nextjs-e2e-demo \
+            --project nextjs-cache-components-demo \
+            --project nextjs-notes-demo-browser \
+            --project nextjs-notes-demo-stories \
+            --project nextjs-db-recipes
+      # Last, and after a failure too, so that a type error never hides a
+      # failure of a run: the plugin, typed against canary's declarations.
+      - name: Type-check the plugin against Next.js ${{ steps.version.outputs.version }}
+        if: ${{ !cancelled() }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          pnpm --filter vitest-plugin-rsc add -D --config.minimum-release-age=0 next@$VERSION @next/routing@$VERSION
+          pnpm build
+          pnpm exec tsgo --build packages/vitest-plugin-rsc
+
+  # One open issue for the failures, with a comment for each one after it.
+  # The nightly run, or one by hand on the default branch: a run on another
+  # branch is its author's to read. A scheduled run has no repository in its
+  # event, so it is named by its event.
+  report:
+    name: Report a failure
+    needs: canary
+    if: ${{ failure() && (github.event_name == 'schedule' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.canary.outputs.version }}
+      RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - run: |
+          title="The nightly run against Next.js canary fails"
+          body="The nightly run against \`next@${VERSION:-canary}\` failed: $RUN"
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\")) | first | .number // empty")
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

@@ -1,13 +1,12 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { AppLoaderContext } from "./entries.ts";
+import { loadNextBuild } from "../compat/build.ts";
 import { pageEnvOf, readTestEnv } from "./env.ts";
-import type { Loader } from "./loaders.ts";
 
 // The project, and the build code of its own `next`: what the other files in
 // this directory work with. The modules of Next's build that the plugin calls
-// are loaded with `load()` here, so one that is gone fails when a run starts,
+// are loaded by compat/build.ts, so one that is gone fails when a run starts,
 // and an export that is gone fails with the same message where it is read.
 
 // Next runs a compiled `next.config.ts` as a module without a filename, so
@@ -64,165 +63,14 @@ export async function openNextProject(
       { cause },
     );
   };
-  // A module of Next's build. An export that is gone fails where it is read.
-  const load = <T extends object>(file: string): T => {
-    let loaded: T;
-    try {
-      loaded = projectRequire(`next/dist/${file}.js`) as T;
-    } catch (error) {
-      return fail(`next/dist/${file}.js does not load (${(error as Error).message})`, error);
-    }
-    return new Proxy(loaded, {
-      get: (target, name) =>
-        target[name as keyof T] !== undefined
-          ? target[name as keyof T]
-          : fail(`next/dist/${file}.js has no export \`${String(name)}\``),
-    });
-  };
   // A piece of the code Next generates that is replaced for Vite.
   const replace = (code: string, piece: string | RegExp, replacement: string, where: string) => {
     const replaced = code.replace(piece, replacement);
     return replaced === code ? fail(`${where} has no \`${piece}\` to replace`) : replaced;
   };
 
-  const loadConfig = load<typeof import("next/dist/server/config.js")>("server/config").default;
-  const { PHASE_PRODUCTION_BUILD, COMPILER_NAMES } =
-    load<typeof import("next/dist/shared/lib/constants.js")>("shared/lib/constants");
-  const {
-    APP_DIR_ALIAS,
-    MIDDLEWARE_FILENAME,
-    PROXY_FILENAME,
-    WEBPACK_LAYERS,
-    WEBPACK_RESOURCE_QUERIES,
-  } = load<typeof import("next/dist/lib/constants.js")>("lib/constants");
-  const { findPagesDir } =
-    load<typeof import("next/dist/lib/find-pages-dir.js")>("lib/find-pages-dir");
-  const { discoverRoutes, createPagesMapping } =
-    load<typeof import("next/dist/build/route-discovery.js")>("build/route-discovery");
-  const { normalizeCatchAllRoutes } = load<
-    typeof import("next/dist/build/normalize-catchall-routes.js")
-  >("build/normalize-catchall-routes");
-  const { normalizeAppPath, compareAppPaths, selectAppPageEntry } = load<
-    typeof import("next/dist/shared/lib/router/utils/app-paths.js")
-  >("shared/lib/router/utils/app-paths");
-  const { isAppRouteRoute } =
-    load<typeof import("next/dist/lib/is-app-route-route.js")>("lib/is-app-route-route");
-  const { isAppPageRoute } =
-    load<typeof import("next/dist/lib/is-app-page-route.js")>("lib/is-app-page-route");
-  const { findMissingCanonicalInterceptionRoutes } = load<
-    typeof import("next/dist/shared/lib/router/utils/interception-routes.js")
-  >("shared/lib/router/utils/interception-routes");
-  const { MissingCanonicalInterceptionRoutesError } = load<
-    typeof import("next/dist/shared/lib/errors/missing-canonical-interception-routes-error.js")
-  >("shared/lib/errors/missing-canonical-interception-routes-error");
-  const { IncompatibleParallelRouteSlotsError } = load<
-    typeof import("next/dist/shared/lib/errors/incompatible-parallel-route-slots-error.js")
-  >("shared/lib/errors/incompatible-parallel-route-slots-error");
-  const { UnmatchedAppPagesError } = load<
-    typeof import("next/dist/shared/lib/errors/unmatched-app-pages-error.js")
-  >("shared/lib/errors/unmatched-app-pages-error");
-  const { generateBuildId } =
-    load<typeof import("next/dist/build/generate-build-id.js")>("build/generate-build-id");
-  const { getDefineEnv } = load<typeof import("next/dist/build/define-env.js")>("build/define-env");
-  const { getNextPublicEnvironmentVariables, getNextConfigEnv } =
-    load<typeof import("next/dist/lib/static-env.js")>("lib/static-env");
-  const { SUPPORTED_NATIVE_MODULES } = load<
-    typeof import("next/dist/build/webpack/plugins/middleware-plugin.js")
-  >("build/webpack/plugins/middleware-plugin");
-  const compilerAliases = load<typeof import("next/dist/build/create-compiler-aliases.js")>(
-    "build/create-compiler-aliases",
-  );
-  const { needsExperimentalReact } = load<
-    typeof import("next/dist/lib/needs-experimental-react.js")
-  >("lib/needs-experimental-react");
-  const { loadEntrypoint } =
-    load<typeof import("next/dist/build/load-entrypoint.js")>("build/load-entrypoint");
-  const nextAppLoader = load<
-    typeof import("next/dist/build/webpack/loaders/next-app-loader/index.js")
-  >("build/webpack/loaders/next-app-loader/index").default as unknown as (
-    this: AppLoaderContext,
-  ) => Promise<string>;
-  const { IncrementalCache } = load<
-    typeof import("next/dist/server/lib/incremental-cache/index.js")
-  >("server/lib/incremental-cache/index");
-  const swc = load<typeof import("next/dist/build/swc/index.js")>("build/swc/index");
-  const { getLoaderSWCOptions } =
-    load<typeof import("next/dist/build/swc/options.js")>("build/swc/options");
-  const loadJsConfig =
-    load<typeof import("next/dist/build/load-jsconfig.js")>("build/load-jsconfig").default;
-  const { getRSCModuleInformation, getAppPageStaticInfo } = load<
-    typeof import("next/dist/build/analysis/get-page-static-info.js")
-  >("build/analysis/get-page-static-info");
-  const { nextImageLoaderRegex } =
-    load<typeof import("next/dist/build/webpack-config.js")>("build/webpack-config");
-  const nextImageLoader = load<
-    typeof import("next/dist/build/webpack/loaders/next-image-loader/index.js")
-  >("build/webpack/loaders/next-image-loader/index").default as unknown as Loader;
-  const { getNextFontLoader } = load<
-    typeof import("next/dist/build/webpack/config/blocks/css/loaders/next-font.js")
-  >("build/webpack/config/blocks/css/loaders/next-font");
-  const { getPostCssPlugins } = load<
-    typeof import("next/dist/build/webpack/config/blocks/css/plugins.js")
-  >("build/webpack/config/blocks/css/plugins");
-  const { findConfig } = load<typeof import("next/dist/lib/find-config.js")>("lib/find-config");
-  const { getCssModuleLoader } = load<
-    typeof import("next/dist/build/webpack/config/blocks/css/loaders/modules.js")
-  >("build/webpack/config/blocks/css/loaders/modules");
-  // The PostCSS plugin of Next's css-loader that holds a CSS module to its mode.
-  const localByDefault = load<(options: { mode: string }) => never>(
-    "compiled/postcss-modules-local-by-default/index",
-  );
-  const { getSupportedBrowsers } = load<typeof import("next/dist/build/get-supported-browsers.js")>(
-    "build/get-supported-browsers",
-  );
-  const nextFontLoader = load<
-    typeof import("next/dist/build/webpack/loaders/next-font-loader/index.js")
-  >("build/webpack/loaders/next-font-loader/index").default as unknown as Loader;
-  const nextRootParamsLoader = load<
-    typeof import("next/dist/build/webpack/loaders/next-root-params-loader.js")
-  >("build/webpack/loaders/next-root-params-loader").default as unknown as Loader;
-  const imageOptimizer =
-    load<typeof import("next/dist/server/image-optimizer.js")>("server/image-optimizer");
-  const loadCustomRoutes =
-    load<typeof import("next/dist/lib/load-custom-routes.js")>("lib/load-custom-routes").default;
-  const { generateInterceptionRoutesRewrites } = load<
-    typeof import("next/dist/lib/generate-interception-routes-rewrites.js")
-  >("lib/generate-interception-routes-rewrites");
-  const { NEXT_URL } = load<typeof import("next/dist/client/components/app-router-headers.js")>(
-    "client/components/app-router-headers",
-  );
-  const { generateRoutesManifest } = load<
-    typeof import("next/dist/build/generate-routes-manifest.js")
-  >("build/generate-routes-manifest");
-  const { handleBuildComplete } = load<typeof import("next/dist/build/adapter/build-complete.js")>(
-    "build/adapter/build-complete",
-  );
-  const { Bundler } = load<typeof import("next/dist/lib/bundler.js")>("lib/bundler");
-  const { getFilesInDir } =
-    load<typeof import("next/dist/lib/get-files-in-dir.js")>("lib/get-files-in-dir");
-  // Next types this as a const enum, which only its own build can read: so
-  // the value is read as it is, and passed on as whatever Next asks for.
-  const { PAGE_TYPES } = load<{ PAGE_TYPES: { ROOT?: string } }>("lib/page-types");
-  const rootPageType = (PAGE_TYPES.ROOT ??
-    fail("next/dist/lib/page-types.js has no `PAGE_TYPES.ROOT`")) as never;
-  const { getStaticInfoIncludingLayouts } = load<
-    typeof import("next/dist/build/get-static-info-including-layouts.js")
-  >("build/get-static-info-including-layouts");
-  const { getEdgeServerEntry } = load<typeof import("next/dist/build/entries.js")>("build/entries");
-  const { getNamedMiddlewareRegex } = load<
-    typeof import("next/dist/shared/lib/router/utils/route-regex.js")
-  >("shared/lib/router/utils/route-regex");
-  const nextMiddlewareLoader = load<
-    typeof import("next/dist/build/webpack/loaders/next-middleware-loader.js")
-  >("build/webpack/loaders/next-middleware-loader").default as unknown as Loader;
-  const { getContentType, getExtension } =
-    load<typeof import("next/dist/server/serve-static.js")>("server/serve-static");
-  const nextMetadataImageLoader = load<
-    typeof import("next/dist/build/webpack/loaders/next-metadata-image-loader.js")
-  >("build/webpack/loaders/next-metadata-image-loader").default as unknown as Loader;
-  const nextMetadataRouteLoader = load<
-    typeof import("next/dist/build/webpack/loaders/next-metadata-route-loader.js")
-  >("build/webpack/loaders/next-metadata-route-loader").default as unknown as Loader;
+  const { loadConfig, PHASE_PRODUCTION_BUILD, findPagesDir, generateBuildId, ...next } =
+    loadNextBuild(projectRequire, fail);
 
   // The env of the run, see env.ts, with the `@next/env` that Next's config
   // loader uses.
@@ -293,7 +141,7 @@ export async function openNextProject(
   // like `sitemap.ts` with it for `generateSitemaps`, which gives its route an
   // id, `/sitemap/[__metadata_id__]`. Without the bindings that parse fails
   // and says nothing.
-  await swc.loadBindings(config.experimental.useWasmBinary);
+  await next.swc.loadBindings(config.experimental.useWasmBinary);
 
   const buildId = await generateBuildId(config.generateBuildId, () => "vitest");
   // What a build writes to `.next/` for its server: the build id and the keys
@@ -315,9 +163,9 @@ export async function openNextProject(
   return {
     root,
     /** What the page's `process.env` gets, see env.ts. */
-    env: pageEnvOf(testEnv, getNextConfigEnv(config)),
+    env: pageEnvOf(testEnv, next.getNextConfigEnv(config)),
     /** The env again, as the env files have it now. */
-    loadEnv: async () => pageEnvOf(await readEnv(), getNextConfigEnv(config)),
+    loadEnv: async () => pageEnvOf(await readEnv(), next.getNextConfigEnv(config)),
     /** Finds `next`, and what the project has installed next to it. Not the global one. */
     projectRequire,
     nextDir,
@@ -331,67 +179,7 @@ export async function openNextProject(
     buildId,
     buildEnvironment,
     previewProps,
-    /** The build code of the installed `next`. */
-    next: {
-      COMPILER_NAMES,
-      APP_DIR_ALIAS,
-      MIDDLEWARE_FILENAME,
-      PROXY_FILENAME,
-      WEBPACK_LAYERS,
-      WEBPACK_RESOURCE_QUERIES,
-      discoverRoutes,
-      createPagesMapping,
-      normalizeCatchAllRoutes,
-      normalizeAppPath,
-      compareAppPaths,
-      selectAppPageEntry,
-      isAppRouteRoute,
-      isAppPageRoute,
-      findMissingCanonicalInterceptionRoutes,
-      MissingCanonicalInterceptionRoutesError,
-      IncompatibleParallelRouteSlotsError,
-      UnmatchedAppPagesError,
-      getDefineEnv,
-      getNextPublicEnvironmentVariables,
-      getNextConfigEnv,
-      SUPPORTED_NATIVE_MODULES,
-      compilerAliases,
-      needsExperimentalReact,
-      loadEntrypoint,
-      nextAppLoader,
-      IncrementalCache,
-      swc,
-      getLoaderSWCOptions,
-      loadJsConfig,
-      getRSCModuleInformation,
-      getAppPageStaticInfo,
-      nextImageLoaderRegex,
-      nextImageLoader,
-      getNextFontLoader,
-      getPostCssPlugins,
-      getSupportedBrowsers,
-      getCssModuleLoader,
-      localByDefault,
-      findConfig,
-      nextFontLoader,
-      nextRootParamsLoader,
-      imageOptimizer,
-      loadCustomRoutes,
-      generateInterceptionRoutesRewrites,
-      NEXT_URL,
-      generateRoutesManifest,
-      handleBuildComplete,
-      Bundler,
-      getFilesInDir,
-      rootPageType,
-      getStaticInfoIncludingLayouts,
-      getEdgeServerEntry,
-      getNamedMiddlewareRegex,
-      nextMiddlewareLoader,
-      getContentType,
-      getExtension,
-      nextMetadataImageLoader,
-      nextMetadataRouteLoader,
-    },
+    /** The build code of the installed `next`, see compat/build.ts. */
+    next,
   };
 }

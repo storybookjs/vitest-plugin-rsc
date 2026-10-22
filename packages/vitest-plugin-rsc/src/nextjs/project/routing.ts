@@ -1,14 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AdapterOutputs, NextAdapter } from "next/dist/build/adapter/build-complete.js";
-import type { ProxyMatcher } from "next/dist/build/analysis/get-page-static-info.js";
-import type {
-  EdgeFunctionDefinition,
-  MiddlewareManifest,
-} from "next/dist/build/webpack/plugins/middleware-plugin.js";
-import type { Header } from "next/dist/lib/load-custom-routes.js";
+import type { NextAdapter } from "next";
 import { receivers } from "../adapter.ts";
+import type {
+  AdapterOutputs,
+  EdgeFunctionDefinition,
+  Header,
+  MiddlewareManifest,
+  ProxyMatcher,
+} from "../compat/types.ts";
 import type { NextRouting } from "../project.ts";
 import { inDirectory, type NextContext } from "./context.ts";
 import type { AppRoutes } from "./routes.ts";

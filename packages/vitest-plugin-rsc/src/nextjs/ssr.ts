@@ -1,16 +1,3 @@
-import {
-  NEXT_REWRITTEN_PATH_HEADER,
-  NEXT_REWRITTEN_QUERY_HEADER,
-  NEXT_ROUTER_PREFETCH_HEADER,
-  NEXT_RSC_UNION_QUERY,
-  RSC_HEADER,
-} from "next/dist/client/components/app-router-headers";
-import { isRSCRequestHeader } from "next/dist/server/lib/is-rsc-request";
-import * as appPageModule from "next/dist/server/route-modules/app-page/module";
-import { getIsPossibleServerAction } from "next/dist/server/lib/server-action-request-meta";
-import { normalizeNextQueryParam } from "next/dist/server/web/utils";
-import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
-import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, build, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { actionIdsOf } from "./action-ids.ts";
 import {
@@ -25,6 +12,19 @@ import {
 } from "./build-output.ts";
 import { loadCacheHandlers, shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
+import {
+  appPageModule,
+  getIsPossibleServerAction,
+  getRouteMatcher,
+  getRouteRegex,
+  isRSCRequestHeader,
+  NEXT_REWRITTEN_PATH_HEADER,
+  NEXT_REWRITTEN_QUERY_HEADER,
+  NEXT_ROUTER_PREFETCH_HEADER,
+  NEXT_RSC_UNION_QUERY,
+  normalizeNextQueryParam,
+  RSC_HEADER,
+} from "./compat/ssr/handler.ts";
 import {
   countBailouts,
   handleRequest as handleWith,

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { transformHoistInlineDirective, transformWrapExport } from "@vitejs/plugin-rsc/transforms";
 import { parseAstAsync, type Plugin } from "vite";
+import { cacheWrapper } from "./compat/paths.ts";
 import type { NextLayer, NextProject } from "./project.ts";
 
 // `"use cache"`: a function of the app whose result the server keeps. Next's
@@ -18,7 +19,7 @@ export const useCacheId = "virtual:vitest-plugin-rsc/next-use-cache";
 // gives the result the name of the function, which React shows for a
 // component.
 export const useCacheModule = (registry: string): string => `
-import { cache } from "next/dist/build/webpack/loaders/next-flight-loader/cache-wrapper";
+import { cache } from ${JSON.stringify(cacheWrapper)};
 import { cache as reactCache } from "react";
 // One for every function: a function with the directive that closes over a
 // value is wrapped where it is created, for every call of the function around

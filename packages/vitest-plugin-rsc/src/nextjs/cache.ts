@@ -1,15 +1,15 @@
-import { NEXT_CACHE_IMPLICIT_TAG_ID } from "next/dist/lib/constants";
-import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
-import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
-import { nodeFs } from "next/dist/server/lib/node-fs-methods";
-import {
-  initializeCacheHandlers,
-  registerCustomCacheHandlers,
-  setCacheHandler,
-} from "next/dist/server/use-cache/handlers";
 import { cacheHandler, cacheHandlers } from "virtual:vitest-plugin-rsc/next-cache-handlers";
 import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
 import { forgetBuilt, keptAsBuilt, prerenderManifest } from "./build-output.ts";
+import {
+  IncrementalCache,
+  initializeCacheHandlers,
+  NEXT_CACHE_IMPLICIT_TAG_ID,
+  nodeFs,
+  registerCustomCacheHandlers,
+  setCacheHandler,
+  tagsManifest,
+} from "./compat/ssr/cache.ts";
 import { registry } from "./registry.ts";
 
 // Next's Data Cache: what `unstable_cache` and a cached `fetch` keep between
