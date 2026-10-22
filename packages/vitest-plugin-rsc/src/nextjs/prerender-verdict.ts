@@ -80,10 +80,11 @@ export async function prerenderVerdictOf(
   let fallbackMode: FallbackMode | undefined;
   try {
     ({ prerenderedRoutes, fallbackMode } = await buildAppStaticPaths({
-      // Next makes its cache on `.next/` for these, which here is the
-      // stand-in of Node's file system: see node-platform.ts.
-      dir: "",
-      distDir: "",
+      // Next makes its cache for these in the directory of the build, where
+      // the server's cache is too (cache.ts): a fetch of `generateStaticParams`
+      // is the page's, as a build's is `next start`'s.
+      dir: "/",
+      distDir: registry.buildDir(),
       page: pathname,
       route,
       cacheComponents,

@@ -129,6 +129,8 @@ export type NextRegistry = {
    * `hostFiles`; without it a node has no stylesheets of the host's files.
    */
   nodeFiles?(): string[];
+  /** The directory of the build on the server's disk, of this generation: see cache.ts. */
+  buildDir(): string;
   /**
    * Next's build's verdict on a route of the app, by its page name and its
    * pathname, in the rsc layer: nothing for a route it renders at every

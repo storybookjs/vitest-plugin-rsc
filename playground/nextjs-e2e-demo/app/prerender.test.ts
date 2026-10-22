@@ -108,6 +108,20 @@ test("renders a page with `revalidate = 0`, and one that reads the request in a 
   expect([first.cache, second.cache]).toEqual([null, null]);
 });
 
+test("answers another method than GET with 405 for a kept route handler, as next start does", async () => {
+  const before = await request("/prerendered/random", { method: "POST" });
+  await request("/prerendered/random");
+  const after = await request("/prerendered/random", { method: "POST" });
+
+  // Next's route module answers for a method the handler does not export.
+  expect([before.status, after.status]).toEqual([405, 405]);
+  expect(after.cache).toBe(null);
+  if (production) {
+    const page = await request("/prerendered", { method: "PUT" });
+    expect(page.status).toBe(405);
+  }
+});
+
 test("renders a route handler that reads the request at every request", async () => {
   const first = await request("/prerendered/time", { headers: { cookie: "theme=dark" } });
   const second = await request("/prerendered/time", { headers: { cookie: "theme=light" } });

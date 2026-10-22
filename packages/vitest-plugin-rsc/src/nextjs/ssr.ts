@@ -6,6 +6,7 @@ import {
 } from "next/dist/client/components/app-router-headers";
 import { isRSCRequestHeader } from "next/dist/server/lib/is-rsc-request";
 import * as appPageModule from "next/dist/server/route-modules/app-page/module";
+import { getIsPossibleServerAction } from "next/dist/server/lib/server-action-request-meta";
 import { normalizeNextQueryParam } from "next/dist/server/web/utils";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
@@ -376,7 +377,8 @@ async function prerenderFirst(
   const bailouts = countBailouts();
   try {
     const response = await respond();
-    if (response.status !== 500 || bailouts() === 0) return response;
+    const bailedOut = bailouts() > 0;
+    if (response.status !== 500 || !bailedOut) return response;
     await response.body?.cancel();
   } catch (error) {
     bailouts();
@@ -601,6 +603,23 @@ async function handle(
         ? matched
         : undefined;
     if (prerenders) await recordVerdict(prerenders);
+    // What Next's server answers a request of a route it prerendered with
+    // another method than `GET` or `HEAD`, unless it may be a Server Action:
+    // `base-server.js`, before it serves the kept page. The route module
+    // would answer with the kept response of a `GET`.
+    if (
+      prerenders &&
+      isPrerendered(prerenders) &&
+      request.method !== "GET" &&
+      request.method !== "HEAD" &&
+      !getIsPossibleServerAction({ method: request.method, headers } as never)
+    ) {
+      const response = new registry.Response("Method Not Allowed", {
+        status: 405,
+        headers: { allow: "GET, HEAD" },
+      });
+      return finishWithBody(request, response, endRequest, routedHeaders);
+    }
 
     // The page of the route, or the not-found page, with the params of none.
     const renderPage = async (

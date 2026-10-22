@@ -27,14 +27,18 @@ declare global {
   var __incrementalCache: IncrementalCache | undefined;
 }
 
-// Changes when the caches are reset, and is part of every key from then on:
-// no test finds what an earlier one stored. That also goes for a cached
-// function that was still running when its test ended, and stores its result
-// afterwards under the key it already had.
+// Changes when the caches are reset, and is part of every key from then on,
+// and of the directory of the build on the disk: no test finds what an
+// earlier one stored. That also goes for a cached function, or a prerender,
+// that was still running when its test ended, and stores its result
+// afterwards, under the key it already had and in the directory it had.
 let generation = 0;
+/** The directory of the build on the server's disk, `/.next/<generation>`. */
+export const buildDir = (): string => `/.next/${generation}`;
 // Also for the keys of a `"use cache"` function, which Next keeps in a cache
 // of its own, in the rsc layer: use-cache.ts.
 registry.cacheGeneration = () => generation;
+registry.buildDir = buildDir;
 // The cache of the server now: of the request it handles, or between requests.
 let current: IncrementalCache | undefined;
 // The class of the app's `cacheHandler`, once loaded.
@@ -89,11 +93,11 @@ export function shareIncrementalCache(headers = new Headers()): void {
     // It keeps the entries on the disk, as `next start` keeps a prerendered
     // page and a cached fetch in `.next/`: the disk is the stand-in of the
     // package (src/node/fs.ts), which `cleanup()` empties. Not in Next's
-    // memory store, which is one for the process and nothing empties. The
-    // paths are under the directory of a build, which is not the root: Next
-    // holds a path to be inside it.
+    // memory store, which is one for the process and nothing empties. In the
+    // directory of this generation's build: a request of an earlier test
+    // that is still running writes to its own.
     fs: nodeFs,
-    serverDistDir: "/.next/server",
+    serverDistDir: `${buildDir()}/server`,
     dev: false,
     minimalMode: false,
     flushToDisk: true,

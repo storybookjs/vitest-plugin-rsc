@@ -15,7 +15,9 @@ vi.mock("virtual:vitest-plugin-rsc/next-manifest", () => ({
   },
   routing: { buildId: "test" },
 }));
-vi.mock("./registry.ts", () => ({ registry: { cacheGeneration: () => 0 } }));
+vi.mock("./registry.ts", () => ({
+  registry: { cacheGeneration: () => 0, buildDir: () => "/.next/0" },
+}));
 
 type Module = Record<string, unknown>;
 

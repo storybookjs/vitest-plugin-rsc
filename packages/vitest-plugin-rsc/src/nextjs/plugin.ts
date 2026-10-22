@@ -633,6 +633,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/shared/lib/page-path/normalize-page-path",
     // ssr.ts, for what the server in front of the app routes to it
     "next/dist/client/components/app-router-headers",
+    "next/dist/server/lib/server-action-request-meta",
     "next/dist/server/lib/is-rsc-request",
     "next/dist/shared/lib/router/utils/route-matcher",
     "next/dist/shared/lib/router/utils/route-regex",

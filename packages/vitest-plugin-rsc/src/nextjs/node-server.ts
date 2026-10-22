@@ -188,13 +188,15 @@ const routerServerContexts = Symbol.for("@next/router-server-methods");
  * Counts the bail-outs that Next's handler reports for the prerender that
  * starts now: also those it answers with its error page itself, where its
  * render of a page recovers from the error (`app-page-runtime.js:1133-1224`).
- * The function it returns ends the count and answers it.
+ * The function it returns ends the count and answers it, once: a count that
+ * stays would get the bail-outs of the prerenders after it.
  */
 export function countBailouts(): () => number {
   const prerender = { bailouts: 0 };
   prerenders.push(prerender);
   return () => {
-    prerenders.splice(prerenders.lastIndexOf(prerender), 1);
+    const at = prerenders.lastIndexOf(prerender);
+    if (at !== -1) prerenders.splice(at, 1);
     return prerender.bailouts;
   };
 }
