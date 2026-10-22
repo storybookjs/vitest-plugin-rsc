@@ -537,7 +537,7 @@ export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   containers.clear();
   unlinkStylesheets();
   closeContext();
-  loadedSsrLayer()?.resetCaches();
+  await loadedSsrLayer()?.resetCaches();
   resetDisk();
   if (url !== undefined) window.history.replaceState(window.history.state, "", url);
 }

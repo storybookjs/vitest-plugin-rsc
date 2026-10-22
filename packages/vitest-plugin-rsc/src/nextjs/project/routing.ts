@@ -274,7 +274,8 @@ export async function buildRouting(
           routesManifest,
           middlewareManifest,
           // No page is prerendered, and no route is listed as one for
-          // Node.js: see `edgeFunction`.
+          // Node.js: see `edgeFunction`. The manifest the server reads is
+          // `prerenderManifest` of build-output.ts.
           prerenderManifest: {
             version: 4,
             routes: {},

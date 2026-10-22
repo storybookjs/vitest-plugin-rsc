@@ -7,10 +7,12 @@ import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 import serverReferences from "virtual:vitest-plugin-rsc/server-references";
+import { NoFallbackError } from "next/dist/shared/lib/no-fallback-error.external";
 import { createElement, type ReactNode } from "react";
 import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { preloadPage } from "./document.ts";
+import { prerenderVerdictOf } from "./prerender-verdict.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { askDevServer } from "../utils.ts";
 // By the package, so that it stays a module of its own with its "use client"
@@ -206,11 +208,19 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
   };
 }
 
-registry.loadRouteHandler = async (page) => {
+const loadRouteHandler = async (page: string) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
-  return withServerCache(await load()).handler;
+  return withServerCache(await load());
 };
+registry.loadRouteHandler = async (page) => (await loadRouteHandler(page)).handler;
+
+registry.prerenderVerdict = async ({ kind, page, pathname }) => {
+  const entry = kind === "route" ? await loadRouteHandler(page) : await registry.loadAppPage(page);
+  return prerenderVerdictOf(entry as never, pathname, kind);
+};
+// The class of the request handlers of the routes, which are of this layer.
+registry.isNoFallbackError = (error) => error instanceof NoFallbackError;
 
 registry.loadMiddleware = async () => {
   if (!loadMiddleware) throw new Error("vitest-plugin-rsc: the app has no middleware");
