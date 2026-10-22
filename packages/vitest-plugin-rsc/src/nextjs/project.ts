@@ -133,6 +133,11 @@ export type NextProject = {
   /** Next's compiler aliases per layer, in webpack's notation: `$` ends an exact match. */
   aliases: Record<NextLayer, Record<string, string | false>>;
   /**
+   * Entries that the app's code, and not Next's own files, gets in place of
+   * those of `aliases`: React's for Node.js. Exact matches, `$`.
+   */
+  appAliases: Record<NextLayer, Record<string, string>>;
+  /**
    * The exports of each entry of the Flight codec that the rsc layer imports
    * as `react-server-dom-webpack/<entry>`.
    */
@@ -301,7 +306,7 @@ export async function loadNextProject(
   // files of the app.
   const layers = await layerTables(context, build);
   const compiler = await createCompiler(context);
-  const { runLoader, ...loaders } = createLoaders(context);
+  const { runLoader, ...loaders } = createLoaders(context, build);
 
   return {
     root,

@@ -39,9 +39,10 @@ const moduleExports = "$$cjsModuleExports";
 const requireHelper =
   `const $$cjsRequire = (ns) => ${JSON.stringify(moduleExports)} in ns ? ns[${JSON.stringify(moduleExports)}]` +
   ` : Object.prototype.toString.call(ns) === "[object Module]" || ns.__esModule ? ns : ns.default;\n`;
-// What a `require()` of a module that is not there throws, as Node.js does.
+// What a `require()` of a module that is not there throws, as Node.js does:
+// with the `code` that a `catch` of an optional dependency looks for.
 const missingHelper =
-  "const $$cjsMissing = (source) => { throw new Error(`Cannot find module '${source}'`); };\n";
+  "const $$cjsMissing = (source) => { throw Object.assign(new Error(`Cannot find module '${source}'`), { code: \"MODULE_NOT_FOUND\" }); };\n";
 
 // A JSON file or a stylesheet: what `require()` returns is what Vite has as
 // its default export, the value of the JSON or the classes of a CSS module.

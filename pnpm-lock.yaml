@@ -463,6 +463,9 @@ importers:
       react-dom:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
+      request-context:
+        specifier: file:fixtures/request-context
+        version: file:playground/nextjs-e2e-demo/fixtures/request-context
       styled-package:
         specifier: file:fixtures/styled-package
         version: file:playground/nextjs-e2e-demo/fixtures/styled-package(react@19.2.6)
@@ -6458,6 +6461,9 @@ packages:
 
   remeda@2.33.4:
     resolution: {integrity: sha512-ygHswjlc/opg2VrtiYvUOPLjxjtdKvjGz1/plDhkG66hjNjFr1xmfrs2ClNFo/E6TyUFiwYNh53bKV26oBoMGQ==}
+
+  request-context@file:playground/nextjs-e2e-demo/fixtures/request-context:
+    resolution: {directory: playground/nextjs-e2e-demo/fixtures/request-context, type: directory}
 
   require-directory@2.1.1:
     resolution: {integrity: sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==}
@@ -12764,6 +12770,8 @@ snapshots:
       unified: 10.1.2
 
   remeda@2.33.4: {}
+
+  request-context@file:playground/nextjs-e2e-demo/fixtures/request-context: {}
 
   require-directory@2.1.1: {}
 

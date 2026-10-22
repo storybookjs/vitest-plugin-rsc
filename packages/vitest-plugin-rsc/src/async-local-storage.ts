@@ -1,5 +1,5 @@
 type RunCallback<R, TArgs extends unknown[]> = (...args: TArgs) => R;
-type StoreValues = Map<SequentialAsyncLocalStorage<unknown>, unknown>;
+type StoreValues = Map<SequentialStorage<unknown>, unknown>;
 // See enterAmbientScope().
 type AmbientScope = { stores: StoreValues; outer: AmbientScope | undefined; ended: boolean };
 type AsyncContextFrame = {
@@ -86,9 +86,9 @@ function runInFrame<R, TArgs extends unknown[]>(
   return result;
 }
 
-export class SequentialAsyncLocalStorage<Store> {
+class SequentialStorage<Store> {
   getStore(): Store | undefined {
-    const self = this as SequentialAsyncLocalStorage<unknown>;
+    const self = this as SequentialStorage<unknown>;
     const store = currentFrame.stores.has(self)
       ? currentFrame.stores.get(self)
       : ambientStore(self);
@@ -102,9 +102,9 @@ export class SequentialAsyncLocalStorage<Store> {
   ): R {
     const previousFrame = currentFrame;
     const frame = createFrame(previousFrame, previousFrame.stores);
-    frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, store);
-    if (ambientScope && !ambientScope.stores.has(this as SequentialAsyncLocalStorage<unknown>)) {
-      ambientScope.stores.set(this as SequentialAsyncLocalStorage<unknown>, store);
+    frame.stores.set(this as SequentialStorage<unknown>, store);
+    if (ambientScope && !ambientScope.stores.has(this as SequentialStorage<unknown>)) {
+      ambientScope.stores.set(this as SequentialStorage<unknown>, store);
     }
     return runInFrame(frame, callback, args);
   }
@@ -112,13 +112,13 @@ export class SequentialAsyncLocalStorage<Store> {
   exit<R, TArgs extends unknown[]>(callback: RunCallback<R, TArgs>, ...args: TArgs): R {
     const previousFrame = currentFrame;
     const frame = createFrame(previousFrame, previousFrame.stores);
-    frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, exited);
+    frame.stores.set(this as SequentialStorage<unknown>, exited);
     const scope = ambientScope;
     const result = runInFrame(frame, callback, args);
     // See enterAmbientScope(): the work that starts here goes on outside the
     // store, for longer than this frame and than the promise.
     if (scope && isPromiseLike(result)) {
-      scope.stores.set(this as SequentialAsyncLocalStorage<unknown>, exited);
+      scope.stores.set(this as SequentialStorage<unknown>, exited);
     }
     return result;
   }
@@ -127,24 +127,25 @@ export class SequentialAsyncLocalStorage<Store> {
     // Provided for compatibility with Node/Next consumers. WinterCG's portable
     // subset avoids enterWith/disable, but Next still probes for these methods.
     const frame = createFrame(currentFrame, currentFrame.stores);
-    frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, store);
+    frame.stores.set(this as SequentialStorage<unknown>, store);
     currentFrame = frame;
   }
 
   disable(): void {
     // Compatibility-only counterpart to enterWith().
     const frame = createFrame(currentFrame, currentFrame.stores);
-    frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, exited);
+    frame.stores.set(this as SequentialStorage<unknown>, exited);
     currentFrame = frame;
   }
 
   static bind<T extends (...args: unknown[]) => unknown>(fn: T): T {
-    const runInSnapshot = SequentialAsyncLocalStorage.snapshot();
+    const runInSnapshot = SequentialStorage.snapshot();
     return ((...args: Parameters<T>) => runInSnapshot(fn, ...args)) as T;
   }
 
   static snapshot(): <R, TArgs extends unknown[]>(fn: RunCallback<R, TArgs>, ...args: TArgs) => R {
-    const snapshot = SequentialAsyncLocalStorage.#snapshotStores();
+    // The frame of a call copies it: no frame's stores change once it runs.
+    const snapshot = currentStores();
     const snapshotGeneration = resetGeneration;
 
     return <R, TArgs extends unknown[]>(fn: RunCallback<R, TArgs>, ...args: TArgs): R => {
@@ -155,10 +156,24 @@ export class SequentialAsyncLocalStorage<Store> {
       return runInFrame(createFrame(currentFrame, snapshot), fn, args);
     };
   }
+}
 
-  static #snapshotStores(): StoreValues {
-    return new Map(currentFrame.stores);
+// The stores that code reads right now: those of the current frame, and of
+// the ambient scope where the frame has none (see enterAmbientScope()). What
+// a bound callback and a compiled async function are called with, as Node's
+// context has: not what the ambient scope says when they go on, which an
+// `exit()` or a nested request may have changed by then.
+function currentStores(): StoreValues {
+  if (ambientScope === undefined) return currentFrame.stores;
+  const stores: StoreValues = new Map();
+  for (let scope: AmbientScope | undefined = ambientScope; scope; scope = scope.outer) {
+    if (scope.ended) continue;
+    for (const [storage, store] of scope.stores) {
+      if (!stores.has(storage)) stores.set(storage, store);
+    }
   }
+  for (const [storage, store] of currentFrame.stores) stores.set(storage, store);
+  return stores;
 }
 
 /**
@@ -187,14 +202,18 @@ export class SequentialAsyncLocalStorage<Store> {
  *
  * The same goes for `exit()`: the work that its callback starts goes on after
  * the promise has settled, and has to stay outside the store. Next renders
- * the page after a Server Action that way, outside the store of the action,
- * and nothing of the action runs after it. It is wrong for code that awaits
- * such an `exit()` and then reads the store again.
+ * the page after a Server Action that way, outside the store of the action.
+ * What was started in the store before the `exit()` and goes on after it,
+ * like a promise the action passed to `after()`, has its store back when it
+ * is compiled (asyncFunctionHooks) or bound (`bind()`, `snapshot()`): both
+ * take the stores they are called with, the ambient ones included, as Node's
+ * context does. So does code that awaits the `exit()`, when it is compiled.
+ * What is not compiled reads the exited store for the rest of the scope.
  *
  * A `run()` that started before the scope keeps its own rule: it lasts until
  * its promise settles, and the request reads its store until then.
  */
-export function enterAmbientScope(): () => void {
+function enterAmbientScope(): () => void {
   // A server can make a request to itself while it handles one. The inner
   // request is the one at work until it ends, and has the stores of the outer
   // one until it enters its own.
@@ -208,7 +227,7 @@ export function enterAmbientScope(): () => void {
   };
 }
 
-function ambientStore(storage: SequentialAsyncLocalStorage<unknown>): unknown {
+function ambientStore(storage: SequentialStorage<unknown>): unknown {
   for (let scope = ambientScope; scope; scope = scope.outer) {
     if (!scope.ended && scope.stores.has(storage)) return scope.stores.get(storage);
   }
@@ -220,6 +239,8 @@ type AsyncCall = {
   stores: StoreValues;
   /** The frame it runs in after an `await`, until it waits again or is done. */
   frame: AsyncContextFrame | undefined;
+  /** Of the test it was called in: after a reset it puts nothing back, as a snapshot. */
+  generation: number;
 };
 
 /**
@@ -232,9 +253,9 @@ type AsyncCall = {
  * it leaves it before it waits and when it is done. So what runs in the
  * meantime, like the rest of the page, never reads it.
  */
-export const asyncFunctionHooks = {
+const asyncFunctionHooks = {
   /** At the start of the function. */
-  e: (): AsyncCall => ({ stores: currentFrame.stores, frame: undefined }),
+  e: (): AsyncCall => ({ stores: currentStores(), frame: undefined, generation: resetGeneration }),
   /** Right before an `await`, with what is awaited. */
   s<T>(call: AsyncCall, value: T): T {
     leaveAsyncCall(call);
@@ -254,6 +275,9 @@ export const asyncFunctionHooks = {
 };
 
 function enterAsyncCall(call: AsyncCall): void {
+  // A call from before a reset puts nothing back: a render that outlives its
+  // test does not read the stores of its request in the next test.
+  if (call.generation !== resetGeneration) return;
   currentFrame = call.frame = createFrame(currentFrame, call.stores);
 }
 
@@ -263,7 +287,7 @@ function leaveAsyncCall(call: AsyncCall): void {
   call.frame = undefined;
 }
 
-export function resetAsyncLocalStorage(): void {
+function resetAsyncLocalStorage(): void {
   // Test cleanup must call this to drop request-local state that may be left
   // behind by a failed render, an unawaited promise, or other hanging work.
   // Bumping the generation also prevents delayed promise finalizers and old
@@ -300,3 +324,32 @@ function nearestActiveFrame(frame: AsyncContextFrame | undefined): AsyncContextF
 
   return frame ?? rootFrame;
 }
+
+// One AsyncLocalStorage per page: a store a dependency creates is entered,
+// carried and reset like the plugin's own. The state above is this module's,
+// and the page can evaluate the module more than once: every layer is a
+// module graph of its own, the dependency optimizer bundles it into a
+// dependency that imports `async_hooks`, like React's renderer for Node.js,
+// and a build into each layer. So, as with the registry (nextjs/registry.ts),
+// each evaluation hands out what the first one put on a global of the page.
+const own = {
+  SequentialAsyncLocalStorage: SequentialStorage,
+  enterAmbientScope,
+  asyncFunctionHooks,
+  resetAsyncLocalStorage,
+};
+const pageGlobal = "__vitest_plugin_rsc_async_local_storage__";
+const page = ((globalThis as { [pageGlobal]?: typeof own })[pageGlobal] ??= own);
+
+export const SequentialAsyncLocalStorage = page.SequentialAsyncLocalStorage;
+export type SequentialAsyncLocalStorage<Store> = SequentialStorage<Store>;
+const {
+  enterAmbientScope: pageScope,
+  asyncFunctionHooks: pageHooks,
+  resetAsyncLocalStorage: pageReset,
+} = page;
+export {
+  pageScope as enterAmbientScope,
+  pageHooks as asyncFunctionHooks,
+  pageReset as resetAsyncLocalStorage,
+};

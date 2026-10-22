@@ -76,7 +76,6 @@ test("reads fetch, Request and Response from the server", async () => {
 
 test("has React's Flight server in the rsc layer queue a microtask with the server's queueMicrotask", async () => {
   const serverCode = createServerCode(registry);
-  serverCode.cachedFunctions(() => true);
   const compile = async (layer: "rsc" | "ssr", file: string) =>
     (
       await serverCode
@@ -108,7 +107,6 @@ test("has React's Flight server in the rsc layer queue a microtask with the serv
 
 test("has each step of a render of React's Flight server run with the stores of its first", async () => {
   const serverCode = createServerCode(registry);
-  serverCode.cachedFunctions(() => true);
   const { transform } = serverCode.optimizerPlugin("rsc");
   const file =
     "/app/node_modules/next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.edge.production.js";
@@ -117,10 +115,27 @@ test("has each step of a render of React's Flight server run with the stores of 
   expect((await transform.call({ warn: vi.fn() }, code, file))?.code).toContain(
     `${registry}.performWork(request, performWorkOfReact)`,
   );
-  // A React that renders some other way.
-  await expect(
-    transform.call({ warn: vi.fn() }, `function work(request) {}`, file),
-  ).rejects.toThrow("has no `function performWork(request) {`");
+  // A React that renders some other way: the message says what to do.
+  const error = await transform
+    .call({ warn: vi.fn() }, `function work(request) {}`, file)
+    .catch((error: unknown) => error);
+  expect(String(error)).toContain("has no `function performWork(request) {`");
+  expect(String(error)).toContain(
+    "report it at https://github.com/storybookjs/vitest-plugin-rsc/issues",
+  );
+  // With the version of the Next.js the file is of.
+  const next = path.dirname(createRequire(`${root}/`).resolve("next/package.json"));
+  const { version } = JSON.parse(fs.readFileSync(`${next}/package.json`, "utf8")) as {
+    version: string;
+  };
+  const ofNext = await transform
+    .call(
+      { warn: vi.fn() },
+      `function work(request) {}`,
+      file.replace("/app/node_modules/next", next),
+    )
+    .catch((error: unknown) => error);
+  expect(String(ofNext)).toContain(`of next@${version}, has no`);
 });
 
 test("leaves code alone that names none of them", async () => {
@@ -428,34 +443,29 @@ test("stops with a message when nothing says which files are the host's", async 
   await expect(transform("export const x = typeof window;", virtual)).resolves.toBeUndefined();
 });
 
-test('compiles nothing for the scope of a cached function in an app without "use cache"', () => {
+test("compiles the async functions of the modules of Next that await in a store, and of no other module", () => {
   const serverCode = createServerCode(registry);
-  serverCode.configure(root);
-  serverCode.addTestFiles((file) => file.endsWith(".test.tsx"));
-  const wrapper = "/app/node_modules/next/dist/server/use-cache/use-cache-wrapper.js";
-  const code = `export async function load() { await data(); }`;
-  const { transform } = serverCode.asyncFunctionsOptimizerPlugin();
-  expect(transform.call({ warn: vi.fn() }, code, wrapper)).toBeUndefined();
-  const plugin = serverCode.asyncFunctionsPlugin("client") as unknown as {
-    transform(this: object, code: string, id: string): { code: string } | undefined;
-  };
-  const context = { environment: { config: { cacheDir: path.join(root, "node_modules/.vite") } } };
-  expect(plugin.transform.call(context, code, path.join(root, "app/page.tsx"))).toBeUndefined();
-});
-
-test("compiles the async functions of Next's wrapper of a cached function, and of no other module", () => {
-  const serverCode = createServerCode(registry);
-  serverCode.cachedFunctions(() => true);
   const { transform } = serverCode.asyncFunctionsOptimizerPlugin();
   const compile = (file: string) =>
     transform.call({ warn: vi.fn() }, `export async function cache() { await generate(); }`, file);
 
   for (const build of ["esm/server", "server"]) {
-    const wrapper = `/app/node_modules/next/dist/${build}/use-cache/use-cache-wrapper.js`;
-    expect(compile(wrapper)?.code).toContain(`await ${registry}.asyncFunctionHooks.s(`);
+    const file = `/app/node_modules/next/dist/${build}/use-cache/use-cache-wrapper.js`;
+    expect(compile(file)?.code).toContain(`await ${registry}.asyncFunctionHooks.s(`);
   }
   expect(compile("/app/node_modules/next/dist/esm/server/use-cache/cache-tag.js")).toBeUndefined();
+  // The handler of a Server Action and the render are the ssr layer's, through
+  // `app-page/module`, which the rsc optimizer never sees.
+  expect(
+    compile("/app/node_modules/next/dist/esm/server/app-render/action-handler.js"),
+  ).toBeUndefined();
   expect(compile("/app/node_modules/next/dist/esm/server/app-render/app-render.js")).toBe(
+    undefined,
+  );
+  expect(
+    compile("/app/node_modules/next/dist/esm/server/app-render/create-component-tree.js"),
+  ).toBeUndefined();
+  expect(compile("/app/node_modules/next/dist/esm/client/app-render/app-render.js")).toBe(
     undefined,
   );
   expect(compile("/app/node_modules/zod/index.js")).toBeUndefined();
@@ -463,7 +473,6 @@ test("compiles the async functions of Next's wrapper of a cached function, and o
 
 test("compiles the async functions of the app's server code in the rsc layer, not of a test file", () => {
   const serverCode = createServerCode(registry);
-  serverCode.cachedFunctions(() => true);
   serverCode.configure(root);
   serverCode.addTestFiles((file) => file.endsWith(".test.tsx"));
   const { transform } = serverCode.asyncFunctionsPlugin("client") as unknown as {
@@ -483,7 +492,6 @@ test("compiles the async functions of the app's server code in the rsc layer, no
 
 test("leaves the async functions of a file that does not parse as they are, with a warning", () => {
   const serverCode = createServerCode(registry);
-  serverCode.cachedFunctions(() => true);
   serverCode.configure(root);
   serverCode.addTestFiles((file) => file.endsWith(".test.tsx"));
   const { transform } = serverCode.asyncFunctionsPlugin("client") as unknown as {

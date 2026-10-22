@@ -111,9 +111,9 @@ test("throws in a try for a module that is not there, so that its catch runs", a
   expect(code).toContain('import * as $$cjs0 from "./a";');
   expect(
     runInNewContext(
-      `${code!.split("\n").find((line) => line.startsWith("const $$cjsMissing"))}; (() => { try { $$cjsMissing("sharp") } catch (e) { return e.message } })()`,
+      `${code!.split("\n").find((line) => line.startsWith("const $$cjsMissing"))}; (() => { try { $$cjsMissing("sharp") } catch (e) { return [e.message, e.code] } })()`,
     ),
-  ).toBe("Cannot find module 'sharp'");
+  ).toEqual(["Cannot find module 'sharp'", "MODULE_NOT_FOUND"]);
 });
 
 test("parses TypeScript", async () => {

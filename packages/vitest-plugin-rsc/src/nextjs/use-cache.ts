@@ -50,7 +50,7 @@ export function useCache(kind, id, fn, undeclared) {
 
 /**
  * Whether the app has `"use cache"`: what Next's compiler takes the directive
- * with. Only then is anything compiled for the scope of a cached function.
+ * with. Only then is the directive compiled.
  */
 export function usesCache(project: NextProject): boolean {
   const config = project.config as {

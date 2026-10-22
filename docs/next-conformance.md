@@ -13,13 +13,13 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |          1311 |
-| **Pass**                                            | **945** (72%) |
-| Fail: a bug in the plugin                           |            11 |
+| **Pass**                                            | **956** (73%) |
+| Fail: a bug in the plugin                           |             0 |
 | Fail: Not Yet                                       |           191 |
 | Fail: not applicable                                |           164 |
 | Skipped by the test itself, for a run like this one |            16 |
 
-Of the 1147 tests that apply, 945 pass: **82%**.
+Of the 1147 tests that apply, 956 pass: **83%**.
 
 ### Per Fixture
 
@@ -27,7 +27,7 @@ Of the 1147 tests that apply, 945 pass: **82%**.
 | --------------------------------------------------------- | -------: | --: | ------: | --: | ------: |
 | **Pages and rendering**                                   |          |     |         |     |         |
 | `hello-world`                                             |   4 of 4 |     |         |     |         |
-| `rsc-basic`                                               | 33 of 40 |   3 |       3 |   1 |       1 |
+| `rsc-basic`                                               | 36 of 40 |     |       3 |   1 |       1 |
 | `use-server-inserted-html`                                |   3 of 3 |     |         |     |         |
 | **Navigation**                                            |          |     |         |     |         |
 | `navigation`                                              | 42 of 53 |     |       7 |   4 |         |
@@ -183,15 +183,15 @@ Of the 1147 tests that apply, 945 pass: **82%**.
 | **Cookies, headers, draft mode and after()**              |          |     |         |     |         |
 | `draft-mode`                                              | 20 of 21 |     |       1 |     |         |
 | `draft-mode-middleware`                                   |   1 of 2 |     |       1 |     |         |
-| `set-cookies`                                             |   0 of 5 |   2 |       3 |     |         |
+| `set-cookies`                                             |   2 of 5 |     |       3 |     |         |
 | `dynamic-requests`                                        |   2 of 2 |     |         |     |         |
 | `headers-static-bailout`                                  |   1 of 3 |     |       1 |   1 |         |
 | `x-forwarded-headers`                                     |   2 of 4 |     |         |   2 |         |
 | `server-action-headers-redirect`                          |   1 of 1 |     |         |     |         |
 | `custom-cache-control`                                    |   7 of 9 |     |       2 |     |         |
 | `react-max-headers-length`                                |   1 of 4 |     |         |   3 |         |
-| `next-after-app`                                          | 24 of 34 |   2 |         |   8 |         |
-| `next-after-app-api-usage`                                | 18 of 28 |   4 |       6 |     |         |
+| `next-after-app`                                          | 26 of 34 |     |         |   8 |         |
+| `next-after-app-api-usage`                                | 22 of 28 |     |       6 |     |         |
 | `revalidate-tag-in-after`                                 |   1 of 1 |     |         |     |         |
 | `dynamic-data/fixtures/main`                              |   3 of 5 |     |       2 |     |         |
 | `dynamic-data/fixtures/require-static`                    |   0 of 1 |     |         |   1 |         |
@@ -204,44 +204,6 @@ Of the 1147 tests that apply, 945 pass: **82%**.
 | `segment-cache/mpa-navigations`                           |   2 of 2 |     |         |     |         |
 | `segment-cache/prefetch-partial-rsc`                      |   1 of 1 |     |         |     |         |
 | `segment-cache/stale-search-params-on-replace-regression` |   1 of 1 |     |         |     |         |
-
-### A Bug In The Plugin: 11 Tests
-
-<details><summary>4 × A promise of a Server Action, passed to `after()`, that calls a request API once the action is done. Next renders the page after the action outside the store of the action, with `AsyncLocalStorage.exit()`. Here the store stays exited for the rest of the request, so Next takes the call for one of the page.</summary>
-
-- `next-after-app-api-usage`: nextjs APIs in after() › async APIs in promises passed to after › in server actions › does not error - headers
-- `next-after-app-api-usage`: nextjs APIs in after() › async APIs in promises passed to after › in server actions › does not error - cookies
-- `next-after-app-api-usage`: nextjs APIs in after() › async APIs in promises passed to after › in server actions › does not error - connection
-- `next-after-app-api-usage`: nextjs APIs in after() › async APIs in promises passed to after › in server actions › does not error - io
-
-</details>
-
-<details><summary>2 × Two `Set-Cookie` headers of one rule of `headers()` in `next.config` arrive as one. Next's build hands an adapter the headers of a rule as an object, which keeps one value per name, and `@next/routing` sets them from that.</summary>
-
-- `set-cookies`: set-cookies › for /app › for edge runtime › should set two set-cookie headers
-- `set-cookies`: set-cookies › for /app › for node runtime › should set two set-cookie headers
-
-</details>
-
-<details><summary>2 × A Client Component that renders markup with `renderToStaticMarkup()` of `react-dom/server`. The ssr layer has Next's aliases of its edge runtime, where `react-dom/server` has React's renderer for web streams alone. A route on Node.js gets React's whole entry.</summary>
-
-- `rsc-basic`: app dir - rsc basics › should use canary react for app
-- `rsc-basic`: app dir - rsc basics › should be able to call legacy react-dom/server APIs in client components
-
-</details>
-
-<details><summary>2 × An `after()` of the proxy. What the proxy hands to `waitUntil()` runs after the proxy has returned, without its request stores, and Next needs them to run the callbacks.</summary>
-
-- `next-after-app`: after() in nodejs runtime › runs in middleware
-- `next-after-app`: after() in edge runtime › runs in middleware
-
-</details>
-
-<details><summary>1 × A Server Component that imports `next/router`. Next runs it. Here its module calls `createContext()` with React's server build, which has none, and the page fails.</summary>
-
-- `rsc-basic`: app dir - rsc basics › next internal shared context › should not error if just load next/router module in app page
-
-</details>
 
 ### Not Yet: 191 Tests
 
@@ -746,9 +708,9 @@ Of the 1147 tests that apply, 945 pass: **82%**.
 
 ## What The Results Say
 
-Where the plugin runs something, it mostly runs it as Next does: 947 of the 956 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
+Where the plugin runs something, it runs it as Next does: every one of the 956 tests that are neither a missing feature nor out of reach passes. What does not pass is something the plugin does not do at all, or something a test in a browser cannot see.
 
-**Bugs: 9 tests, 4 causes.** All are in the list above. One is about the server in front of the app: what the proxy hands to `waitUntil()` runs without its request stores. Two are about a module that the ssr layer has as Next's edge runtime has it: `react-dom/server` for a Client Component that calls `renderToStaticMarkup()`, and `next/router` in a Server Component. One is the plugin's `AsyncLocalStorage`, whose `exit()` stays exited for the rest of a request where Node's returns.
+**Bugs: none.** The new fixtures found 11 tests of 5 causes, all fixed in this round: two `Set-Cookie` headers of one rule of `headers()` in `next.config`, a promise of a Server Action passed to `after()` that reads a request API once the action is done, what the proxy hands to `waitUntil()`, which now has its request stores, and two modules that the ssr layer had as Next's edge runtime has them, `react-dom/server` for a Client Component that calls `renderToStaticMarkup()` and `next/router` in a Server Component. Underneath the `react-dom/server` fix was a second copy of the package's `AsyncLocalStorage` in the pre-bundled dependencies of the ssr layer, which lost the `Link` headers of `preload()`; a page now has one, for every layer. `conformance/expectations.json` has no test that fails for a bug in the plugin.
 
 **Not Yet: 191 tests.** The largest cause is more than half of them: **a page that a build prerenders**, 118 tests, 101 of them in the fixtures of `"use cache"` and Cache Components. `next build` renders such a page once and keeps it, and here every request renders its page: see "The Node.js Runtime" in `docs/next-routes.md`. Then **the Pages Router**, 31 tests: fixtures of the App Router have a `pages/` directory to test the two together, its pages and its API routes. Then `ImageResponse` of `next/og`, 12 tests.
 

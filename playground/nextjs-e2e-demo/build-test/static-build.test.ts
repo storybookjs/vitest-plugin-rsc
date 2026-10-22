@@ -185,6 +185,16 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     expect(await page.evaluate(() => "nd" in window)).toBe(build === "development");
   });
 
+  // The build of the ssr layer bundles the package's `async_hooks` into it,
+  // and a package of the app gets the page's `AsyncLocalStorage` there too:
+  // see app/api/request-context.test.ts.
+  test("gives a package the page's AsyncLocalStorage in the ssr layer", async ({ page }) => {
+    await open(page, site, "/request-context");
+    const text = page.getByText(/^Request: /);
+    await text.waitFor();
+    expect(await text.textContent()).toBe("Request: rendered");
+  });
+
   // A page of the host that renders a Client Component itself, with
   // `loadClientModule()`, and fetches a file of its own, and opens no page of
   // the app: see host/client.tsx.

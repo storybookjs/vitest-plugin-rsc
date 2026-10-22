@@ -95,6 +95,42 @@ describe("the compile step", () => {
     expect(() => parseAst(code)).not.toThrow();
   });
 
+  // The shapes of unjs/unctx's tests of its transform, which does what this
+  // one does for Nuxt.
+  test("compiles a function on the first line of a module", () => {
+    const code = compile(`async () => { await g() }`)!;
+
+    expect(code).toMatch(/^async \(\) => \{const __vitest_plugin_rsc_call__=/);
+    expect(() => parseAst(code)).not.toThrow();
+  });
+
+  test("leaves a module as it is that has await only in a name", () => {
+    for (const code of [
+      `export const f = () => awaitable();`,
+      `export const f = () => object.await();`,
+      `export const f = () => $await();`,
+      `export const f = async () => ({ await: 1 }).await;`,
+    ]) {
+      expect(compile(code), code).toBeUndefined();
+    }
+  });
+
+  test("compiles an await inside an await, and one that is the statement of an if", () => {
+    const code = compile(
+      `async function f(x) { await write(await read()); if (x) await g(); else await h(); }`,
+    )!;
+
+    expect(code.match(/__hooks__\.s\(/g)).toHaveLength(4);
+    expect(() => parseAst(code)).not.toThrow();
+  });
+
+  test("compiles an arrow function with one parameter without parentheses", () => {
+    const code = compile(`export const f = async route => (await g(route.path)).length > 0;`)!;
+
+    expect(code).toContain("route =>{const ");
+    expect(() => parseAst(code)).not.toThrow();
+  });
+
   test("compiles what parses", () => {
     const code = compile(`
       export default async function f(a, { b } = {}) {
@@ -356,6 +392,233 @@ const scenarios: Record<string, string> = {
       await cached;
     });
   }`,
+
+  "an await inside an await, and an await as the statement of an if": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    const read = async (ms) => { await sleep(ms); return als.getStore(); };
+    const write = async (value) => { await sleep(1); return value + " " + als.getStore(); };
+    const handle = async (yes) => {
+      const written = await write(await read(2));
+      let seen = "";
+      if (yes) await sleep(1);
+      else await sleep(2);
+      seen += als.getStore();
+      if (yes) seen += " " + (await read(1)); else seen += " no";
+      return written + " " + seen + " " + als.getStore();
+    };
+    await als.run("request", async () => {
+      const cached = als.run("cache", () => handle(true));
+      log("page", await handle(false), als.getStore());
+      log("cached", await cached, als.getStore());
+    });
+  }`,
+
+  "an arrow with one parameter without parentheses, and an expression body": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    const read = async ms => (await sleep(ms), [ms, als.getStore()].join(" "));
+    await als.run("request", async () => {
+      const cached = als.run("cache", () => read(2));
+      log("page", await read(1), als.getStore());
+      log("cached", await cached, als.getStore());
+    });
+  }`,
+
+  "an await of what is not a promise": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    const read = async () => {
+      const values = [await 1, await null, await { then: undefined }, await undefined];
+      return values.length + " " + als.getStore();
+    };
+    await als.run("request", async () => {
+      const cached = als.run("cache", read);
+      await sleep(1);
+      log("page", await read(), als.getStore());
+      log("cached", await cached, als.getStore());
+    });
+  }`,
+
+  // The shapes of the server code of an app, each with a value and the store
+  // after an \`await\`, while the rest of the request runs in the meantime.
+  "a class method, a static method, and super.method() after an await": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    class Base {
+      async read(ms) { await sleep(ms); return "base " + als.getStore(); }
+    }
+    class Notes extends Base {
+      static async count(ms) { await sleep(ms); return this.name + " " + als.getStore(); }
+      async read(ms) {
+        await sleep(ms);
+        const own = als.getStore();
+        return (await super.read(ms)) + ", " + own + " " + als.getStore();
+      }
+    }
+    await als.run("request", async () => {
+      const cached = als.run("cache", async () => {
+        log(await new Notes().read(2), await Notes.count(1), als.getStore());
+      });
+      log(await new Notes().read(1), await Notes.count(2), als.getStore());
+      await cached;
+    });
+  }`,
+
+  "a parameter default that is an async arrow, and new.target in a constructor": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    async function read(load = async () => { await sleep(2); return als.getStore(); }) {
+      await sleep(1);
+      return (await load()) + " " + als.getStore();
+    }
+    class Note {
+      constructor() {
+        this.loaded = (async () => {
+          await sleep(1);
+          return new.target.name + " " + als.getStore();
+        })();
+      }
+    }
+    await als.run("request", async () => {
+      const cached = als.run("cache", async () => {
+        log(await read(), await new Note().loaded, als.getStore());
+      });
+      log(await read(), await new Note().loaded, als.getStore());
+      await cached;
+    });
+  }`,
+
+  "an object-literal method": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    const notes = {
+      title: "notes",
+      async read(ms) { await sleep(ms); return this.title + " " + als.getStore(); },
+      async ["computed"](ms) { await sleep(ms); return als.getStore(); },
+    };
+    await als.run("request", async () => {
+      const cached = als.run("cache", async () => {
+        log(await notes.read(2), await notes.computed(1), als.getStore());
+      });
+      log(await notes.read(1), await notes.computed(2), als.getStore());
+      await cached;
+    });
+  }`,
+
+  "an async arrow with a default and a destructured parameter": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    const read = async ({ id, tags: [first] = [] }, ms = 1) => {
+      await sleep(ms);
+      return id + " " + first + " " + als.getStore();
+    };
+    await als.run("request", async () => {
+      const cached = als.run("cache", async () => {
+        log(await read({ id: "a", tags: ["x"] }, 2), await read({ id: "b" }), als.getStore());
+      });
+      log(await read({ id: "c" }), als.getStore());
+      await cached;
+    });
+  }`,
+
+  "arguments and this after an await": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    async function read(ms) {
+      await sleep(ms);
+      return [this.name, arguments.length, arguments[1], als.getStore()].join(" ");
+    }
+    const self = { name: "self" };
+    await als.run("request", async () => {
+      const cached = als.run("cache", async () => {
+        log(await read.call(self, 2, "second"), als.getStore());
+      });
+      log(await read.call(self, 1, "other", "third"), als.getStore());
+      await cached;
+    });
+  }`,
+
+  "nested async functions: the inner one reads the store of the outer one": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    async function outer(ms) {
+      await sleep(ms);
+      async function inner() {
+        await sleep(ms);
+        return als.getStore();
+      }
+      const fromInner = await inner();
+      const fromArrow = await (async () => { await sleep(1); return als.getStore(); })();
+      return [fromInner, fromArrow, als.getStore()].join(" ");
+    }
+    await als.run("request", async () => {
+      const cached = als.run("cache", () => outer(2));
+      log("page", await outer(1), als.getStore());
+      log("cached", await cached, als.getStore());
+    });
+  }`,
+
+  "an await in a catch and in a finally": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    const read = async () => {
+      let value;
+      try {
+        await sleep(1);
+        throw new Error("no");
+      } catch (error) {
+        value = error.message + " " + (await sleep(2), als.getStore());
+      } finally {
+        await sleep(1);
+        value += " " + als.getStore();
+      }
+      return value;
+    };
+    await als.run("request", async () => {
+      const cached = als.run("cache", read);
+      log("page", await read(), als.getStore());
+      log("cached", await cached, als.getStore());
+    });
+  }`,
+
+  "an await in a ternary and in a template literal": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    const value = async (ms) => { await sleep(ms); return als.getStore(); };
+    const read = async (yes) => {
+      const chosen = yes ? await value(2) : await value(1);
+      return \`\${chosen} \${await value(1)} \${als.getStore()}\`;
+    };
+    await als.run("request", async () => {
+      const cached = als.run("cache", () => read(true));
+      log("page", await read(false), als.getStore());
+      log("cached", await cached, als.getStore());
+    });
+  }`,
+
+  "an await in a switch and in a labelled loop": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    const read = async (kind) => {
+      const seen = [];
+      switch (kind) {
+        case "a":
+          await sleep(1);
+          seen.push(als.getStore());
+        // falls through
+        case "b": {
+          await sleep(1);
+          seen.push(als.getStore());
+          break;
+        }
+        default:
+          seen.push("default");
+      }
+      outer: for (const i of [1, 2, 3]) {
+        for (const j of [1, 2]) {
+          await sleep(1);
+          if (j === 2) continue outer;
+          if (i === 3) break outer;
+          seen.push(i + ":" + als.getStore());
+        }
+      }
+      return seen.join(" ");
+    };
+    await als.run("request", async () => {
+      const cached = als.run("cache", () => read("a"));
+      log("page", await read("b"), als.getStore());
+      log("cached", await cached, als.getStore());
+    });
+  }`,
 };
 
 describe("a store follows the awaits of a compiled function as it does on Node.js", () => {
@@ -395,6 +658,30 @@ describe("a store follows the awaits of a compiled function as it does on Node.j
 
     expect(await runWithNode(source)).toEqual(["cache", "cache", "request"]);
     expect(await runInRequest(source)).toEqual(["request", "request", "request"]);
+  });
+
+  test("so does an async generator, which is left as it is: after its first yield", async () => {
+    const source = `async function (ALS, log, sleep) {
+      const als = new ALS();
+      async function* pages() {
+        yield als.getStore();
+        await sleep(1);
+        yield als.getStore();
+      }
+      await als.run("request", async () => {
+        await als.run("cache", async () => {
+          for (const page = pages(); ; ) {
+            const { value, done } = await page.next();
+            if (done) break;
+            log(value, als.getStore());
+          }
+        });
+      });
+    }`;
+
+    expect(await runWithNode(source)).toEqual(["cache cache", "cache cache"]);
+    // The function that calls next() is compiled, and has its store back.
+    expect(await runInRequest(source)).toEqual(["cache cache", "request cache"]);
   });
 
   test("and a callback, of a promise or of a timer", async () => {
@@ -476,5 +763,54 @@ describe("a store follows the awaits of a compiled function as it does on Node.j
     expect(await result).toBe("cache");
     seen.push(als.getStore());
     expect(seen).toEqual(["request", "request", "request"]);
+  });
+});
+
+// Where no store is entered, as in an app that never calls run(): a compiled
+// function is the function it was.
+describe("a compiled function with no store entered", () => {
+  beforeAll(() => void vi.stubGlobal("__hooks__", asyncFunctionHooks));
+  afterAll(() => void vi.unstubAllGlobals());
+  afterEach(resetAsyncLocalStorage);
+
+  const source = `({
+    name: "notes",
+    async read(id) {
+      const before = this.storage.getStore();
+      await Promise.resolve();
+      if (id === "404") throw new Error("No note " + id);
+      return [this.name, id, arguments.length, before, this.storage.getStore()];
+    },
+  })`;
+
+  test.for([
+    ["as it is", source],
+    ["compiled", transformAsyncFunctions(source, "notes.js", "__hooks__")!.code],
+  ])("returns, throws and has its this %s", async ([, code]) => {
+    expect(code).toBeDefined();
+    const notes = Object.assign((0, eval)(code!), {
+      storage: new SequentialAsyncLocalStorage<string>(),
+    });
+
+    await expect(notes.read("1", "extra")).resolves.toEqual([
+      "notes",
+      "1",
+      2,
+      undefined,
+      undefined,
+    ]);
+    await expect(notes.read("404")).rejects.toThrow("No note 404");
+    expect(notes.storage.getStore()).toBeUndefined();
+  });
+
+  test("and leaves no store behind, also when it throws", async () => {
+    const notes = (0, eval)(transformAsyncFunctions(source, "notes.js", "__hooks__")!.code);
+    notes.storage = new SequentialAsyncLocalStorage<string>();
+    await notes.read("404").catch(() => {});
+    // A store entered after the function is done is not mixed with its own.
+    await notes.storage.run("later", async () => {
+      expect(await notes.read("1")).toEqual(["notes", "1", 1, "later", "later"]);
+    });
+    expect(notes.storage.getStore()).toBeUndefined();
   });
 });

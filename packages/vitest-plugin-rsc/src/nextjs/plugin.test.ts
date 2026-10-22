@@ -333,32 +333,34 @@ test("resolves a bare import of Next to its file in a build", async () => {
   expect(await resolve(source, page, null)).toEqual({ id: commonJs });
 });
 
-// The server layers take Next's alias tables for its edge runtime, and for
-// an entry that resolves what the app's own code imports and differs by
-// runtime, the Node.js entry: a Client Component that calls
-// `renderToStaticMarkup()` of `react-dom/server` renders on the server too,
-// where the edge table's module throws, and `react-dom/static` is React's
-// entry for Node.js alike (project/layers.ts). Next's own renderer imports
-// `react-dom/server.edge`, which stays the build for web streams.
+// The server layers take Next's alias tables for its edge runtime. In the ssr
+// layer `react-dom/server` and `react-dom/static` are the Node.js entries for
+// the app's code, its files and its packages, and the edge table's for Next's
+// own files (project/layers.ts): a Client Component that calls
+// `renderToStaticMarkup()` renders on the server too, which the edge table's
+// entry has not, and Next's renderer, on web streams here, keeps the entries
+// it is written against.
 test("gives a Client Component React's server entries for Node.js in the ssr layer", async () => {
   const plugins = vitestPluginNext();
   const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
   await (plugin.config as ConfigHook<Config>)({ root }, { command: "build" });
-  const resolveIn = async (layer: string, source: string) => {
+  const page = path.join(root, "app/page.tsx");
+  // `null` for none.
+  const resolveIn = async (layer: string, source: string, importer: string | null = page) => {
     const resolver = plugins.find(
       ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
     )!;
     const resolveId = resolver.resolveId as (
       this: object,
       source: string,
-      importer: string,
+      importer: string | undefined,
       options: object,
     ) => Promise<unknown>;
     const context = {
       environment: { mode: "build" },
       resolve: async (id: string) => ({ id }),
     };
-    return resolveId.call(context, source, path.join(root, "app/page.tsx"), {});
+    return resolveId.call(context, source, importer ?? undefined, {});
   };
   const reactDom = "next/dist/compiled/react-dom";
   // The build of the `build` option, a production one for a build.
@@ -367,9 +369,29 @@ test("gives a Client Component React's server entries for Node.js in the ssr lay
       new RegExp(`^${reactDom}/cjs/react-dom-server\\.edge\\.(development|production)\\.js$`),
     ),
   };
+  const nodeEntries = {
+    server: `${reactDom}/server.node.js`,
+    static: `${reactDom}/static.node.js`,
+  };
 
-  expect(await resolveIn("ssr", "react-dom/server")).toEqual({ id: `${reactDom}/server.node.js` });
-  expect(await resolveIn("ssr", "react-dom/static")).toEqual({ id: `${reactDom}/static.node.js` });
+  // A file of the app, and one of a package, which may re-export it.
+  for (const importer of [page, path.join(root, "node_modules/some-package/index.js")]) {
+    expect(await resolveIn("ssr", "react-dom/server", importer)).toEqual({
+      id: nodeEntries.server,
+    });
+    expect(await resolveIn("ssr", "react-dom/static", importer)).toEqual({
+      id: nodeEntries.static,
+    });
+  }
+  // Next's renderer for web streams, which the plugin runs.
+  const streamOps = path.join(nextDir, "dist/esm/server/app-render/stream-ops.web.js");
+  expect(await resolveIn("ssr", "react-dom/server", streamOps)).toEqual(edgeRenderer);
+  expect(await resolveIn("ssr", "react-dom/static", streamOps)).toEqual({
+    id: `${reactDom}/static.edge.js`,
+  });
+  // Without an importer, as for an entry of the optimizer: Next's.
+  expect(await resolveIn("ssr", "react-dom/server", null)).toEqual(edgeRenderer);
+  // What Next's own files import by name, for any importer.
   expect(await resolveIn("ssr", "react-dom/server.edge")).toEqual(edgeRenderer);
   expect(await resolveIn("browser", "react-dom/server")).toEqual({
     id: `${reactDom}/server.browser.js`,

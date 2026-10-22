@@ -35,7 +35,7 @@ import { moduleFileAt } from "./project/context.ts";
 import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { createCommonJsPlugin } from "./commonjs.ts";
-import { createUseCachePlugin, useCacheId, useCacheModule, usesCache } from "./use-cache.ts";
+import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
@@ -279,9 +279,13 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
 
   /**
    * Where a specifier leads in this layer: another specifier, a bridge module
-   * (`\0...`), or `false` for a module the layer leaves empty.
+   * (`\0...`), or `false` for a module the layer leaves empty. For the app's
+   * code, `ofApp`, with the entries Next's own files do not get, like React's
+   * `react-dom/server` for Node.js in the ssr layer (project/layers.ts).
    */
-  function normalize(source: string): string | false {
+  function normalize(source: string, ofApp = false): string | false {
+    const appTarget = ofApp ? getProject().appAliases[layer][`${source}$`] : undefined;
+    if (appTarget !== undefined) return normalize(appTarget);
     const cached = normalized.get(source);
     if (cached !== undefined) return cached;
 
@@ -328,7 +332,8 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     // Vite's `parent > dependency`: the layer resolves the dependency alike
     // from any parent, and a specifier of Next from the project.
     const source = entry.slice(entry.lastIndexOf(">") + 1).trim();
-    const target = normalize(source);
+    // An entry of the config is the app's.
+    const target = normalize(source, true);
     if (target === false || target.startsWith("\0") || isNodeModule(target)) return;
     // A package that Next depends on, like `styled-jsx`, found by its name
     // from Next. Not a file of Next, like its polyfill of `object-assign`.
@@ -374,7 +379,11 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           specifier = `next/${relative.split(path.sep).join("/")}`;
         }
 
-        const target = normalize(specifier);
+        // Not a file of Next's own, under `next/dist`: one of the app or of
+        // a package, which gets the app's entries (project/layers.ts). The
+        // dependency optimizer and the dev server alike give the file.
+        const ofApp = !!importer && !normalizePath(importer).includes("/next/dist/");
+        const target = normalize(specifier, ofApp);
         if (target === false) return emptyModuleId;
         if (isNodeModule(target)) {
           // A dependency that says what it uses for the module in a browser
@@ -672,7 +681,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
   const serverCode = createServerCode(registry, options);
-  serverCode.cachedFunctions(() => usesCache(getProject()));
   const getProject = () => project;
   if (options.build !== undefined && !nextBuilds.includes(options.build)) {
     throw new Error(
@@ -1333,11 +1341,12 @@ function dependencyBuildPlugin(
       if (!normalizePath(file).includes("/node_modules/") || !/\.[cm]?js$/.test(file)) return;
       const compiled = await compile.transform(code, file);
       const isServerCode = layer !== "browser" && serverCode.isServerCode(file, layer);
-      // What keeps the stores of a cached function, as the optimizer does it.
-      const forCache = isServerCode
-        ? serverCode.forCachedFunctions(this, compiled?.code ?? code, file, layer)
+      // What keeps the stores of a module of Next across an `await` and a
+      // render, as the optimizer does it.
+      const forStores = isServerCode
+        ? serverCode.forStores(this, compiled?.code ?? code, file, layer)
         : undefined;
-      const source = forCache?.code ?? compiled?.code ?? code;
+      const source = forStores?.code ?? compiled?.code ?? code;
       const kept = source === (compiled?.code ?? code) ? compiled : { code: source };
       // The ones it names: most modules name none.
       const define = Object.fromEntries(
@@ -1348,7 +1357,7 @@ function dependencyBuildPlugin(
       if (!isServerCode && Object.keys(define).length === 0) return kept;
       try {
         const defined = isServerCode
-          ? await compileServerCode(source, file, registry, { ...define, ...forCache?.define })
+          ? await compileServerCode(source, file, registry, { ...define, ...forStores?.define })
           : await transformWithOxc(source, file, { lang: "js", define });
         return defined ?? kept;
       } catch (error) {
