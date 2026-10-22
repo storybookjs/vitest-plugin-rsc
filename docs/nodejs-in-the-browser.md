@@ -1,47 +1,49 @@
 # Node.js in the browser
 
-Your Next.js server code runs in the test's browser tab, so it can't use Node.js itself. Instead, `vitestPluginNext()` gives the server layers, `rsc` and `ssr`, every Node.js module a browser can provide, plus an in-memory disk. Server code is told it runs on a server, the way Next's build tells it (see [Server code in the browser](nextjs-guide.md#server-code-in-the-browser)), and it gets these modules in place of Node's.
+Your server code runs in a browser tab, which has no Node.js. So `vitestPluginNext()` hands your server code a stand-in for every Node.js module a browser can reasonably provide, plus an in-memory disk.
 
-`vitestPluginRSC()` on its own, without Next.js, only provides `node:async_hooks`. Everything on this page comes with `vitestPluginNext()`.
+> [!NOTE]
+> All of this comes with `vitestPluginNext()`. On its own, `vitestPluginRSC()` only provides `node:async_hooks`.
 
-## What works as it is
+## What just works
 
-The APIs that Node.js and browsers share need no stand-in: `fetch`, `Request`, `Response`, `Headers`, `URL`, `FormData`, Web Streams, `TextEncoder`, `Blob`, `crypto.subtle`, `crypto.randomUUID()`, `structuredClone` and the timers.
+APIs that Node.js and browsers share need no stand-in at all: `fetch`, `Request`, `Response`, `Headers`, `URL`, `FormData`, Web Streams, `TextEncoder`, `Blob`, `crypto.subtle`, `crypto.randomUUID()`, `structuredClone` and timers.
 
-When you have a choice, prefer these APIs in your server code: Web Streams, `Uint8Array`, Web Crypto, `Blob`, `fetch` and `FormData`. They behave the same in both places.
+If you have the choice, use these in your server code. They behave the same everywhere.
 
-## The plugin's stand-ins
+## The stand-ins
 
-Each Node.js module that the server layers import is a file of the plugin's own, `vitest-plugin-rsc/node/<name>`. None of them comes from Next's polyfills. These are the ones Next's server needs:
+These are the modules Next's server needs, and what you get for each:
 
-- **`async_hooks`**: `AsyncLocalStorage` runs one request at a time.
-- **`process`**: one per tab, shared by the test and the server. It has `env`, `cwd()` (which returns `/`), `nextTick()` and `hrtime.bigint()`. The rest, like `platform`, is unenv's.
-- **`buffer`, `events`, `util` and `assert`**: Node's own code, packaged for browsers. That's the `buffer` package (through unenv) and the `events`, `util` and `assert` packages, with Node's real `inspect()` in `util`. `Buffer` also reads and writes `base64url`, and `buffer` has `isUtf8()`, `isAscii()` and the browser's `File`.
-- **`stream`**: readable-stream 4, which packages Node.js 18's streams, with `Readable.toWeb()` and `Readable.fromWeb()`.
-- **`path`**: path-browserify, Node's POSIX `path`.
-- **`crypto`**: Web Crypto for random values and `subtle`, plus `randomInt()` and `randomFill()`. `createHash()`, `hash()` and `createHmac()` support MD5, SHA-1 and SHA-2 through [@noble/hashes](https://github.com/paulmillr/noble-hashes), also as streams, and there's `timingSafeEqual()`. Any other algorithm throws, and so do ciphers, signatures and key derivation.
-- **`zlib`**: gzip, deflate and raw deflate through [fflate](https://github.com/101arrowz/fflate), both sync and with a callback, and their checksums are verified. Streams, Brotli, Zstandard, gzip data with more than one member, and the options `info`, `flush`, `finishFlush` and a `windowBits` below 15 all throw. Bytes after the end of gzip or zlib data fail the check, where Node would read them.
-- **`stream/consumers`**: `text()`, `json()`, `buffer()` and the others, for a Node.js stream, a web stream or an async iterable.
-- **`timers/promises`**: the page's timers, with `signal` support.
-- **`fs` and `fs/promises`**: an in-memory disk, see [below](#the-disk).
+| Module                               | What you get                                                                                                   |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `async_hooks`                        | `AsyncLocalStorage`, one request at a time.                                                                    |
+| `process`                            | One per tab, shared by test and server. `env`, `cwd()` (returns `/`), `nextTick()`, `hrtime.bigint()`.         |
+| `buffer`, `events`, `util`, `assert` | Node's own code, packaged for browsers. `util.inspect()` is the real one.                                      |
+| `stream`                             | readable-stream 4 (Node 18's streams), with `Readable.toWeb()` and `fromWeb()`.                                |
+| `stream/consumers`                   | `text()`, `json()`, `buffer()` and the rest.                                                                   |
+| `path`                               | path-browserify: Node's POSIX `path`.                                                                          |
+| `crypto`                             | Web Crypto, plus `randomInt()`, `randomFill()`, `timingSafeEqual()`, and MD5 / SHA-1 / SHA-2 hashes and HMACs. |
+| `zlib`                               | gzip, deflate and raw deflate (sync and callback), via fflate.                                                 |
+| `timers/promises`                    | The page's timers, with `signal` support.                                                                      |
+| `fs`, `fs/promises`                  | An in-memory disk. See [below](#the-disk).                                                                     |
 
-The other modules, such as `os`, `url`, `http` and `querystring`, are [unenv](https://github.com/unjs/unenv)'s stand-ins, built from what a browser has. A function that unenv can't provide throws when you call it, not when you import it, so a package that imports it still loads. Examples are `net.connect()`, `child_process.spawn()`, `http.request()` and `crypto.createSign()`. Some functions answer the way a machine without the feature would: `os.hostname()` returns `""`.
+Everything else, like `os`, `url`, `http` and `querystring`, comes from [unenv](https://github.com/unjs/unenv).
+
+Some things throw: ciphers, signatures and key derivation in `crypto`; streams, Brotli and Zstandard in `zlib`; and anything unenv can't provide, like `net.connect()`, `child_process.spawn()` or `http.request()`. They throw when _called_, not when imported, so a package that merely imports them still loads.
 
 ## Which functions work
 
-A Node.js function gets a working stand-in when something needs it:
+A Node.js function gets a working stand-in when something real needs it: Next's server, one of the database recipes, or a common library (like the HMAC that checks a webhook signature). And it's only added when it can be built on a web API or a well-known library, and tested against Node's own implementation.
 
-- Next's server, on a code path the plugin supports.
-- A database recipe or a playground in this repository.
-- Your server code, or a common library's, like the HMAC that verifies a webhook signature.
-
-The stand-in also has to be glue over a web API or over the public API of an established library, with no cipher or compression of its own, and it has to be tested against Node's own implementation.
-
-Everything else throws when called, with an error that names the function. A stand-in either does what Node.js does or throws, because a wrong answer could pass a test that should fail.
+Everything else throws, with an error that names the function. That's on purpose: a stand-in either does exactly what Node does, or it throws. A wrong answer could make a test pass that should fail.
 
 ## When your code needs a function that throws
 
-You have two options. Mock the module of your app that calls it (see [Mocks](nextjs-guide.md#mocks)), or alias the Node.js module to one of your own in `vitest.config.ts`:
+Two options:
+
+1. **Mock the module of your app that calls it.** See [Mocks](nextjs-guide.md#mocks).
+2. **Alias the Node.js module** to your own in `vitest.config.ts`:
 
 ```ts
 export default defineConfig({
@@ -56,16 +58,16 @@ export default defineConfig({
 });
 ```
 
-Your code and its packages then get your module instead. The e2e demo does this: see `playground/nextjs-e2e-demo/stand-ins/`.
+The e2e demo does this, see `playground/nextjs-e2e-demo/stand-ins/`.
 
 ## What can't run in a browser
 
-- **Native addons**, like `better-sqlite3`, `sharp` or `bcrypt`, don't load. Use a JavaScript or WebAssembly alternative, like `bcryptjs`, or mock the module that imports the addon.
-- **TCP sockets** don't exist, so a database driver can't reach its server. A recipe from [Databases](databases.md) gives your app's ORM a database inside the tab instead. A client that sends its requests with `fetch` works with [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) in front of it.
+- **Native addons**, like `better-sqlite3`, `sharp` or `bcrypt`. Use a JavaScript or WebAssembly alternative, like `bcryptjs`, or mock the module that imports them.
+- **TCP sockets**, so database drivers can't reach a server. A [database recipe](databases.md) puts the database in the tab instead. HTTP-based clients work fine with [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) in front of them.
 
 ## The disk
 
-`node:fs` and `node:fs/promises` are an in-memory disk, backed by [memfs](https://github.com/streamich/memfs). The test's own `node:fs` is the same disk, so a test can write a file for the server to read, and read back what a Server Action wrote:
+`node:fs` is an in-memory disk, backed by [memfs](https://github.com/streamich/memfs). Your test's `node:fs` is the same disk, so you can write a file for the server to read, or read back what a Server Action wrote:
 
 ```ts
 import fs from "node:fs";
@@ -79,8 +81,8 @@ test("shows the note on disk", async () => {
 });
 ```
 
-- The disk starts empty for every test, apart from `/tmp`, with no setup on your part. Anything a setup file or a `beforeAll()` writes is gone before the test starts, so write files in a `beforeEach()` or in the test itself.
-- None of your project's files are on it, and `process.cwd()` is `/`. A Server Component that reads `content/*.md` finds nothing until the test writes those files.
-- Only the server layers have the disk. A Client Component has no `fs`, just as in Next.
+- **It starts empty for every test** (apart from `/tmp`). Write files in a `beforeEach()` or the test itself, not in `beforeAll()`.
+- **Your project's files aren't on it.** `process.cwd()` is `/`, so a Server Component that reads `content/*.md` finds nothing until the test writes those files.
+- **Only server code has it.** A Client Component has no `fs`, just like in Next.
 
-See [The Server's Disk](next-routes.md#the-servers-disk) for how it works.
+How it works: [The Server's Disk](internals/next-routes.md#the-servers-disk).
