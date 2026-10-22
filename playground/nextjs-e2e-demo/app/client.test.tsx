@@ -305,6 +305,13 @@ test("has the browser's own fetch, cookies and storage", async () => {
   expect((await fetch("/api/export")).headers.get("content-disposition")).toBeNull();
 });
 
+// The host's, as this file is: not the timers of a page, see leave.test.tsx.
+test("has the browser's own timers, which a spy of the test is on", () => {
+  vi.spyOn(globalThis, "setTimeout");
+  setTimeout(() => {}, 0);
+  expect(setTimeout).toHaveBeenCalledOnce();
+});
+
 test("says that a form cannot navigate without Next's router either", async () => {
   const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
   const { getByRole } = await render(

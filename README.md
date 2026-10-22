@@ -206,7 +206,7 @@ There's a Redis recipe for `ioredis` too. See [Databases](docs/databases.md) for
 
 ## Storybook
 
-Storybook needs no server either. With [`@storybook/nextjs-vite-rsc`](packages/storybook-nextjs-vite-rsc), a story renders a page of your app with the same mocks as the tests, and a static Storybook build carries the database in the tab. In a deployed Storybook, a form submits and its Server Action writes to that database, and every story starts from an empty one. The notes demo, `playground/nextjs-notes-demo`, is built that way.
+Storybook needs no server either. With [`@storybook/nextjs-vite-rsc`](packages/storybook-nextjs-vite-rsc), a story renders a page of your app with the same mocks as the tests, and a static Storybook build carries the database in the tab. In a deployed Storybook, a form submits and its Server Action writes to that database, and every story starts from an empty one. Storybook's Vitest addon runs every story as a test, and a test can import a story and run it. The notes demo, `playground/nextjs-notes-demo`, is built that way.
 
 ## React Server Components without Next.js
 

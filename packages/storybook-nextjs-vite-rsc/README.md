@@ -293,8 +293,9 @@ are: Storybook's items in the browser's storage are invisible to the app,
 and what the app stores does not reach them. The browser's DevTools show
 the browser's storage, not the page's. When Storybook leaves the story, the
 context closes, and the document has the browser's own APIs again: what the
-page left running, like a timer, writes to the browser's storage after
-that.
+page left running, like a listener of an event, writes to the browser's
+storage after that. A timer of the page does not run after it is left, as a
+browser drops it with the page.
 
 ## `parameters.nextjs`
 
@@ -422,6 +423,67 @@ story: a server story renders on the server, so there is no snippet of
 what it rendered. The args table reads the files with Storybook's docgen,
 for both kinds.
 
+## Vitest
+
+Storybook's Vitest addon runs every story as a test, in Vitest's Browser
+Mode, and from Storybook's UI. A story file is a test file there, as it is
+to the plugin: a server story renders in a page of the app, a client story
+in the browser layer, each with the preview its file imports.
+
+```sh
+pnpm add -D @storybook/addon-vitest vitest @vitest/browser-playwright
+```
+
+List `@storybook/addon-vitest` in the `addons` of `.storybook/main.ts`,
+for its panel, and add a project of the addon to the Vitest config:
+
+```ts
+import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
+import { playwright } from "@vitest/browser-playwright";
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  plugins: [storybookTest()],
+  test: {
+    browser: {
+      enabled: true,
+      headless: true,
+      provider: playwright(),
+      instances: [{ browser: "chromium" }],
+    },
+  },
+});
+```
+
+The framework brings the plugin, as in Storybook, so the project has no
+`vitestPluginRSC()` of its own. A story has the CSS of its file, as a test
+has that of its test file.
+
+### A Story In A Test
+
+A test imports a story and runs it with `run()`: CSF Next gives the story
+its preview, so there is no `setProjectAnnotations()`. The story renders
+and plays, and the test can ask more of what it rendered. A server story
+runs in a test file without `"use client"`, a client story in one with it,
+as any test file of the plugin, in a project with the plugin.
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { WithNotes } from "./page.stories";
+
+test("the notes page", async () => {
+  await WithNotes.run();
+  await expect.element(page.getByRole("link", { name: "New note" })).toBeVisible();
+});
+```
+
+`sb.mock()` of `preview.tsx` mocks nothing in such a test, and
+`sb.mock(import("../lib/db"))` evaluates the module it names where the
+test evaluates `preview.tsx`, also in the browser. Name the module by its
+path, `sb.mock("../lib/db.ts")`, which Storybook and the addon read alike,
+and mock it with `vi.mock()` in a setup file of the test's project.
+
 ## Not In This Version
 
 - Controls on a docs page do not reach a server story, which is in an
@@ -435,7 +497,3 @@ for both kinds.
 - A docs page has the CSS of the client stories it shows inline: not that
   of the MDX file itself, or of `preview.tsx` on a page without a client
   story.
-- Storybook's Vitest addon and portable stories (a story's `run()` in a
-  Vitest test) are not supported yet: nothing tests them. Outside
-  Storybook a server story leaves its stylesheets to the plugin's default,
-  those of the setup files and the test file.

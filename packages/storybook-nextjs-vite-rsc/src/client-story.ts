@@ -24,20 +24,25 @@ const navigated = (url: URL) => navigation(url.href);
 
 /**
  * Before a client story: the preview stays when a link or a form of it would
- * load another document, and it has the stylesheets of its file, until
- * Storybook leaves the story and aborts its signal, also while they load.
- * Left while they load, it rejects with the signal's reason, which Storybook
- * takes as the end of the render: it reports nothing, and runs the cleanups
- * of the hooks before this one. A docs page shows its client stories inline, each a use
- * of its own, so one that goes takes nothing that another one shows.
+ * load another document, and it has the stylesheets of its file, until the
+ * render ends. The preview aborts the story's signal when it leaves the
+ * story, also while they load: left while they load, it rejects with the
+ * signal's reason, which Storybook takes as the end of the render: it
+ * reports nothing, and runs the cleanups of the hooks before this one. A
+ * render that another one of the same story replaces, and a portable story,
+ * as under Storybook's Vitest addon, abort no signal: they run the cleanup
+ * this hook returns. A docs page shows its client stories inline, each a
+ * use of its own, so one that goes takes nothing that another one shows.
  */
 export const beforeEach: BeforeEach<ReactRenderer> = async ({ parameters, abortSignal }) => {
   // Once for a render: new args run `beforeEach` again with its signal.
   if (renders.has(abortSignal)) return;
   renders.add(abortSignal);
-  abortSignal.addEventListener("abort", keepHostDocument(navigated), { once: true });
-  const files = hostFilesOf(parameters.fileName as string);
+  const release = keepHostDocument(navigated);
+  abortSignal.addEventListener("abort", release, { once: true });
+  const files = hostFilesOf(parameters);
   if (files) await linkStylesheetsOf(files, { signal: abortSignal });
+  return release;
 };
 
 // The signal of each render of a client story.

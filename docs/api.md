@@ -95,7 +95,7 @@ These are for a host other than Vitest. See [Another Host Than Vitest](next-rout
 
 ## `vitestPluginNext(options)`
 
-The Vite plugin for Next.js. Use it together with `vitestPluginRSC()`. All options are optional:
+The Vite plugin for Next.js. Put it after `vitestPluginRSC()` in the plugins: Vite RSC makes the client reference of a test file with `"use client"` among the plugins that run last, and `vitestPluginNext()` puts its line in front of that reference, so it has to come after. Before `vitestPluginRSC()`, it throws. All options are optional:
 
 | Option           | What it does                                                                                                                                                                                                                                               |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

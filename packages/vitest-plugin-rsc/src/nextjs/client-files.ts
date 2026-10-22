@@ -8,21 +8,30 @@ import {
   type ResolvedConfig,
 } from "vite";
 import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
+import {
+  testFileReferencesPlugin,
+  testFilesPlugin,
+  type TestFilesApi,
+} from "../test-file-references.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
 import { movesItsLinks } from "./styles.ts";
 
-// A file of the host is a test file or a setup file of Vitest. One with
+// A file of the host is a test file or a setup file of Vitest, or a file of
+// another host, like a story (server-code.ts). One with
 // `"use client"` is a client boundary, as a file with that directive is in
 // React: a module of the browser layer. Vitest still imports it in its own
 // environment, which is the rsc layer, to collect its tests. There Vite RSC
 // makes it a client reference, as it does every file with the directive: a
 // module that exports a reference for each export, and runs none of the
-// file's code. The plugin has that module load the file in the browser layer
-// before anything else runs, see `clientFileCode()` and client-graph.ts,
-// and with a dev server a change of what the file imports there changes that
-// module. That is all of it. A file without the directive is server code,
-// and what it imports with the directive is a reference, which loads when
-// something renders it, as in React.
+// file's code. For a test file or a setup file it does so after the plugins
+// of the normal order compiled the file, so a plugin of the test project
+// sees it as written: see ../test-file-references.ts. The plugin has that
+// module load the file in the browser layer before anything else runs, see
+// `clientFileCode()` and client-graph.ts, and with a dev server a change of
+// what the file imports there changes that module. That is all of it. A file
+// without the directive is server code, and what it imports with the
+// directive is a reference, which loads when something renders it, as in
+// React.
 //
 // The file runs in the browser layer, and the test runner does not: `vitest`
 // has the test that is running. So an import of `vitest`, `@vitest/*` or the
@@ -89,8 +98,13 @@ export type ClientFilesOptions = {
   clientComponents: string;
   /** The file of the plugin that loads a client file: internal.ts. */
   internal: string;
-  /** Whether a file is the host's: a test file or a setup file. */
+  /**
+   * Whether a file is the host's: a test file or a setup file of Vitest, or a
+   * file of another host, like a story.
+   */
   isHostFile(file: string): boolean;
+  /** Whether a file is a test file or a setup file of Vitest, not of another host. */
+  isTestFile(file: string): boolean;
   /** Whether an import is of a package of the host, by its name. */
   isHostPackage(specifier: string): boolean;
   /**
@@ -151,11 +165,12 @@ export function hostModuleCode(
 }
 
 /**
- * Two plugins. Before Vite RSC: the modules of the page for the browser
- * layer, the error for a file with `"use client"` that mocks a module,
- * before Vite RSC drops the code of the file, and with a dev server the
- * change of the file's module in the rsc layer for a change of what the file
- * imports in the browser layer. After Vite RSC, which made the file a
+ * Three plugins. One that says which modules are Vitest's files, which Vite
+ * RSC makes a reference of last. Before Vite RSC: the modules of the page
+ * for the browser layer, the error for a file with `"use client"` that mocks
+ * a module, before Vite RSC drops the code of the file, and with a dev
+ * server the change of the file's module in the rsc layer for a change of
+ * what the file imports in the browser layer. After Vite RSC, which made the file a
  * reference: the line in front of that module, with the file's reference
  * key, which for a file of the host loads the file in the browser layer by
  * that key. Not a file without the directive: a test file without it renders
@@ -163,7 +178,8 @@ export function hostModuleCode(
  */
 export function clientFiles(options: ClientFilesOptions): Plugin[] {
   const { rsc, browser } = options.environments;
-  const { testingLibrary, clientComponents, internal, isHostFile, isHostPackage } = options;
+  const { testingLibrary, clientComponents, internal, isHostFile, isTestFile, isHostPackage } =
+    options;
   const { clientReferenceOf } = options;
 
   // A file of the host in the rsc layer, with no query but the version of a
@@ -175,6 +191,17 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
   };
 
   return [
+    {
+      // A module of a test file or a setup file becomes Vite RSC's reference
+      // last: see ../test-file-references.ts.
+      name: testFilesPlugin,
+      api: {
+        isModuleOfTestFile: (id) => {
+          const file = fileOfModule(id);
+          return file !== undefined && isTestFile(file);
+        },
+      } satisfies TestFilesApi,
+    },
     {
       name: "vitest-plugin-rsc:next-client-files",
       enforce: "pre",
@@ -262,7 +289,24 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
     },
     {
       name: "vitest-plugin-rsc:next-load-client-files",
+      // After the reference of a test file too, which Vite RSC makes among the
+      // plugins that are enforced last, in vitestPluginRSC(), which comes
+      // first. Not `order: "post"`: that would come after Vite's
+      // analysis of the imports, which a page of the host needs for the
+      // import of the line.
       enforce: "post",
+      // Two plugins enforced last run in the order of the list, which the
+      // project makes: of vitestPluginNext() before vitestPluginRSC(), a test
+      // file would get no line, and register no test.
+      configResolved({ plugins }) {
+        const names = plugins.map(({ name }) => name);
+        const reference = names.indexOf(testFileReferencesPlugin);
+        if (reference > names.indexOf("vitest-plugin-rsc:next-load-client-files")) {
+          throw new Error(
+            "vitest-plugin-rsc: vitestPluginNext() needs vitestPluginRSC() before it in the plugins.",
+          );
+        }
+      },
       transform(code, id) {
         if (this.environment.name !== rsc) return;
         const config = this.environment.getTopLevelConfig();
