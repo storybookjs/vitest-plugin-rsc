@@ -626,6 +626,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/route-modules/app-page/module",
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
+    "next/dist/server/lib/node-fs-methods",
     "next/dist/server/use-cache/handlers",
     // cache.ts and build-output.ts
     "next/dist/lib/constants",

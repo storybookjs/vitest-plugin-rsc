@@ -170,23 +170,34 @@ export const isPrerenderBailout = (error: unknown): boolean =>
 // What `next start` hands Next's route modules of the server around them
 // (`server/lib/router-server.js:651-663`), by the directory of the project,
 // which is the working directory here: the logger of the errors of a request.
-// Without the bail-outs of a prerender, which the server handles, and counts.
-let bailouts = 0;
+// Without the bail-outs of a prerender, which the server handles, and counts
+// for the prerender that runs: the last one started, as a request the server
+// makes to itself runs inside the one that made it.
+const prerenders: { bailouts: number }[] = [];
 const routerServerContexts = Symbol.for("@next/router-server-methods");
 (globalThis as { [routerServerContexts]?: object })[routerServerContexts] = {
   "": {
     logErrorWithOriginalStack(error: unknown) {
-      if (isPrerenderBailout(error)) bailouts++;
-      else console.error(error);
+      const prerender = prerenders.at(-1);
+      if (!isPrerenderBailout(error)) console.error(error);
+      else if (prerender) prerender.bailouts++;
     },
   },
 };
 /**
- * How many bail-outs of a prerender Next's handlers have reported so far:
- * also those it answers with its error page itself, where its render of a
- * page recovers from the error (`app-page-runtime.js:1133-1224`).
+ * Counts the bail-outs that Next's handler reports for the prerender that
+ * starts now: also those it answers with its error page itself, where its
+ * render of a page recovers from the error (`app-page-runtime.js:1133-1224`).
+ * The function it returns ends the count and answers it.
  */
-export const reportedBailouts = (): number => bailouts;
+export function countBailouts(): () => number {
+  const prerender = { bailouts: 0 };
+  prerenders.push(prerender);
+  return () => {
+    prerenders.splice(prerenders.lastIndexOf(prerender), 1);
+    return prerender.bailouts;
+  };
+}
 
 /**
  * What the server in front of a route knows of a request that it routed: see

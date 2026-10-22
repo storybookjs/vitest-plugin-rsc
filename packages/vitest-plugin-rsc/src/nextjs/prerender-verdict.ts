@@ -4,7 +4,6 @@ import { buildAppStaticPaths } from "next/dist/build/static-paths/app";
 import { fallbackModeToFallbackField, type FallbackMode } from "next/dist/lib/fallback";
 import { isEdgeRuntime } from "next/dist/lib/is-edge-runtime";
 import { isMetadataRoute, isStaticMetadataFile } from "next/dist/lib/metadata/is-metadata-route";
-import { isEmptyParams } from "next/dist/server/lib/params-utils";
 import type { AppRouteRouteModule } from "next/dist/server/route-modules/app-route/module";
 import { isStaticGenEnabled } from "next/dist/server/route-modules/app-route/helpers/is-static-gen-enabled";
 import { parseNormalizedAppRoute } from "next/dist/shared/lib/router/routes/app";
@@ -77,7 +76,7 @@ export async function prerenderVerdictOf(
   // Next's cache of the build, which it makes for `generateStaticParams`
   // and leaves in the global of the server's: put back afterwards.
   const serverCache = globalThis.__incrementalCache;
-  let prerenderedRoutes: { pathname: string; params: object }[] | undefined;
+  let prerenderedRoutes: { pathname: string; isPrerenderOutput?: boolean }[] | undefined;
   let fallbackMode: FallbackMode | undefined;
   try {
     ({ prerenderedRoutes, fallbackMode } = await buildAppStaticPaths({
@@ -95,8 +94,9 @@ export async function prerenderVerdictOf(
       segments,
       segmentTree,
       requestHeaders: {},
-      isrFlushToDisk: false,
-      cacheMaxMemorySize: nextConfig.cacheMaxMemorySize,
+      isrFlushToDisk: true,
+      // On the server's disk, as the server's own cache: see cache.ts.
+      cacheMaxMemorySize: 0,
       // The fetches of `generateStaticParams` are not those of an earlier
       // test: see cache.ts.
       fetchCacheKeyPrefix: `${nextConfig.experimental.fetchCacheKeyPrefix ?? ""}${registry.cacheGeneration()}`,
@@ -114,22 +114,18 @@ export async function prerenderVerdictOf(
   }
 
   // What the build makes of the paths of a route with params, in
-  // `build/index.js:1484-1518`, which Next has in no function of its own.
-  // The paths of `generateStaticParams`, if it has one, and otherwise none
-  // with `dynamic = "error"` or `"force-static"`: then every path is
-  // prerendered at its first request. Without either, the route is dynamic.
-  const hasGenerateStaticParams =
-    prerenderedRoutes?.some(
-      (route) => isStaticMetadataFile(route.pathname) || !isEmptyParams(route.params as never),
-    ) ?? false;
+  // `build/index.js:1474-1518`, which Next has in no function of its own.
+  // The paths of `generateStaticParams`, if it has one: also none, for one
+  // that lists none, which prerenders every path at its first request.
+  // Without one, so does `dynamic = "error"` or `"force-static"`, and
+  // otherwise the route is dynamic.
   const dynamic = configured("dynamic");
-  if (!hasGenerateStaticParams && dynamic !== "error" && dynamic !== "force-static") {
-    return undefined;
-  }
+  if (!prerenderedRoutes && dynamic !== "error" && dynamic !== "force-static") return undefined;
   return {
-    // :2133, without the pattern of the route itself.
-    pathnames: (hasGenerateStaticParams ? prerenderedRoutes! : [])
-      .map((path) => path.pathname)
+    // :1476, and :2133 without the pattern of the route itself.
+    pathnames: (prerenderedRoutes ?? [])
+      .filter((route) => route.isPrerenderOutput !== false)
+      .map((route) => route.pathname)
       .filter((path) => path !== pathname),
     // :2249, :1978
     fallback: fallbackModeToFallbackField(

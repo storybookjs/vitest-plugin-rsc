@@ -22,9 +22,9 @@ import {
 import { loadCacheHandlers, shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import {
+  countBailouts,
   handleRequest as handleWith,
   isPrerenderBailout,
-  reportedBailouts,
   type RoutedRequestMeta,
 } from "./node-server.ts";
 import {
@@ -372,13 +372,14 @@ async function prerenderFirst(
   respond: () => Promise<Response>,
 ): Promise<Response> {
   if (!route || !isPrerendered(route)) return respond();
-  const reported = reportedBailouts();
   const endPrerender = scope.enterInner();
+  const bailouts = countBailouts();
   try {
     const response = await respond();
-    if (response.status !== 500 || reportedBailouts() === reported) return response;
+    if (response.status !== 500 || bailouts() === 0) return response;
     await response.body?.cancel();
   } catch (error) {
+    bailouts();
     if (!isPrerenderBailout(error)) throw error;
   }
   endPrerender();
@@ -634,7 +635,9 @@ async function handle(
       // `next start` does: Next reads the status while it renders, for the
       // `noindex` tag, and its action handler answers with one of its own.
       const statusCode = page === notFoundPage ? 404 : undefined;
-      return prerenderFirst(prerenders, scope, () =>
+      // The not-found page is no page the build prerenders here, also where
+      // it answers for a route that is.
+      return prerenderFirst(page === notFoundPage ? undefined : prerenders, scope, () =>
         handleWith(routed, context, handler, meta, { statusCode, headers: routedHeaders }),
       );
     };

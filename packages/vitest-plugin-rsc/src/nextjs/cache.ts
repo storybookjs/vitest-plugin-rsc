@@ -85,21 +85,22 @@ export function restoreIncrementalCache(): void {
  */
 export function shareIncrementalCache(headers = new Headers()): void {
   globalThis.__incrementalCache = current = new IncrementalCache({
-    // With these two Next takes its own handler, the one `next start` uses,
-    // which keeps the entries in memory. Next looks on disk for the response
-    // of a page or a route handler that is not in memory: the file system is
-    // the stand-in of node-platform.ts, which has no file. Its paths are under
-    // the directory of a build, which is not the root: Next holds a path to
-    // be inside it.
+    // With these two Next takes its own handler, the one `next start` uses.
+    // It keeps the entries on the disk, as `next start` keeps a prerendered
+    // page and a cached fetch in `.next/`: the disk is the stand-in of the
+    // package (src/node/fs.ts), which `cleanup()` empties. Not in Next's
+    // memory store, which is one for the process and nothing empties. The
+    // paths are under the directory of a build, which is not the root: Next
+    // holds a path to be inside it.
     fs: nodeFs,
     serverDistDir: "/.next/server",
     dev: false,
     minimalMode: false,
-    flushToDisk: false,
+    flushToDisk: true,
+    maxMemoryCacheSize: 0,
     requestHeaders: Object.fromEntries(headers),
     allowedRevalidateHeaderKeys: nextConfig.experimental.allowedRevalidateHeaderKeys,
     fetchCacheKeyPrefix: `${nextConfig.experimental.fetchCacheKeyPrefix ?? ""}${generation}`,
-    maxMemoryCacheSize: nextConfig.cacheMaxMemorySize,
     previewProps: preview,
     CurCacheHandler: CurCacheHandler as never,
     // What Next's route module reads too: build-output.ts.
@@ -108,20 +109,20 @@ export function shareIncrementalCache(headers = new Headers()): void {
 }
 
 /**
- * Makes the server forget what it has cached and which tags were revalidated.
- * The entries of before stay in Next's memory store, which is bounded by
- * `cacheMaxMemorySize`, under keys that are not asked for again. Not the
- * prerendered pages and route handlers, whose keys are their pathnames:
- * those are expired as `revalidatePath("/", "layout")` expires them, by the
- * tag that each of them has, for the layout of the root. So is what an app's
- * own `cacheHandler` keeps of them. What the build prerenders stays: that
- * is the app's code (build-output.ts).
+ * Makes the server forget which tags were revalidated, and what it has
+ * cached: the entries are on the server's disk, which `cleanup()` empties
+ * after this. The generation keeps a cached function that was still running
+ * when its test ended from being found under its key. An app's own
+ * `cacheHandler` keeps the prerendered pages and route handlers where it
+ * does, under their pathnames: those are expired as `revalidatePath("/",
+ * "layout")` expires them, by the tag each of them has for the root layout.
+ * What the build prerenders stays: that is the app's code (build-output.ts).
  */
 export async function resetCaches(): Promise<void> {
   tagsManifest.clear();
   generation++;
   shareIncrementalCache();
-  if (!hasPrerenders()) return;
+  if (!CurCacheHandler || !hasPrerenders()) return;
   // Next expires an entry by a tag that expired after the entry was stored,
   // to the millisecond: the tag expires in the next one.
   const stored = realNow();

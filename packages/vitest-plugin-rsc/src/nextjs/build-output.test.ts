@@ -3,10 +3,12 @@ import {
   demoteRoute,
   isPrerendered,
   loadManifest,
+  nodeRouteDistDir,
   prerenderManifest,
   recordRoute,
   setStylesheets,
 } from "./build-output.ts";
+import { registry } from "./registry.ts";
 
 // What the plugin gives the module in the app's server layers.
 vi.mock("virtual:vitest-plugin-rsc/next-manifest", () => ({
@@ -77,6 +79,21 @@ test("lists what the build prerenders of a route, and takes a route out of it", 
   expect(demoted.routes).toEqual({});
   expect(demoted.dynamicRoutes).toEqual({});
   expect(isPrerendered(blog)).toBe(false);
+});
+
+// The route of a node reads a manifest of its own: see ssr.ts.
+test("answers the route module of a node with a manifest that lists nothing", () => {
+  recordRoute({ kind: "page", page: "/page", pathname: "/" }, { pathnames: ["/"] });
+
+  const load = registry.node!.loadManifestFromRelativePath as (options: {
+    manifest: string;
+    distDir: string;
+  }) => typeof prerenderManifest;
+  const manifest = load({ manifest: "prerender-manifest.json", distDir: nodeRouteDistDir });
+  expect(manifest.routes).toEqual({});
+  expect(manifest.dynamicRoutes).toEqual({});
+  expect(load({ manifest: "prerender-manifest.json", distDir: ".next" }).routes["/"]).toBeDefined();
+  demoteRoute({ kind: "page", page: "/page", pathname: "/" });
 });
 
 test("lists a route handler without the data of a page", () => {

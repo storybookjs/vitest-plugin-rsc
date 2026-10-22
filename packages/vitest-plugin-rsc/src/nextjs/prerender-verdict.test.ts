@@ -80,6 +80,15 @@ test("prerenders the paths of `generateStaticParams`, and others at their first 
   });
 });
 
+test("prerenders every path at its first request with a `generateStaticParams` that lists none", async () => {
+  const page = { generateStaticParams: async () => [] };
+
+  expect(await verdictOf("/blog/[slug]", [{}, {}, page])).toEqual({
+    pathnames: [],
+    fallback: null,
+  });
+});
+
 test("answers not found for another path with `dynamicParams = false`", async () => {
   const page = { dynamicParams: false, generateStaticParams: async () => [{ slug: "a" }] };
 

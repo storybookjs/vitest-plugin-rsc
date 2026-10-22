@@ -92,6 +92,62 @@ test("renders a `force-dynamic` page at every request, as the build finds it dyn
   expect([first.cache, second.cache]).toEqual([null, null]);
 });
 
+test("renders a page with `revalidate = 0`, and one that reads the request in a `<Suspense>` boundary, at every request", async () => {
+  const zero = [
+    await request("/prerendered/revalidate-zero"),
+    await request("/prerendered/revalidate-zero"),
+  ];
+  const first = await request("/prerendered/suspense", { headers: { cookie: "theme=dark" } });
+  const second = await request("/prerendered/suspense", { headers: { cookie: "theme=light" } });
+
+  expect(zero.map((r) => r.status)).toEqual([200, 200]);
+  expect(zero[1]!.rendered).not.toBe(zero[0]!.rendered);
+  expect(zero.map((r) => r.cache)).toEqual([null, null]);
+  expect(first.text).toContain("Theme dark");
+  expect(second.text).toContain("Theme light");
+  expect([first.cache, second.cache]).toEqual([null, null]);
+});
+
+test("renders a route handler that reads the request at every request", async () => {
+  const first = await request("/prerendered/time", { headers: { cookie: "theme=dark" } });
+  const second = await request("/prerendered/time", { headers: { cookie: "theme=light" } });
+
+  expect([first.status, second.status]).toEqual([200, 200]);
+  expect(first.text).toContain('"theme":"dark"');
+  expect(second.text).toContain('"theme":"light"');
+  expect([first.cache, second.cache]).toEqual([null, null]);
+});
+
+test("prerenders a path at its first request with a `generateStaticParams` that lists none, and with `force-static`", async () => {
+  const every = [await request("/prerendered/every/x"), await request("/prerendered/every/x")];
+  const forced = [await request("/prerendered/static/y"), await request("/prerendered/static/y")];
+
+  expect(every[0]!.text).toContain("x, rendered as");
+  expect(forced[0]!.text).toContain("y, rendered as");
+  if (production) {
+    expect(every.map((r) => r.cache)).toEqual(["MISS", "HIT"]);
+    expect(forced.map((r) => r.cache)).toEqual(["MISS", "HIT"]);
+    expect(every[1]!.rendered).toBe(every[0]!.rendered);
+  } else {
+    expect(every[1]!.rendered).not.toBe(every[0]!.rendered);
+  }
+});
+
+test("forgets a kept page with cleanup() under fake timers too", async () => {
+  vi.useFakeTimers();
+  try {
+    const first = await request("/prerendered");
+    const again = await request("/prerendered");
+    await cleanup();
+    const afterCleanup = await request("/prerendered");
+
+    if (production) expect(again.rendered).toBe(first.rendered);
+    expect(afterCleanup.rendered).not.toBe(first.rendered);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("answers a path that `generateStaticParams` does not list with the not-found page, with `dynamicParams = false`", async () => {
   const listed = await request("/prerendered/listed/listed");
   const unlisted = await request("/prerendered/listed/other");

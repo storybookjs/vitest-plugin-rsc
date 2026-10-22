@@ -71,18 +71,6 @@ export function createNodePlatform(registry: string, prefix: string) {
     },
   };
   `,
-    // Next's cache keeps its entries in memory. With this it finds no file.
-    "node-fs": `
-  const missing = () => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); };
-  export const nodeFs = {
-    existsSync: () => false,
-    readFile: async () => missing(),
-    readFileSync: missing,
-    stat: async () => missing(),
-    writeFile: async () => {},
-    mkdir: async () => {},
-  };
-  `,
   };
   const patterns: [RegExp, string][] = [
     [/^next\/dist\/(esm\/)?server\/app-render\/react-server\.node(\.js)?$/, "react-server-node"],
@@ -91,7 +79,6 @@ export function createNodePlatform(registry: string, prefix: string) {
       /^next\/dist\/(esm\/)?server\/lib\/router-utils\/instrumentation-globals\.external(\.js)?$/,
       "instrumentation",
     ],
-    [/^next\/dist\/(esm\/)?server\/lib\/node-fs-methods(\.js)?$/, "node-fs"],
     [
       /^next\/dist\/(esm\/)?server\/node-environment(-extensions\/(error-inspect|console-file|console-exit|console-dim\.external|unhandled-rejection\.external|random|date|web-crypto|node-crypto|process-error-handlers))?(\.js)?$/,
       "node-environment",

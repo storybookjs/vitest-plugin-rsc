@@ -172,10 +172,11 @@ export function checkRuntime(context: NextContext) {
   // The build's verdict on which pathnames of a route it prerenders, which
   // prerender-verdict.ts makes as the build does: the last segment's
   // `dynamic` and `runtime`, the paths of `generateStaticParams`, and
-  // without them `dynamic = "error"` or `"force-static"`.
+  // without one `dynamic = "error"` or `"force-static"`.
   runtimeFile("build/utils").contains("config.dynamic = dynamic;", "config.runtime = runtime;");
   runtimeFile("build/index").contains(
-    "workerResult.prerenderedRoutes.some((route)=>isStaticMetadataFile(route.pathname) || !isEmptyParams(route.params));",
+    "if (workerResult.prerenderedRoutes) {",
+    "ssgPageRoutes = workerResult.prerenderedRoutes.filter((route)=>route.isPrerenderOutput !== false).map((route)=>route.pathname);",
     "} else if (!hasGenerateStaticParams && (appConfig.dynamic === 'error' || appConfig.dynamic === 'force-static')) {",
   );
   // Whether a route is static at all is Next's handler's verdict, at the
@@ -183,7 +184,8 @@ export function checkRuntime(context: NextContext) {
   runtimeFile("server/app-render/create-component-tree").contains(
     'const err = new DynamicServerError(`Page with \\`dynamic = "force-dynamic"\\` won\'t be rendered statically.`);',
   );
-  // cleanup() expires the kept pages by the tag each has for the root layout.
+  // cleanup() expires the kept pages of an app's own `cacheHandler` by the
+  // tag each has for the root layout.
   runtimeFile("server/lib/implicit-tags").contains(
     "const derivedTags = [\n        `/layout`\n    ];",
   );
