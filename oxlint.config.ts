@@ -53,7 +53,24 @@ export default defineConfig({
           { name: "module", message: "An ES module has no `module`." },
           { name: "exports", message: "An ES module has no `exports`." },
         ],
+        // The internals of Next, which change with any version of it, go
+        // through one directory: src/nextjs/compat/.
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            patterns: [
+              {
+                regex: "^next/dist/",
+                message: "Import Next's internals from src/nextjs/compat/.",
+              },
+            ],
+          },
+        ],
       },
+    },
+    {
+      files: ["packages/vitest-plugin-rsc/src/nextjs/compat/**"],
+      rules: { "eslint/no-restricted-imports": "off" },
     },
   ],
 });

@@ -3,8 +3,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolveRoutesParams } from "@next/routing";
-import type { RoutesManifest } from "next/dist/build/index.js";
 import type { NextBuild } from "./build.ts";
+import type { RoutesManifest } from "./compat/types.ts";
 import type { FlightEntry } from "./flight.ts";
 import { openNextProject } from "./project/context.ts";
 import type { PageEnv } from "./project/env.ts";
@@ -14,7 +14,7 @@ import { createLoaders } from "./project/loaders.ts";
 import { createMetadataLoaders } from "./project/metadata.ts";
 import { discoverAppRoutes } from "./project/routes.ts";
 import { buildRouting, findMiddleware } from "./project/routing.ts";
-import { checkRuntime } from "./project/runtime.ts";
+import { checkRuntime } from "./compat/checks.ts";
 import { createCompiler } from "./project/transform.ts";
 import { createWebpackRules, type WebpackRule } from "./project/webpack.ts";
 

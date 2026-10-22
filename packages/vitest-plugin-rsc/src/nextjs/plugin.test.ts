@@ -38,15 +38,16 @@ type OptimizeDeps = { include: string[] };
 type Config = { environments: Record<string, { optimizeDeps: OptimizeDeps }> };
 
 // The config loads the project, and Next's config with it: once for the file.
-const optimizeDeps = (async () => {
-  const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
+async function optimizeDepsOf(options?: VitestPluginNextOptions) {
+  const plugin = vitestPluginNext(options).find(({ name }) => name === "vitest-plugin-rsc:next")!;
   const { environments } = await (plugin.config as ConfigHook<Config>)({ root }, serve);
   return {
     rsc: environments.client!.optimizeDeps,
     ssr: environments.next_ssr!.optimizeDeps,
     browser: environments.react_client!.optimizeDeps,
   };
-})();
+}
+const optimizeDeps = optimizeDepsOf();
 
 // What the layers scan with a dev server, for a host with this config, and
 // the entries that a host like Vitest names on the resolved config: the
@@ -137,11 +138,25 @@ test("pre-bundles every Client Component of Next for the layers that render one"
   expect(browser.include).toEqual(expect.arrayContaining(boundaries));
 });
 
-// The modules of this package that run in a layer in the browser and import a
-// module of Next: the entry of the layer, and what it imports from here.
+// The modules of this package that run in a layer in the browser: the entry
+// of the layer and what it imports from here, and the modules of compat/
+// that they import Next from. Not compat/rsc/prerender.ts, which only
+// `build: "production"` loads.
 const runtimeFiles = {
-  ssr: ["ssr.ts", "cache.ts", "node-server.ts", "build-output.ts"],
-  browser: ["client.tsx"],
+  rsc: ["rsc.ts", "server-in-front.ts", "compat/rsc/handlers.ts", "compat/server/headers.ts"],
+  ssr: [
+    "ssr.ts",
+    "cache.ts",
+    "node-server.ts",
+    "build-output.ts",
+    "server-in-front.ts",
+    "compat/ssr/handler.ts",
+    "compat/ssr/cache.ts",
+    "compat/ssr/node-server.ts",
+    "compat/ssr/build-output.ts",
+    "compat/server/headers.ts",
+  ],
+  browser: ["client.tsx", "compat/browser/client.ts"],
 } as const;
 
 // The modules of Next that a file imports to run, not only for their types.
@@ -151,7 +166,7 @@ const nodePlatform = createNodePlatform("registry", "");
 function nextImportsOf(layer: keyof typeof runtimeFiles, file: string): string[] {
   const code = fs.readFileSync(path.join(here, file), "utf8");
   return [
-    ...code.matchAll(/^import (?!type\b)[^;]*?from "(next\/[^"]+)";/gms),
+    ...code.matchAll(/^(?:import|export) (?!type\b)[^;]*?from "(next\/[^"]+)";/gms),
     ...code.matchAll(/\bimport\("(next\/[^"]+)"\)/g),
   ]
     .map((match) => match[1]!)
@@ -176,9 +191,49 @@ test("pre-bundles every module of Next that a module of the plugin imports in th
   ][]) {
     const imported = files.flatMap((file) => nextImportsOf(layer, file));
     expect(imported.length).toBeGreaterThan(0);
-    // A new import is to be listed in `runtimeImports` of plugin.ts.
+    // A new import is to be listed in `runtimeImports` of compat/paths.ts.
     expect(deps[layer].include).toEqual(expect.arrayContaining(imported.map(preBundledAs)));
   }
+});
+
+// What the verdict of Next's build on a prerender takes of Next: a run of
+// development code neither loads it nor pre-bundles it.
+test('pre-bundles and loads the modules of Next\'s prerender only with `build: "production"`', async () => {
+  const prerender = nextImportsOf("rsc", "compat/rsc/prerender.ts").map(preBundledAs);
+  expect(prerender.length).toBe(8);
+  // rsc.ts imports the verdict from this module as it is asked for. Without
+  // `build: "production"` the module imports nothing, which Vite would find
+  // in it, and pre-bundle mid-test.
+  const prerenderModule = (plugin: Plugin) =>
+    (plugin.load as (this: object, id: string) => Promise<string | undefined>).call(
+      {},
+      "\0virtual:vitest-plugin-rsc/next-prerender",
+    );
+  const development = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  const production = vitestPluginNext({ build: "production" }).find(
+    ({ name }) => name === "vitest-plugin-rsc:next",
+  )!;
+  await (development.config as ConfigHook<unknown>)({ root }, serve);
+  const { environments } = await (production.config as ConfigHook<Config>)({ root }, serve);
+
+  expect((await optimizeDeps).rsc.include.filter((name) => prerender.includes(name))).toEqual([]);
+  expect(environments.client!.optimizeDeps.include).toEqual(expect.arrayContaining(prerender));
+  expect(await prerenderModule(development)).not.toMatch(/\bimport\b|\bfrom\b/);
+  expect(await prerenderModule(production)).toContain(
+    `from ${JSON.stringify(normalizePath(path.join(here, "prerender-verdict.ts")))}`,
+  );
+  // And no other module imports it, or what it imports of Next.
+  const importers = (module: string) =>
+    fs
+      .readdirSync(here, { recursive: true, encoding: "utf8" })
+      .filter((file) => /\.tsx?$/.test(file) && !/\.(test|d)\.tsx?$/.test(file))
+      .filter((file) =>
+        new RegExp(`(?:from |import\\()"[./]+(?:compat/rsc/)?${module}\\.ts"`).test(
+          fs.readFileSync(path.join(here, file), "utf8"),
+        ),
+      );
+  expect(importers("prerender-verdict")).toEqual([]);
+  expect(importers("prerender")).toEqual(["prerender-verdict.ts"]);
 });
 
 // Whoever asks for it: `react`, which the plugin of ../index.ts and a host

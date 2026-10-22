@@ -594,7 +594,20 @@ test.for([
     "ReactDOMClient.createRoot(document",
     "has no `ReactDOMClient.createRoot(appElement`",
   ],
-  ["client/app-index", "    onCaughtError,", "", "has no `    onCaughtError,`"],
+  // Of the options of the root, not of the import of the function.
+  ["client/app-index", "    onCaughtError,\n", "", "has no `onCaughtError` in `reactRootOptions`"],
+  [
+    "server/lib/implicit-tags",
+    "        `/layout`\n    ];",
+    "        `/page`\n    ];",
+    "has no `const derivedTags = [`/layout`];`",
+  ],
+  [
+    "build/index",
+    ".filter((route)=>route.isPrerenderOutput !== false)",
+    "",
+    "has no `ssgPageRoutes = workerResult.prerenderedRoutes.filter((route)=>route.isPrerenderOutput !== false).map((route)=>route.pathname);`",
+  ],
   [
     "client/components/render-tree",
     "PrefetchHint.IsRootLayoutOrAbove",
@@ -642,6 +655,33 @@ test.for([
 
   await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${runtime(file!)} ${what}`));
 });
+
+// Where what the plugin assumes is in the formatting of Next's compiled
+// output, another formatting of the same code.
+test.for([
+  [
+    "server/lib/implicit-tags",
+    "const derivedTags = [\n        `/layout`\n    ];",
+    "const derivedTags = [`/layout`];",
+  ],
+  [
+    "client/app-index",
+    "    onRecoverableError,\n    onCaughtError,\n    onUncaughtError\n};",
+    "  onRecoverableError, onCaughtError, onUncaughtError };",
+  ],
+  [
+    "build/index",
+    ".filter((route)=>route.isPrerenderOutput !== false).map((route)=>route.pathname);",
+    "\n  .filter((route) => route.isPrerenderOutput !== false)\n  .map((route) => route.pathname);",
+  ],
+])(
+  "takes another formatting of what the plugin assumes of %s",
+  async ([file, piece, replacement]) => {
+    const next = nextWith({ [runtime(file!)]: sourceWith(runtime(file!), piece!, replacement!) });
+
+    await expect(loadNextProject(root, next)).resolves.toBeDefined();
+  },
+);
 
 test("reads the exports of the Flight codec of the rsc layer", async () => {
   const { flightExports } = await loadNextProject(root);

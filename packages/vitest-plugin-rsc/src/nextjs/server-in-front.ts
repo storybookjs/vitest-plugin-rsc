@@ -5,13 +5,13 @@ import {
   type MiddlewareResult,
   type ResolveRoutesResult,
 } from "@next/routing";
-import { filterInternalHeaders } from "next/dist/server/lib/server-ipc/utils";
+import { routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import {
+  filterInternalHeaders,
   fromNodeOutgoingHttpHeaders,
   splitCookiesString,
   toNodeOutgoingHttpHeaders,
-} from "next/dist/server/web/utils";
-import { routing } from "virtual:vitest-plugin-rsc/next-manifest";
+} from "./compat/server/headers.ts";
 import { openedAt, type ServerRequest } from "./registry.ts";
 
 // The server in front of the app: Next's own route resolution, with the

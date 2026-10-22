@@ -26,6 +26,12 @@ import {
   createDependencyCompilePlugin,
   createScanCompilePlugin,
 } from "./compile.ts";
+import {
+  devAssetPrefix,
+  prerenderImports,
+  runtimeImports as nextRuntimeImports,
+  serverReferenceInfo,
+} from "./compat/paths.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { registryGlobal } from "./registry-global.ts";
@@ -94,6 +100,12 @@ const envId = virtual("env");
 const cacheHandlersId = virtual("cache-handlers");
 // `next/root-params`, which Next's build makes for the app.
 const rootParamsId = virtual("root-params");
+// The verdict of Next's build on which pathnames of a route it prerenders,
+// for rsc.ts: prerender-verdict.ts with `build: "production"`, the one build
+// that asks for it. Without it the module imports nothing, so that Vite
+// neither finds the modules of Next's build that the verdict imports, which
+// would have it pre-bundle again mid-test, nor loads them.
+const prerenderId = virtual("prerender");
 // Next's route resolution: the rsc layer, the document's, says with it which
 // requests are the app's, and the ssr layer routes with it each request that
 // it handles. Not a part of `next`: it is the project's, next to its `next`.
@@ -141,7 +153,6 @@ const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 // `undefined`, by `shimMissingExports` of the pre-bundling.
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const emptyModule = "const empty = {};\nexport default empty;\n";
-const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
 const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
 // The directory of the files of this package: `src` or `dist`.
 const ownDir = normalizePath(fileURLToPath(new URL("..", import.meta.url)));
@@ -187,7 +198,6 @@ export function extractInfoFromServerReferenceId(id) {
 // router imports it on its first navigation, where nothing runs as a script,
 // and the navigation fails. The plugin has no dev server, and Next opens that
 // WebSocket only on one: the prefix is for nothing here.
-const devAssetPrefix = /^next\/dist\/(esm\/)?client\/dev\/hot-reloader\/app\/asset-prefix(\.js)?$/;
 const devAssetPrefixShim = `export const assetPrefix = "";\n`;
 
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
@@ -656,56 +666,20 @@ function findClientBoundaries(nextDir: string, resolver: LayerResolver): string[
 // What the runtime modules of this package, and the modules Vite and Vite RSC
 // generate, import from Next and from React, per layer.
 const react = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react/compiler-runtime"];
+// Not what only `build: "production"` loads: see `prerenderImports`.
 const runtimeImports: Record<NextLayer, string[]> = {
   rsc: [
     ...react,
     "react-dom",
-    "next/dist/server/route-kind",
-    // What a `"use cache"` function is compiled to call: use-cache.ts.
-    "next/dist/build/webpack/loaders/next-flight-loader/cache-wrapper",
+    ...nextRuntimeImports.rsc,
     vendoredFlight("server.edge"),
     vendoredFlight("static.edge"),
     vendoredFlight("client.edge"),
-    // server-in-front.ts
-    "next/dist/server/lib/server-ipc/utils",
-    "next/dist/server/web/utils",
-    // prerender-verdict.ts
-    "next/dist/build/segment-config/app/app-segments",
-    "next/dist/build/segment-config/app/collect-root-param-keys",
-    "next/dist/build/static-paths/app",
-    "next/dist/lib/fallback",
-    "next/dist/lib/is-edge-runtime",
-    "next/dist/lib/metadata/is-metadata-route",
-    "next/dist/server/lib/params-utils",
-    "next/dist/server/route-modules/app-route/helpers/is-static-gen-enabled",
-    "next/dist/shared/lib/router/routes/app",
-    // rsc.ts
-    "next/dist/shared/lib/no-fallback-error.external",
   ],
   ssr: [
     ...react,
     "react-dom",
-    "next/dist/server/route-modules/app-page/module",
-    "next/dist/server/lib/incremental-cache",
-    "next/dist/server/lib/incremental-cache/tags-manifest.external",
-    "next/dist/server/lib/node-fs-methods",
-    "next/dist/server/use-cache/handlers",
-    // cache.ts and build-output.ts
-    "next/dist/lib/constants",
-    "next/dist/shared/lib/page-path/normalize-page-path",
-    // ssr.ts, for what the server in front of the app routes to it
-    "next/dist/client/components/app-router-headers",
-    "next/dist/server/lib/server-action-request-meta",
-    "next/dist/server/lib/is-rsc-request",
-    "next/dist/shared/lib/router/utils/route-matcher",
-    "next/dist/shared/lib/router/utils/route-regex",
-    // server-in-front.ts
-    "next/dist/server/lib/server-ipc/utils",
-    // node-server.ts
-    "next/dist/server/lib/mock-request",
-    "next/dist/client/components/hooks-server-context",
-    // node-server.ts, ssr.ts and server-in-front.ts
-    "next/dist/server/web/utils",
+    ...nextRuntimeImports.ssr,
     vendoredFlight("client.edge"),
     // node-rendered.tsx, around every node
     "next/navigation",
@@ -714,9 +688,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     ...react,
     "react-dom",
     "react-dom/client",
-    "next/dist/client/app-bootstrap",
-    "next/dist/client/app-call-server",
-    "next/dist/client/app-index",
+    ...nextRuntimeImports.browser,
     // node-rendered.tsx, around every node
     "next/navigation",
     vendoredFlight("client.browser"),
@@ -933,6 +905,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ...entryImports,
           ...apiImports("rsc"),
           ...runtimeImports.rsc,
+          // Fixed before the optimizer starts, by the option: a module found
+          // later would have Vite pre-bundle again, mid-test.
+          ...(build === "production" ? prerenderImports : []),
         ]);
         const clientBoundaries = findClientBoundaries(project.nextDir, resolvers.rsc);
         const include: Record<NextLayer, string[]> = {
@@ -1269,6 +1244,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
         if (source === useCacheId || source === cacheHandlersId) return `\0${source}`;
+        if (source === prerenderId) return `\0${source}`;
         if (source === "next/root-params") return `\0${rootParamsId}`;
         if (project.isMetadataRequest(source)) return `\0${metadataPrefix}${source}`;
         // The module of a generated image, for what it says of the image. Next
@@ -1288,6 +1264,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
         if (id === `\0${useCacheId}`) return useCacheModule(registry);
         if (id === `\0${rootParamsId}`) return project.loadRootParams();
+        if (id === `\0${prerenderId}`) {
+          return build === "production"
+            ? `export { prerenderVerdictOf } from ${JSON.stringify(ownFile("prerender-verdict"))};\n`
+            : `export function prerenderVerdictOf() {\n` +
+                `  throw new Error('vitest-plugin-rsc: only \`build: "production"\` prerenders');\n` +
+                `}\n`;
+        }
         // The files of the cache handlers that `next.config` names, which
         // Next's server imports: cache.ts.
         if (id === `\0${cacheHandlersId}`) {

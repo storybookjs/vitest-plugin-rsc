@@ -1,8 +1,7 @@
-import { appBootstrap } from "next/dist/client/app-bootstrap";
-import { callServer } from "next/dist/client/app-call-server";
 import { unstable_rethrow } from "next/navigation";
 import ReactDOMClient, { type Root, type RootOptions } from "react-dom/client";
 import { registerModuleLoader } from "./client-modules.ts";
+import { appBootstrap, callServer, loadAppIndex } from "./compat/browser/client.ts";
 import { recordListeners, type Leftovers } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 // The module that the Flight payload of a node names: see rsc.ts.
@@ -20,7 +19,7 @@ declare global {
 
 // The options of the root of the app, which also hear of the errors React
 // reports: one that a boundary caught, and one that none did. Next's entry
-// passes both, see project/runtime.ts.
+// passes both, see compat/checks.ts.
 function reportingErrors<Options extends RootOptions>(
   options: Options | undefined,
   report: (error: unknown) => void,
@@ -155,7 +154,7 @@ export async function start(
     // it loads here, once Client Components can be loaded. Also for a page that
     // is left meanwhile: the payload it reads is the one of its own document
     // only until it has loaded.
-    const { hydrate } = await import("next/dist/client/app-index");
+    const { hydrate } = await loadAppIndex();
     loaded();
     nextLoaded();
     signal.throwIfAborted();
@@ -183,9 +182,14 @@ export async function start(
           resolve();
         };
         // What Next's `app-next.js` does, minus the webpack chunk loading. No
-        // `instrumentation-client` modules yet.
-        appBootstrap((assetPrefix: string) => {
-          hydrate([] as never, assetPrefix).catch(reject);
+        // `instrumentation-client` modules yet. Next 16.4 passes the asset
+        // prefix, and its `hydrate()` takes it; from 16.5 neither does, and
+        // the prefix it is passed is undefined.
+        appBootstrap((assetPrefix?: string) => {
+          (hydrate as (instrumentationModules: never, assetPrefix?: string) => Promise<void>)(
+            [] as never,
+            assetPrefix,
+          ).catch(reject);
         });
       });
     } finally {

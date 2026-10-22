@@ -1,9 +1,12 @@
-import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
-import { MockedResponse } from "next/dist/server/lib/mock-request";
-import type { RequestMeta } from "next/dist/server/request-meta";
-import { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
 import { Readable } from "vitest-plugin-rsc/node/stream";
 import { restoreIncrementalCache } from "./cache.ts";
+import {
+  fromNodeOutgoingHttpHeaders,
+  isDynamicServerError,
+  MockedResponse,
+  toNodeOutgoingHttpHeaders,
+  type RequestMeta,
+} from "./compat/ssr/node-server.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its

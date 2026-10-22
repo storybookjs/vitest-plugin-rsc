@@ -1,3 +1,5 @@
+import { nodePlatformModules } from "./compat/paths.ts";
+
 // What Next's Node.js server imports of its own that a browser does not have:
 // the modules of Next that set a Node.js process up or read the files of a
 // build, each one module that Next itself keeps apart. This is the build side
@@ -72,35 +74,10 @@ export function createNodePlatform(registry: string, prefix: string) {
   };
   `,
   };
-  const patterns: [RegExp, string][] = [
-    [/^next\/dist\/(esm\/)?server\/app-render\/react-server\.node(\.js)?$/, "react-server-node"],
-    [/^next\/dist\/(esm\/)?server\/load-manifest\.external(\.js)?$/, "load-manifest"],
-    [
-      /^next\/dist\/(esm\/)?server\/lib\/router-utils\/instrumentation-globals\.external(\.js)?$/,
-      "instrumentation",
-    ],
-    [
-      /^next\/dist\/(esm\/)?server\/node-environment(-extensions\/(error-inspect|console-file|console-exit|console-dim\.external|unhandled-rejection\.external|random|date|web-crypto|node-crypto|process-error-handlers))?(\.js)?$/,
-      "node-environment",
-    ],
-    // What sets up a Node.js process for Next: the patches above, a hook on
-    // \`require\`, a \`crypto\` global.
-    [/^next\/dist\/(esm\/)?build\/adapter\/setup-node-env\.external(\.js)?$/, "node-environment"],
-    [
-      /^next\/dist\/(esm\/)?server\/node-environment-extensions\/fast-set-immediate\.external(\.js)?$/,
-      "fast-set-immediate",
-    ],
-    [/^next\/dist\/compiled\/gzip-size(\/index(\.js)?)?$/, "gzip-size"],
-    [
-      /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/vendored\/(rsc|ssr)\/entrypoints(\.js)?$/,
-      "vendored-react",
-    ],
-  ];
-
   return {
     /** The id of the stand-in for a specifier of a server layer, if it has one. */
     moduleOf(source: string): string | undefined {
-      const match = patterns.find(([pattern]) => pattern.test(source));
+      const match = nodePlatformModules.find(([pattern]) => pattern.test(source));
       return match && prefix + match[1];
     },
     /** The code of a stand-in, by its id without the prefix. */

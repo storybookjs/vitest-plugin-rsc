@@ -1,9 +1,9 @@
 import fs from "node:fs";
-import { nextModulesWithStores } from "../server-code.ts";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
 import type { NextBuild } from "../build.ts";
+import { aliasPaths, nextModulesWithStores, withStoresId } from "../compat/paths.ts";
 import { rscFlightCodec, type FlightEntry } from "../flight.ts";
 import type { NextLayer } from "../project.ts";
 import type { NextContext } from "./context.ts";
@@ -95,7 +95,7 @@ export async function layerTables(context: NextContext, build: NextBuild) {
   // it the ones its module rules apply per layer.
   const aliasesFor = (layer: NextLayer) => {
     const aliases: Record<string, string | false> = {
-      "@opentelemetry/api$": "next/dist/compiled/@opentelemetry/api",
+      "@opentelemetry/api$": aliasPaths.openTelemetry,
     };
     // The browser layer gets the four modules of Node.js that Next's edge
     // runtime has, as before, from Next's polyfills, and nothing for the
@@ -104,13 +104,13 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     if (layer === "browser") {
       for (const name of SUPPORTED_NATIVE_MODULES) {
         if (name === "async_hooks") continue;
-        aliases[`${name}$`] = aliases[`node:${name}$`] = `next/dist/compiled/${name}`;
+        aliases[`${name}$`] = aliases[`node:${name}$`] = aliasPaths.polyfill(name);
       }
     } else {
       // Next's route modules load a bundle of Next's own for Node.js. The
       // module that bundle is made of, as Next's edge build takes it.
       for (const kind of ["app-page", "app-route"]) {
-        const file = `next/dist/server/route-modules/${kind}/module`;
+        const file = aliasPaths.routeModule(kind);
         aliases[`${file}.compiled$`] = aliases[`${file}.compiled.js$`] = file;
       }
       // Next's own module for `react-dom/server`, the edge table's entry that
@@ -119,8 +119,10 @@ export async function layerTables(context: NextContext, build: NextBuild) {
       // runtime. Not React's entry file for it, which brings React's legacy
       // server renderer along.
       for (const channel of ["", "-experimental"]) {
-        aliases[`next/dist/build/webpack/alias/react-dom-server${channel}.js$`] =
-          `next/dist/compiled/react-dom${channel}/cjs/react-dom-server.edge.${build}.js`;
+        aliases[`${aliasPaths.reactDomServer(channel)}$`] = aliasPaths.reactDomServerEdge(
+          channel,
+          build,
+        );
       }
     }
     const base = compilerAliases.createWebpackAliases({
@@ -219,7 +221,7 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     // their stores (server-code.ts) are matched by their path: a Next that
     // moved one would quietly leave it uncompiled.
     for (const { module } of nextModulesWithStores) {
-      const id = `next/dist/esm/server/${module}`;
+      const id = withStoresId(module);
       try {
         projectRequire.resolve(id);
       } catch (error) {
@@ -227,19 +229,19 @@ export async function layerTables(context: NextContext, build: NextBuild) {
       }
     }
     if (layer === "rsc") {
-      const contexts = "server/route-modules/app-page/vendored/contexts";
+      const contexts = aliasPaths.vendoredContexts;
       let files: string[];
       try {
-        files = fs.readdirSync(path.join(nextDir, "dist", contexts));
+        files = fs.readdirSync(path.join(nextDir, contexts.slice("next/".length)));
       } catch {
-        return fail(`next/dist/${contexts} is not there`);
+        return fail(`${contexts} is not there`);
       }
       const names = files
         .filter((file) => file.endsWith(".js") && file !== "entrypoints.js")
         .map((file) => file.slice(0, -".js".length));
-      if (names.length === 0) fail(`next/dist/${contexts} has no contexts`);
+      if (names.length === 0) fail(`${contexts} has no contexts`);
       for (const name of names) {
-        aliases[`next/dist/shared/lib/${name}.shared-runtime$`] = `next/dist/${contexts}/${name}`;
+        aliases[`${aliasPaths.sharedRuntime(name)}$`] = `${contexts}/${name}`;
       }
     }
     return aliases;

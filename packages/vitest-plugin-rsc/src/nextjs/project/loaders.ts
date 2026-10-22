@@ -5,6 +5,7 @@ import querystring from "node:querystring";
 import { compileFunction } from "node:vm";
 import type { CSSOptions } from "vite";
 import type { NextBuild } from "../build.ts";
+import { fontLoaderPath } from "../compat/paths.ts";
 import type { NextProject } from "../project.ts";
 import type { NextContext } from "./context.ts";
 import { exportsOf } from "./module-exports.ts";
@@ -279,7 +280,7 @@ export function createLoaders(
         experimental: config.experimental,
       } as Parameters<typeof getNextFontLoader>[0],
       async () => ({ postcss }),
-      resolve(`next/dist/compiled/@next/font/${name}/loader`),
+      resolve(fontLoaderPath(name)),
     ) as { loader?: string; options?: unknown }[];
     const cssLoader = loaders.find((entry) => entry.loader?.includes("css-loader"));
     const fontLoader = loaders.find((entry) => entry.loader === "next-font-loader");

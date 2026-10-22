@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import querystring from "node:querystring";
 import { normalizePath, parseAst } from "vite";
-import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
+import { appPageRuntime } from "../compat/paths.ts";
+import type { AppLoaderOptions } from "../compat/types.ts";
 import type { ComponentRoute, NextProject, NextRoute, RouteSegment } from "../project.ts";
 import type { NextContext } from "./context.ts";
 import type { RunLoader } from "./loaders.ts";
@@ -142,8 +143,8 @@ export function routeEntries(
   // for a page, which has the request handler for Node.js.
   const bindPageEntry = (code: string, where: string) => {
     code = replace(code, /\b__webpack_require__\b/g, "__next_require__", where);
-    if (!/(["'])next\/dist\/build\/templates\/app-page-runtime\1/.test(code)) {
-      fail(`${where} has no \`next/dist/build/templates/app-page-runtime\``);
+    if (!code.includes(`"${appPageRuntime}"`) && !code.includes(`'${appPageRuntime}'`)) {
+      fail(`${where} has no \`${appPageRuntime}\``);
     }
     return `import { requireModule as __next_require__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`;
   };
