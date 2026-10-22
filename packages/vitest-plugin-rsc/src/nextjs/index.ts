@@ -240,9 +240,11 @@ export type RenderServerOptions = RequestOptions & {
    * What carries over is the state of the modules of the app, of a package
    * and of Next and React themselves, as in a single-page app that is never
    * reloaded: a module that keeps a value of the page before has it on the
-   * next page. A page that is not one of `reuse`, also one the app loads
-   * itself, like after a `<form>` without JavaScript or `location.assign()`,
-   * starts an app of its own, and so does the first page of a test file.
+   * next page. A page that the app loads itself from a page of `reuse`,
+   * like after a `<form>` without JavaScript or `location.assign()`, renders
+   * in the kept app too, from its document. A page that is not one of
+   * `reuse` starts an app of its own, and so does the first page of a test
+   * file.
    *
    * In development the page has no dev overlay of Next's.
    *

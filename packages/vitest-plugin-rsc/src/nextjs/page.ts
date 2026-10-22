@@ -42,6 +42,8 @@ export class Page {
   #started: Promise<void> | undefined;
   #stopped = () => {};
   #left: Promise<void> | undefined;
+  /** Whether the page is one of `reuse`, whose app is kept: see `kept`. */
+  reuse = false;
 
   constructor(
     // Not for good: the page of `"navigation"` reports to the test that
@@ -136,8 +138,9 @@ type Client = typeof import("./client.tsx");
 // The app that the first page of `renderServer({ url, reuse: true })` started,
 // which renders the pages of `reuse` after it in its root, without a module
 // graph, a root or Next's entry of their own: see `renderAgain()` in
-// client.tsx. It is left with the first page that is not one of `reuse`, also
-// one that the app loads itself, or with `leaveKeptApp()`.
+// client.tsx. A page that the app loads itself from a page of `reuse`, like
+// after a `<form>` without JavaScript, is one of `reuse` too. It is left with
+// the first page that is not, or with `leaveKeptApp()`.
 let kept: { client: Client; leave(): void } | undefined;
 
 // The page of `renderServer({ url, reuse: "navigation" })` that stays open
@@ -273,15 +276,19 @@ export async function loadPage(
   // A page that the app loads from the page of `"navigation"` is the one the
   // next test navigates in, as that one was.
   const navigation = opening ? opening.reuse === "navigation" : open !== undefined;
+  // A page that the app loads from a page of `reuse` is one of `reuse` too:
+  // it renders in the kept app.
+  const reuse = opening ? opening.reuse === true : currentPage()?.reuse === true;
   const leaving = leavePage(opening ? "another renderServer()" : "a page load of the app");
   // The page from here: the test moves on from it by leaving it, also while
   // it loads.
   const page = (current = new Page(errors, opening?.nodeOnPage));
+  page.reuse = reuse;
   const loading = (async () => {
     await leaving;
     page.signal.throwIfAborted();
     // A page that is not one of `reuse` starts an app of its own.
-    if (opening?.reuse !== true) leaveKeptApp();
+    if (!reuse) leaveKeptApp();
 
     // Once the node that was in it is gone.
     if (opening?.container?.hasChildNodes()) {
@@ -349,7 +356,7 @@ async function openPage(
   };
 
   // A page of `reuse` in a kept app needs no document: see `renderInKeptApp()`.
-  if (opening?.reuse === true && kept && !("html" in request)) {
+  if (opening && page.reuse && kept && !("html" in request)) {
     return renderInKeptApp(page, kept.client, url, request, from, opening.opened);
   }
   // The test's request, or the document that a navigation has: see `navigate()`.
@@ -374,7 +381,14 @@ async function openPage(
   }
   await loadDocument(html, response.url, container, after);
   superseded();
-  const reuse = opening?.reuse === true;
+  const { reuse } = page;
+  // A page that the app loads from a page of `reuse` renders in the kept app,
+  // from its document.
+  if (reuse && kept) {
+    await startInKeptApp(page, kept.client);
+    superseded();
+    return response;
+  }
   // What the app holds, which goes with the page, or with a kept app once
   // that is left.
   const appReleases: (() => void)[] = [];
@@ -520,8 +534,17 @@ async function renderInKeptApp(
   const html = /^\s*</.test(new TextDecoder().decode(body.subarray(0, 64)));
   await loadDocument(html ? new TextDecoder().decode(body) : flightDocument, response.url);
   signal.throwIfAborted();
+  await startInKeptApp(page, client, html ? undefined : body);
+  signal.throwIfAborted();
+  return response;
+}
+
+// Renders the page in the kept app, from its Flight payload, or else from
+// the payload in its document: see `renderAgain()` in client.tsx.
+async function startInKeptApp(page: Page, client: Client, flight?: Uint8Array): Promise<void> {
+  const { signal } = page;
   const started = client
-    .renderAgain(signal, page.errors, html ? undefined : body)
+    .renderAgain(signal, page.errors, flight)
     .then(({ unmount }) => page.defer(unmount));
   page.starts(started, () => {});
   setOpenPage(signal);
@@ -531,8 +554,6 @@ async function renderInKeptApp(
     signal.throwIfAborted();
     throw error;
   }
-  signal.throwIfAborted();
-  return response;
 }
 
 // The request of a page load, with the modules of the server and of the
