@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "#lib/db.ts";
 import { hashPassword } from "#lib/password.ts";
 import { notes, sessions, users, type User } from "#lib/schema.ts";
@@ -6,16 +6,29 @@ import { notes, sessions, users, type User } from "#lib/schema.ts";
 // For the tests of both runners: the app's own `db`, which is PGlite in the
 // page for Vitest (lib/__mocks__/db.ts) and Postgres in Docker for Playwright.
 
+// The statements of `resetDb()`, sent at once: one round trip, where five
+// took one each. DELETE, not TRUNCATE, which rewrites the files of the tables
+// and their indexes. And setval for the ids.
+const emptyTables = [
+  "DELETE FROM sessions",
+  "DELETE FROM notes",
+  "DELETE FROM users",
+  "SELECT setval('users_id_seq', 1, false)",
+  "SELECT setval('notes_id_seq', 1, false)",
+].join(";\n");
+
 /**
- * Empties the tables, before each test. DELETE, not TRUNCATE, which rewrites
- * the files of the tables and their indexes. And setval for the ids.
+ * Empties the tables, before each test. By the client of the driver: a query
+ * of drizzle is one statement. PGlite's `exec()` and the `query()` of `pg`
+ * without parameters take several.
  */
 export async function resetDb(): Promise<void> {
-  await db.execute(sql`DELETE FROM sessions`);
-  await db.execute(sql`DELETE FROM notes`);
-  await db.execute(sql`DELETE FROM users`);
-  await db.execute(sql`SELECT setval('users_id_seq', 1, false)`);
-  await db.execute(sql`SELECT setval('notes_id_seq', 1, false)`);
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- PGlite in the page, a pool of `pg` for Playwright.
+  const client = db.$client as unknown as {
+    exec?: (sql: string) => Promise<unknown>;
+    query: (sql: string) => Promise<unknown>;
+  };
+  await (client.exec ? client.exec(emptyTables) : client.query(emptyTables));
 }
 
 export const ada = { name: "Ada Lovelace", email: "ada@example.com", password: "correct horse" };
