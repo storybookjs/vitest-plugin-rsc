@@ -35,19 +35,58 @@ const sourceFile = /\.(?:tsx|ts|jsx|js|mjs)$/;
 // Next also compiles a package that calls `next/font`, like `geist`. For the
 // dependency optimizer, which pre-bundles a package without Vite's plugins:
 // the import of the font stays one, for the plugin below to resolve when the
-// pre-bundled package is served.
-export function createDependencyCompilePlugin(getProject: () => NextProject, layer: NextLayer) {
+// pre-bundled package is served. Not code of the app, which the plugin of
+// the scan below compiles, where the optimizer comes by it.
+export function createDependencyCompilePlugin(
+  getProject: () => NextProject,
+  layer: NextLayer,
+  isAppCode: (file: string, layer: NextLayer) => boolean,
+) {
   return {
     name: "vitest-plugin-rsc:next-compile-dependency",
     resolveId(source: string) {
       if (fontRequest.test(source)) return { id: source, external: true };
     },
     async transform(code: string, id: string) {
-      if (!/\.[cm]?js$/.test(id) || !/\bnext\/font\b/.test(code)) return;
+      if (!/\.[cm]?js$/.test(id) || !/\bnext\/font\b/.test(code) || isAppCode(id, layer)) return;
       // Not Next's own files, which name it too.
       if (!path.relative(getProject().nextDir, id).startsWith("..")) return;
       const compiled = await getProject().compile(code, id, layer);
       return compiled && { code: compiled.code, map: compiled.map ?? null };
+    },
+  };
+}
+
+// The dependency scan of a layer reads the code of the app as the layer gets
+// it, after Next's compiler: what the compiler takes out, like the import of
+// `styled-jsx/css`, is no import of the layer, and what it puts in, like
+// `styled-jsx/style` for a `<style jsx>`, is one. Vite runs no plugin of an
+// environment on the files it scans, only those of `optimizeDeps`, which
+// also bundle the dependencies: there it compiles what is code of the app,
+// as the layer's own transform does, like a package of the workspace that
+// the optimizer is to include, and leaves any other package as it is.
+//
+// A module that Next's compiler stops at in the layer, like a Server
+// Component that imports `next/headers` in the ssr layer, is no module of
+// that layer: there it throws Next's error, and imports nothing. The scan
+// still comes by it, as the scan of every layer starts where the rsc
+// layer's does: the test files and every file of `app/`. It reads such a
+// module as it is, which is how it gets to what the module renders: a
+// Client Component, of the app or of a package, which the layer does load.
+export function createScanCompilePlugin(
+  getProject: () => NextProject,
+  layer: NextLayer,
+  isAppCode: (file: string, layer: NextLayer) => boolean,
+) {
+  return {
+    name: `vitest-plugin-rsc:next-compile-scan:${layer}`,
+    async transform(code: string, id: string) {
+      if (id.includes("?") || !sourceFile.test(id) || !isAppCode(id, layer)) return;
+      const compiled = await getProject()
+        .compile(code, id, layer)
+        .catch(() => undefined);
+      if (!compiled || compiled.refused) return;
+      return { code: compiled.code, map: compiled.map ?? null };
     },
   };
 }
