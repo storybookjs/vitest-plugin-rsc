@@ -257,7 +257,12 @@ export type RouteSegment = {
   stylesheetsKey: string;
 };
 
-export type Compiled = { code: string; map?: string };
+/**
+ * What Next's compiler makes of a module. `refused` where it stops at the
+ * module, as `next build` does, like a client hook in a Server Component:
+ * then the code throws Next's error.
+ */
+export type Compiled = { code: string; map?: string; refused?: true };
 
 /** Answers a request the way the server does: what Next calls for an image of the app. */
 export type ServeFile = (request: IncomingMessage, response: ServerResponse) => Promise<void>;

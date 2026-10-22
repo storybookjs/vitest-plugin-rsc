@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  createLogger,
+  createServer,
   normalizePath,
   resolveConfig,
   type MinimalPluginContextWithoutEnvironment,
@@ -11,7 +13,7 @@ import {
   type UserConfig,
   type ViteDevServer,
 } from "vite";
-import { expect, test, vi } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import { vitestPluginRSC } from "../index.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { vitestPluginNext, type VitestPluginNextOptions } from "./plugin.ts";
@@ -233,6 +235,108 @@ test("pre-bundles a dependency only under the name its layer resolves it to", as
   // What Next's compiler has app code import stays as it was: a package Next
   // depends on, found from Next.
   expect(includeOf("client")).toContain("next > styled-jsx/style");
+});
+
+// An app of its own, next to the demo so that it finds the same Next, with
+// the files it is given, by their path from its root.
+function appWith(files: Record<string, string>): string {
+  const dir = fs.mkdtempSync(path.join(root, ".app-"));
+  onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const [file, code] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), code);
+  }
+  return dir;
+}
+
+// What Vite's dependency scan of each layer finds, on a dev server with a
+// cache of its own, and what it logs as an error: a scan that fails is
+// dropped as a whole, and the layer finds its dependencies as a test runs.
+async function scanOf(app: string) {
+  const errors: string[] = [];
+  const logger = createLogger("silent");
+  logger.error = (message) => void errors.push(message);
+  // Not in the app: the optimizer goes on to bundle what the scan found, and
+  // can still write when the server has closed.
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-scan-"));
+  const server = await createServer({
+    root: app,
+    configFile: false,
+    customLogger: logger,
+    cacheDir,
+    server: { middlewareMode: true, ws: false },
+    plugins: [vitestPluginRSC(), vitestPluginNext({ host: { files: ["**/*.test.tsx"] } })],
+  });
+  onTestFinished(async () => {
+    await server.close();
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+  });
+  const found = async (environment: string) => {
+    const { depsOptimizer } = server.environments[environment]!;
+    await depsOptimizer!.init();
+    await depsOptimizer!.scanProcessing;
+    return Object.keys(depsOptimizer!.metadata.discovered);
+  };
+  const [rsc, ssr, browser] = await Promise.all(["client", "next_ssr", "react_client"].map(found));
+  return { rsc: rsc!, ssr: ssr!, browser: browser!, errors };
+}
+
+test("has the scan of each layer read the app's code as Next's compiler gives it to the layer", async () => {
+  const app = appWith({
+    "next.config.mjs": "export default {};",
+    "app/layout.js": "export default ({ children }) => children;",
+    "app/page.js": 'import Styled from "./styled";\nexport default () => <Styled />;',
+    // The app has no `styled-jsx` of its own: Next has. Next's compiler takes
+    // the import of `styled-jsx/css` out, and has `<style jsx>` import
+    // `styled-jsx/style`.
+    "app/styled.js": [
+      '"use client";',
+      'import css from "styled-jsx/css";',
+      "const button = css`button { color: hotpink; }`;",
+      "export default () => <style jsx>{button}</style>;",
+    ].join("\n"),
+  });
+
+  const { ssr, browser, errors } = await scanOf(app);
+
+  expect(errors.join("\n")).not.toContain("Failed to run dependency scan");
+  for (const found of [ssr, browser]) {
+    expect(found).toContain("styled-jsx/style");
+    expect(found).not.toContain("styled-jsx/css");
+  }
+});
+
+test("has the scan of a layer read a module that Next's compiler stops at in the layer as it is", async () => {
+  const app = appWith({
+    "next.config.mjs": "export default {};",
+    "app/layout.js": "export default ({ children }) => children;",
+    // Server Components, which Next's compiler does not take in the ssr and
+    // browser layers: they use `next/headers`. The scans of all three
+    // layers start at every file of `app/`. Of this one the compiler's
+    // error is what the module throws.
+    "app/page.tsx": [
+      'import { cookies } from "next/headers";',
+      'import { currentRequest } from "request-context";',
+      'import Themed from "./themed";',
+      "export default async () => <Themed>{currentRequest() ?? (await cookies()).size}</Themed>;",
+    ].join("\n"),
+    // And this one does not even get that far: JSX in a `.js` file.
+    "app/themed.js": [
+      'import { cookies } from "next/headers";',
+      'import { ThemeProvider } from "next-themes";',
+      "export default async ({ children }) =>",
+      "  <ThemeProvider key={(await cookies()).size}>{children}</ThemeProvider>;",
+    ].join("\n"),
+  });
+
+  const { ssr, browser, errors } = await scanOf(app);
+
+  expect(errors.join("\n")).not.toContain("Failed to run dependency scan");
+  // `next-themes` is a Client Component, which the page renders.
+  for (const found of [ssr, browser]) {
+    expect(found).toContain("request-context");
+    expect(found).toContain("next-themes");
+  }
 });
 
 test("gives Next's module for the asset prefix of its dev server no prefix: there is no dev server", async () => {

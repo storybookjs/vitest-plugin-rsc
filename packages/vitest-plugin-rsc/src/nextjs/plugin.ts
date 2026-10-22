@@ -20,7 +20,11 @@ import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
-import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
+import {
+  createCompilePlugin,
+  createDependencyCompilePlugin,
+  createScanCompilePlugin,
+} from "./compile.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { registryGlobal } from "./registry-global.ts";
@@ -859,7 +863,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         };
 
         // What Next's compiler makes app code import, like `styled-jsx/style`
-        // for a `<style jsx>`: not an import the dependency scan finds.
+        // for a `<style jsx>`: the scan finds it where it compiles the app's
+        // code, and this is for the code it does not reach.
         const dependenciesOfNext = (layer: NextLayer) =>
           Object.entries(project.aliases[layer]).flatMap(([key, target]) =>
             key.endsWith("$") && target && resolvers[layer].isDependencyOfNext(target)
@@ -883,6 +888,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "browser" ? [hostPackagesPlugin] : []),
               resolvers[layer].plugin(),
               createDependencyCompilePlugin(getProject, layer),
+              createScanCompilePlugin(getProject, layer, serverCode.isAppCode),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
               ...(layer === "browser"

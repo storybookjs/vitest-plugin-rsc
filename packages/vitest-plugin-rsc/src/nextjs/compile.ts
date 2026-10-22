@@ -52,6 +52,36 @@ export function createDependencyCompilePlugin(getProject: () => NextProject, lay
   };
 }
 
+// The dependency scan of a layer reads the code of the app as the layer gets
+// it, after Next's compiler: what the compiler takes out, like the import of
+// `styled-jsx/css`, is no import of the layer, and what it puts in, like
+// `styled-jsx/style` for a `<style jsx>`, is one. Vite runs no plugin of an
+// environment on the files it scans, only those of `optimizeDeps`, which
+// also bundle the dependencies: there a file of a package is no code of the
+// app, and this does nothing.
+//
+// A module that Next's compiler stops at in the layer, like a Server
+// Component that imports `next/headers` in the ssr layer, is no module of
+// that layer, though the scan can come by it: from a test file in the
+// browser layer. It reads the module as it is, for the modules it imports.
+export function createScanCompilePlugin(
+  getProject: () => NextProject,
+  layer: NextLayer,
+  isAppCode: (file: string, layer: NextLayer) => boolean,
+) {
+  return {
+    name: `vitest-plugin-rsc:next-compile-scan:${layer}`,
+    async transform(code: string, id: string) {
+      if (id.includes("?") || !sourceFile.test(id) || !isAppCode(id, layer)) return;
+      const compiled = await getProject()
+        .compile(code, id, layer)
+        .catch(() => undefined);
+      if (!compiled || compiled.refused) return;
+      return { code: compiled.code, map: compiled.map ?? null };
+    },
+  };
+}
+
 export function createCompilePlugin(
   getProject: () => NextProject,
   layerOf: (environment: string) => NextLayer | undefined,
