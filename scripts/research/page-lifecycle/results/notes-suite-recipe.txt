@@ -1,10 +1,12 @@
-# The notes suite with the recipe of experiment L in its setup file:
-# vi.useFakeTimers({ toFake: [setTimeout, clearTimeout, Date], shouldAdvanceTime: true })
-# before each test, vi.runOnlyPendingTimersAsync() and vi.useRealTimers() after.
+# The notes suite with notes-recipe/setup.patch applied: the recipe of
+# "A timer that outlives its page" in docs/nextjs-guide.md, at the end of
+# playground/nextjs-notes-demo/vitest.setup.ts. Put back after the run.
  Test Files  13 passed (13)
       Tests  69 passed (69)
-   Duration  21.76s (tests 62%, setup 33%, import 4%, worker 1%)
+   Duration  12.40s (tests 75%, setup 22%, import 2%, worker 1%)
 # No 'Errors' line: no unhandled errors.
 #
-# Earlier variants: without Date, 1 test failed (the clock of vi.setSystemTime was lost);
-# with Date and advanceTimersByTimeAsync(20_000), 15 tests failed on hook timeouts.
+# Earlier variants, in the same place: without Date in toFake, 1 test failed
+# (the clock of vi.setSystemTime was undone); with Date and
+# advanceTimersByTimeAsync(20_000) in place of runOnlyPendingTimersAsync(),
+# 15 tests failed on hook timeouts.

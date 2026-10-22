@@ -1,8 +1,6 @@
-// Experiment L, the control: the same tests without the recipe.
-// Experiment L: a recipe for a user whose library leaves a timer that fires
-// after its page is left. Vitest's fake timers for `setTimeout`, which still
-// advance with the clock, and 20 s more before the plugin leaves the page.
-// The same cases as F and J, which threw without it.
+// Experiment L, the control: the cases of notes-recipe/recipe.test.tsx
+// without the recipe. Ten page loads in a row of the notes demo, whose
+// next-themes leaves a timer that throws once its page is gone.
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";

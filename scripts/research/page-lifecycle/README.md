@@ -31,6 +31,7 @@ $R/run.sh notes-within vitest.notes.config.ts notes 0 0 60
 | `notes-edges/`          | K in the notes demo                                               |
 | `notes-recipe/`         | L: the fake-timer recipe, for a library's timer like next-themes' |
 | `notes-recipe-control/` | L without the recipe                                              |
+| `e2e-v8/`               | M: what keeps a page once Next's and React's globals are gone     |
 
 `files/` and `notes-files/` have one `template.tsx` each, which `make-files.sh` copies into identical test files before a run.
 
@@ -46,4 +47,4 @@ node --max-old-space-size=8192 $R/diff.ts \
   $R/results/residual-after.heapsnapshot
 ```
 
-What they printed is in `results/*.txt`. `run.sh` adds Vitest's duration and its count of unhandled errors to each `.jsonl`. `results/stray-timer.log` (F) and `results/stray-timer-loop.log` (J) are the output of two runs, with the errors that a timer of a left page threw. `results/notes-suite-recipe.txt` is the notes suite with the recipe of L in its setup file, which was put back after.
+What they printed is in `results/*.txt`. `run.sh` adds Vitest's duration and its count of unhandled errors to each `.jsonl`. `results/stray-timer.log` (F) and `results/stray-timer-loop.log` (J) are the output of two runs, with the errors that a timer of a left page threw. `results/notes-suite-recipe.txt` is the notes suite with `notes-recipe/setup.patch` applied, the recipe of L in its setup file, which was put back after. `results/notes-recipe-timings.txt` has what the recipe costs per page.

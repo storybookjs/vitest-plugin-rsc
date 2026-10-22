@@ -1,0 +1,9 @@
+# Ten page loads in a row of /notes, signed in: the test 'pages back to back' of
+# notes-recipe/ (with the recipe) and notes-recipe-control/ (without), from the
+# logs of the runs in notes-recipe-*.jsonl and notes-recipe-control-*.jsonl.
+notes-recipe-1 1973ms
+notes-recipe-2 1684ms
+notes-recipe-3 1873ms
+notes-recipe-control-1 893ms
+notes-recipe-control-2 967ms
+notes-recipe-control-3 1002ms

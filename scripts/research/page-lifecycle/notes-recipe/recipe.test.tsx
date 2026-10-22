@@ -18,10 +18,13 @@ beforeEach(() => {
 // Before the plugin's own `afterEach`, which leaves the page: Vitest runs
 // the `afterEach` hooks of a test file before those of the setup files.
 afterEach(async () => {
-  // Not `advanceTimersByTimeAsync(20_000)`: with `Date` faked, that waited
-  // past the hook's timeout in the notes suite.
-  await vi.runOnlyPendingTimersAsync();
-  vi.useRealTimers();
+  try {
+    if (vi.isFakeTimers()) {
+      await vi.runOnlyPendingTimersAsync();
+    }
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("a link to a route of the app loads its page", async () => {

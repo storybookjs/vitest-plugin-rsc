@@ -106,7 +106,7 @@ export default defineConfig({
 
 `vitestPluginNext()` reads your app from the project root. You don't need a setup file, because the plugin cleans up before and after every test.
 
-By default Vitest starts every test file in a new iframe, which loads your app's server again for each file. With `isolate: false` in `test`, a worker loads it once, for all of its test files: in the playgrounds that saves about 0.6 to 1.4 s per file. The plugin does a lot of work so that this works, and either setting does. The test files of a worker then share their modules, so mocks belong in a setup file, and what your own code leaves behind stays for the next file. See [Test isolation](docs/nextjs-guide.md#test-isolation) for what the plugin takes back, and for how to keep your test files apart.
+By default Vitest starts every test file in a new iframe, which loads your app's server again for each file. With `isolate: false` in `test`, a worker loads it once, for all of its test files: in the playgrounds that saves about 0.6 to 1.4 s per file. Either setting works: the plugin does the work that makes `isolate: false` safe. The test files of a worker then share their modules, so mocks belong in a setup file, and what your own code leaves behind stays for the next file. See [Test isolation](docs/nextjs-guide.md#test-isolation) for what the plugin takes back, and for how to keep your test files apart.
 
 The `.mts` extension makes Vite load the config as ES modules, which a create-next-app project without `"type": "module"` needs. `include` keeps Playwright's `*.spec.ts` files out of the run. Add `.vitest/` to your `.gitignore`: Vitest writes the screenshots of failed tests there.
 

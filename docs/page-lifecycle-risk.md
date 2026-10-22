@@ -22,7 +22,7 @@ Measured at `4d43e6ea` on an Apple M1 Pro (32 GB), with Vitest 5.0.5, Playwright
   - a page that V8 can keep through a shape the tab shares;
   - the server render of a page that was left.
 - **What the app's libraries leave is the user's, with a recipe.** The 1 ms timer of `next-themes` fires after its page is left and throws, every time pages load one after another: 36 errors for 10 page loads. Vitest's fake timers, run before the page is left, take that to none, and the notes suite passes with them. The recipe is in the guide: [A timer that outlives its page](nextjs-guide.md#a-timer-that-outlives-its-page).
-- **The plan: Next's own files get the page's timers, ports and observers.** The plugin already rewrites Next's files as Vite pre-bundles them. The same kind of rewrite points `setTimeout`, `MessageChannel` and `PerformanceObserver` in those files, which include the React that Next ships, at the page that runs them. Leaving the page releases them. The app's code and its other packages keep the real globals.
+- **The plan: Next's own files get the page's timers, ports and observers.** As Vite pre-bundles the files of `next/dist`, which include the React that Next ships, a define of oxc points `setTimeout`, `MessageChannel`, `PerformanceObserver` and the like in them at the page that runs them. The plugin does that kind of rewrite already, for `build: "production"`. Leaving the page releases them. The app's code and its other packages keep the real globals.
 - **Effort**: about 3 weeks. Risk: the conformance suite (956 of 1147 pass) and the Storybook package, which leaves pages the same way.
 
 ## 1. Why A Left Page Can Be Freed
@@ -123,7 +123,7 @@ Evidence for each:
 
 - **`useReportWebVitals`.** In an app that calls it, Next's `web-vitals` (`next/dist/compiled/web-vitals`) adds listeners for `visibilitychange`, `pageshow` and `prerenderingchange`, and `PerformanceObserver`s, after the page has loaded, and removes only some of them. Not measured: no route here uses it.
 - **The pointer.** The browser keeps the element that the pointer is over. The notes demo's setup file hovers a 1 px element before every test to let go of it.
-- **V8.** Since V8 `7dcf3d06ea`, a live shape keeps every descriptor of the array it shares (`memory.test.tsx`). The first page whose objects extend a shape that the tab shares, like the interop object of a CommonJS package, stays for as long as the tab.
+- **V8.** Since V8 `7dcf3d06ea`, a live shape keeps every descriptor of the array it shares (`memory.test.tsx`). The first page whose objects extend a shape that the tab shares, like the interop object of a CommonJS package, stays for as long as the tab. In experiment M it did not show up: once Next's and React's globals were deleted and the pointer moved, none of 12 pages stayed (`results/e2e-v8.jsonl`).
 - **The server render.** A page left before its server sent anything keeps rendering. Once its data comes, Next logs the errors of a request that is gone, possibly in a later test (Not Yet, `docs/next-routes.md`).
 
 ### Still open: the user's
@@ -133,7 +133,7 @@ Evidence for each:
 - With `disableTransitionOnChange`, it adds a style when it mounts, and removes it again with `setTimeout(..., 1)`.
 - Leaving the page has already removed that style, so the timer throws `NotFoundError` from `removeChild`. In a browser it would have died with the page; in a test without pages it would have found its style.
 - Ten page loads in a row throw 36 times (J, `results/stray-timer-loop.log`; the same in all three runs of the control of L), and 40 throw 144 times in each run of D.
-- A test that ends right after the app loaded a page itself threw in one of three runs (F, `results/stray-timer.log`).
+- A test that ends right after the app loaded a page itself threw in one of three runs (F). Only the log of the run that threw is kept: `results/stray-timer.log`, 4 errors.
 - Vitest blames whichever test runs then:
 
   > NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
@@ -142,8 +142,9 @@ Evidence for each:
 
 **The recipe (L).** Run such timers before the plugin leaves the page. Install Vitest's fake timers for `setTimeout`, `clearTimeout` and `Date`, with `shouldAdvanceTime`, before each test. After each test, call `vi.runOnlyPendingTimersAsync()` before the plugin's own `afterEach` leaves the page. A test that opens another page calls it before that too.
 
-- With the recipe, the same cases throw nothing, in three runs out of three. Without it they throw 36 times in each of three runs (`results/notes-recipe-*.jsonl`).
-- The notes suite passes with the recipe in its setup file: 69 of 69 tests, no unhandled errors (`results/notes-suite-recipe.txt`).
+- In a test file with the recipe's hooks, the same cases throw nothing, in three runs out of three. Without them they throw 36 times in each of three runs (`results/notes-recipe-*.jsonl`).
+- The notes suite passes with the recipe in its setup file: 69 of 69 tests, no unhandled errors (`notes-recipe/setup.patch`, `results/notes-suite-recipe.txt`). It passes without it too: its tests wait with `watchPageLoad()`.
+- It costs about 70 to 110 ms per page load: ten loads in a row took 1.68 to 1.97 s with it, and 0.89 to 1.0 s without (`results/notes-recipe-timings.txt`).
 - Two variants failed:
   - Without `Date` faked, fake timers undo the clock that the notes demo fixes with `vi.setSystemTime()`, and one test failed.
   - `advanceTimersByTimeAsync(20_000)` instead of running the pending timers waited past the hooks' timeout in 15 tests.
@@ -154,29 +155,32 @@ The guide has it, under [A timer that outlives its page](nextjs-guide.md#a-timer
 
 ### 3.1 Next's files get the page's timers, ports and observers
 
-`nextProductionPlugin()` in `build.ts` already rewrites the files of `next/dist` as Vite pre-bundles them, with a define of oxc. Those files include the React, React DOM, scheduler and Flight client that Next ships. `server-code.ts` already does the same for server code, mapping globals like `setImmediate` to the plugin's registry.
+With `build: "production"`, `nextProductionPlugin()` in `build.ts` rewrites the files of `next/dist` that mention `process.env.NODE_ENV` as Vite pre-bundles them, with a define of oxc. Those files include the React, React DOM, scheduler and Flight client that Next ships. `server-code.ts` does the same for server code, mapping globals like `globalThis.fetch` and `setImmediate` to the plugin's registry. 3.1 adds a plugin of that kind to the browser layer's pre-bundle, in every build, and to the browser layer of a static build, which `static-build.ts` builds instead of pre-bundling.
 
 In the browser layer, the same kind of define points these names at a scope that the page's runner passes to each module it evaluates, as it passes the module's context today:
 
 - `setTimeout`, `clearTimeout`, `setInterval` and `clearInterval`;
+- `requestAnimationFrame` and `requestIdleCallback`, with the functions that cancel them, which React DOM and web-vitals use;
 - `MessageChannel`;
 - `PerformanceObserver`;
+- `addEventListener` and `removeEventListener`, which web-vitals calls bare;
 - each also as `globalThis.`, `self.` and `window.`.
 
 The scope passes each call on to the global of that moment, so the test's fake timers still apply, and keeps what it made. Leaving the page clears the timers, closes the ports and disconnects the observers. A call that a left page's code makes after that makes nothing.
 
 Why this is the clean way:
 
-- **It reaches exactly Next's and React's code.** Only their files are rewritten, and only the runner of a page passes a page's scope. Runners outside a page get one with the real globals: the runner of `"use client"` test files, and the ssr layer. The app's code and its other packages are untouched, which is the rule.
+- **It reaches exactly Next's and React's code.** Only their files are rewritten, and only the runner of a page passes a page's scope. `pageLoadEvaluator` passes a scope with the real globals by default, for the runners of the browser layer outside a page: the client graph of `"use client"` files and `importReactClient()`. Every runner of that layer has to pass one, as the name is in the shared pre-bundle. The ssr layer has a pre-bundle of its own and needs none. The app's code and its other packages are untouched, which is the rule.
 - **It is decided when the file is compiled.** No global is patched for a window of time, and no stack is read.
 - **The compiled code stays shared between pages.** Only the scope differs, and a define in a pre-bundle runs once per run.
 - **It closes the list above:** `next/image`'s observer, React DOM's timers, the Flight client's timer, and `useReportWebVitals`' observer. It also closes the scheduler's port, which `leftovers.ts` records today by patching the global `MessageChannel` while Next's client loads. That patch goes.
 
-To check while building it: that oxc's define takes `window.setTimeout` and `self.setTimeout`, as it takes `globalThis.setTimeout` in `server-code.ts`. `useReportWebVitals`' listeners go through `addEventListener` on `document` and `window`. If a define can't reach those, the page's scope records them for Next's files only.
+To check while building it: that oxc's define takes `window.setTimeout` and `self.setTimeout`, as it takes `globalThis.fetch` in `server-code.ts`. Experiment K saw neither `requestAnimationFrame` nor `requestIdleCallback`, so it is not measured whether they keep anything.
 
 ### 3.2 Globals, the pointer
 
-- At every leave, delete the globals that Next's client and React's inline scripts set on `window`. That is a list from their source, checked when a run starts, like the plugin's other checks of Next's runtime (`project/`).
+- At every leave, delete the globals that Next's client and React's inline scripts set on `window`. That is a list from their source, checked when a run starts, like the plugin's other checks of Next's runtime (`project/`). The notes demo's `watchPageLoad()` reads `__NEXT_HYDRATED_AT` before a page loads and waits for another value: it then waits for a value that is there.
+- `document.ts` runs React's inline scripts, the ones that define `$R…`, with the page's scope as their `setTimeout`, through a function instead of `(0, eval)`, so leaving the page clears their timer. Their globals are assignments, which a function leaves global. Other inline scripts keep `(0, eval)`: their declarations need the global scope.
 - At `cleanup()`, move the pointer off the page, as the notes setup does by hand today, and drop that from the setup. This works only under Vitest; another host has no pointer to move.
 
 ### 3.3 The server render of a left page
