@@ -40,6 +40,21 @@ export type MiddlewareHandler = (
 
 type AnyFunction = (...args: any[]) => any;
 
+/**
+ * Which pathnames of a route `next build` prerenders, from its
+ * `generateStaticParams`, before it renders one: see prerender-verdict.ts.
+ */
+export type PrerenderVerdict = {
+  /** The pathnames the build prerenders. */
+  pathnames: string[];
+  /**
+   * For a route with params: what Next does for a pathname not among them,
+   * the `fallback` of its prerender manifest. `null` prerenders it at its
+   * first request, `false` answers that it is not found.
+   */
+  fallback?: null | false;
+};
+
 /** See `NextRegistry.opened`. */
 export type Opened = {
   pathname: string;
@@ -114,6 +129,20 @@ export type NextRegistry = {
    * `hostFiles`; without it a node has no stylesheets of the host's files.
    */
   nodeFiles?(): string[];
+  /** The directory of the build on the server's disk, of this generation: see cache.ts. */
+  buildDir(): string;
+  /**
+   * Next's build's verdict on a route of the app, by its page name and its
+   * pathname, in the rsc layer: nothing for a route it renders at every
+   * request.
+   */
+  prerenderVerdict(route: {
+    kind: "page" | "route";
+    page: string;
+    pathname: string;
+  }): Promise<PrerenderVerdict | undefined>;
+  /** Whether an error is the one Next's handler of a route throws for a pathname it does not serve. */
+  isNoFallbackError(error: unknown): boolean;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
   loadRouteHandler(page: string): Promise<RequestHandler>;
   /** Loads the request handler of the middleware of the app, which is in the rsc layer. */
