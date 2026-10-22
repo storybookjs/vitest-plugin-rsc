@@ -1,0 +1,41 @@
+{
+  "name": "vitest-vs-playwright",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#*": "./*"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test:vitest": "vitest run",
+    "test:playwright": "playwright test"
+  },
+  "dependencies": {
+    "@next/routing": "16.4.0",
+    "drizzle-orm": "^0.45.2",
+    "next": "16.4.0",
+    "pg": "^8.20.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
+    "@playwright/test": "1.64.1",
+    "@types/node": "^24.12.4",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitest/browser": "5.0.5",
+    "@vitest/browser-playwright": "5.0.5",
+    "playwright": "^1.64.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.1",
+    "vitest": "5.0.5",
+    "vitest-plugin-rsc": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

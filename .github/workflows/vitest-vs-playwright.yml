@@ -1,13 +1,15 @@
 name: Vitest vs Playwright
 
-# The same 25 tests of the notes demo, in 5 files, once in Vitest with
-# `renderServer()` and once in Playwright against `next start` and a Postgres
-# in Docker: see playground/nextjs-notes-demo/speed/README.md. Each job writes
-# what each of its steps took to the summary of the run.
+# The 25 tests of playground/vitest-vs-playwright, in Vitest with
+# `renderServer()` and in Playwright on Postgres in Docker, each with 1
+# worker: Vitest in development against `next dev`, Vitest in production
+# against `next build` and `next start`. See its README.md. Each job writes what its
+# steps took to the summary of the run.
 on:
   pull_request:
     paths:
-      - playground/nextjs-notes-demo/**
+      - playground/vitest-vs-playwright/**
+      - packages/vitest-plugin-rsc/**
       - .github/workflows/vitest-vs-playwright.yml
   workflow_dispatch:
 
@@ -19,14 +21,11 @@ concurrency:
 defaults:
   run:
     shell: bash
-
-env:
-  # One worker for both: one test after the other, no parallelism.
-  WORKERS: 1
+    working-directory: playground/vitest-vs-playwright
 
 jobs:
   vitest:
-    name: Vitest (renderServer, production build of Next)
+    name: Vitest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,41 +36,43 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
-      - run: pnpm build
-      - name: Run the 25 tests
-        env:
-          # Next's production code, as `next build` makes it.
-          VITEST_PLUGIN_RSC_BUILD: production
+      - run: pnpm --filter vitest-plugin-rsc build
+      - name: Run the 25 tests, Next and React in production
         run: |
           start=$(date +%s.%N)
-          # The config of the notes demo alone, not the root one with every
-          # project of the repo.
-          pnpm exec vitest run --configLoader runner --config playground/nextjs-notes-demo/vitest.config.ts \
-            --project nextjs-notes-demo-browser --maxWorkers "$WORKERS" speed/vitest | tee vitest.log
+          pnpm exec vitest run --maxWorkers 1 | tee vitest.log
           end=$(date +%s.%N)
-          # Vitest's own measure, without the load of the config.
           duration=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log | grep -oP 'Duration\s+\K[0-9.]+')
           {
-            echo "### Vitest"
+            echo "### Vitest, production"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
-            printf "| Database (PGlite in the page) | 0 |\n"
-            printf "| Build of the app | 0 |\n"
-            printf "| 25 tests, %s worker(s), \`isolate: false\`, the load of the config included | %.1f |\n" "$WORKERS" "$(echo "$end - $start" | bc)"
+            printf "| 25 tests, 1 worker, all included | %.1f |\n" "$(echo "$end - $start" | bc)"
+            printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Run the 25 tests, Next and React in development
+        env:
+          VITEST_PLUGIN_RSC_BUILD: development
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec vitest run --maxWorkers 1 | tee vitest.log
+          end=$(date +%s.%N)
+          duration=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log | grep -oP 'Duration\s+\K[0-9.]+')
+          {
+            echo "### Vitest, development"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| 25 tests, 1 worker, all included | %.1f |\n" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
 
   playwright:
-    name: Playwright (next build, next start, Postgres in Docker)
+    name: Playwright
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
-        working-directory: playground/nextjs-notes-demo
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-      SUPPORT_EMAIL: support@notes.example
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -81,45 +82,52 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
-      - name: Start Postgres in Docker and push the schema
+      - name: Start Postgres in Docker, in RAM
         run: |
           start=$(date +%s.%N)
-          # In RAM, without the waits for the disk: the fastest Postgres for
-          # tests, as PGlite is in memory for the Vitest tests.
-          docker run -d --name notes-demo-postgres -p 5432:5432 \
+          docker run -d --name postgres -p 5432:5432 \
             -e POSTGRES_PASSWORD=postgres \
             --tmpfs /var/lib/postgresql/data \
             postgres:17 \
             -c fsync=off -c synchronous_commit=off -c full_page_writes=off
-          until docker exec notes-demo-postgres pg_isready -U postgres -h localhost; do sleep 0.2; done
-          pnpm db:push --force
+          until docker exec postgres pg_isready -U postgres -h localhost; do sleep 0.2; done
           end=$(date +%s.%N)
           echo "DATABASE_SECONDS=$(echo "$end - $start" | bc)" >> "$GITHUB_ENV"
+      - name: Run the 25 tests against next dev
+        env:
+          PLAYWRIGHT_SERVER: dev
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec playwright test | tee playwright.log
+          end=$(date +%s.%N)
+          duration=$(grep -oP 'passed \(\K[0-9.]+(?=s\))' playwright.log)
+          {
+            echo "### Playwright, development"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| Postgres in Docker | %.1f |\n" "$DATABASE_SECONDS"
+            printf "| 25 tests, 1 worker, \`next dev\` included | %.1f |\n" "$(echo "$end - $start" | bc)"
+            printf "| Of which Playwright's own time | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Build the app with next build
         run: |
           start=$(date +%s.%N)
           pnpm build
           end=$(date +%s.%N)
           echo "BUILD_SECONDS=$(echo "$end - $start" | bc)" >> "$GITHUB_ENV"
-      - name: Run the 25 tests
+      - name: Run the 25 tests against next start
         run: |
           start=$(date +%s.%N)
-          pnpm exec playwright test --workers "$WORKERS" | tee playwright.log
+          pnpm exec playwright test | tee playwright.log
           end=$(date +%s.%N)
-          # Playwright's own measure, the tests after `next start` is up.
           duration=$(grep -oP 'passed \(\K[0-9.]+(?=s\))' playwright.log)
           {
-            echo "### Playwright"
+            echo "### Playwright, production"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
-            printf "| Database (Postgres in Docker, \`db:push\`) | %.1f |\n" "$DATABASE_SECONDS"
-            printf "| Build of the app (\`next build\`) | %.1f |\n" "$BUILD_SECONDS"
-            printf "| 25 tests, %s worker(s), \`next start\` included | %.1f |\n" "$WORKERS" "$(echo "$end - $start" | bc)"
+            printf "| \`next build\` | %.1f |\n" "$BUILD_SECONDS"
+            printf "| 25 tests, 1 worker, \`next start\` included | %.1f |\n" "$(echo "$end - $start" | bc)"
             printf "| Of which Playwright's own time | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-test-results
-          path: playground/nextjs-notes-demo/test-results/

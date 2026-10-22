@@ -40,7 +40,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-# Playwright, of speed/playwright/
-/test-results/
-/playwright-report/

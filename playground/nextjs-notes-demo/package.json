@@ -55,7 +55,6 @@
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@opentelemetry/api": "^1.9.1",
-    "@playwright/test": "1.64.1",
     "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@d5523e646c9ffd61eddd2eec1efcbd12e428dce6",
     "@storybook/addon-vitest": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@d5523e646c9ffd61eddd2eec1efcbd12e428dce6",
     "@storybook/nextjs-vite-rsc": "workspace:*",

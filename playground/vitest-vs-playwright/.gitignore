@@ -1,0 +1,7 @@
+.next/
+next-env.d.ts
+# test/pglite-files.ts
+/test/pglite/
+# Playwright
+/test-results/
+/playwright-report/
