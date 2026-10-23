@@ -46,6 +46,10 @@ def regions(path):
 
 def package_of(source):
     """`next (server)`, `react-dom (client)`, `@electric-sql/pglite`, … of a path in node_modules."""
+    # React's Flight, also the copies that Next and Vite RSC vendor.
+    if "react-server-dom" in source:
+        server = "server" in os.path.basename(source)
+        return "React Flight (server)" if server else "React Flight (client)"
     if "node_modules/" not in source:
         return "vitest-plugin-rsc" if "vitest-plugin-rsc" in source else "other: " + os.path.basename(source)
     rest = source.rsplit("node_modules/", 1)[-1]
@@ -128,3 +132,80 @@ print("| Function | Of | Seconds |")
 print("| --- | --- | ---: |")
 for (function, kind), seconds in functions.most_common(25):
     print(f"| `{function}` | {kind} | {seconds:.2f} |")
+
+
+# With the timings of test/profile.ts next to a profile, what ran in each
+# phase of the tests: each sample by the phase it fell in.
+def phases_of(timings):
+    """(start, end, phase) of every phase, on the clock of `performance.now()`."""
+    found = []
+    renders = timings["flight"]
+    names = {"action": "Server Action", "flight": "navigation", "page": "page load"}
+    for request in timings["requests"] or []:
+        queued, started = request["queued"], request.get("started")
+        finished = request.get("finished") or request.get("answered")
+        if started is None or finished is None:
+            continue
+        name = names[request["kind"]]
+        inside = [r for r in renders if started <= r[0] <= finished]
+        first = min((r[0] for r in inside), default=finished)
+        written = max((r[1] for r in inside), default=first)
+        found += [
+            (queued, started, f"{name}: waiting for the request before"),
+            (started, first, f"{name}: server before Flight"),
+            (first, written, f"{name}: Flight render"),
+            (written, finished, f"{name}: server after Flight"),
+        ]
+    requests = sorted(found)
+    for start, end in timings["tests"]:
+        found.append((start, end, "the page, outside requests"))
+    # The phases of requests first: a test spans its requests.
+    return requests, sorted((s, e, p) for s, e, p in found if p == "the page, outside requests")
+
+
+by_phase = collections.defaultdict(collections.Counter)
+for file in profiles:
+    timing_file = os.path.join(root, "timings", os.path.basename(file).replace(".cpuprofile", ".json"))
+    if not os.path.exists(timing_file):
+        continue
+    with open(timing_file) as handle:
+        timings = json.load(handle)
+    if timings.get("profileStart") is None:
+        continue
+    with open(file) as handle:
+        profile = json.load(handle)
+    nodes = {node["id"]: node for node in profile["nodes"]}
+    requests, tests = phases_of(timings)
+    request_starts = [start for start, _, _ in requests]
+    test_starts = [start for start, _, _ in tests]
+    # The first sample of `__profileSync()` is when it started, `profileStart`.
+    at, sync = profile["startTime"], None
+    for node_id, delta in zip(profile["samples"], profile["timeDeltas"]):
+        at += delta
+        if nodes[node_id]["callFrame"]["functionName"] == "__profileSync":
+            sync = at
+            break
+    if sync is None:
+        continue
+    at = profile["startTime"]
+    for node_id, delta in zip(profile["samples"], profile["timeDeltas"]):
+        at += delta
+        time = timings["profileStart"] + (at - sync) / 1000
+        phase = "between tests (hooks, Vitest)"
+        index = bisect.bisect_right(request_starts, time) - 1
+        if index >= 0 and requests[index][0] <= time < requests[index][1]:
+            phase = requests[index][2]
+        else:
+            index = bisect.bisect_right(test_starts, time) - 1
+            if index >= 0 and tests[index][0] <= time < tests[index][1]:
+                phase = tests[index][2]
+        by_phase[phase][category(nodes[node_id]["callFrame"])] += max(delta, 0) / 1e6
+
+if by_phase:
+    print("\nWhat ran in each phase of the tests, by its CPU samples:\n")
+    print("| Phase | Seconds | What ran most |")
+    print("| --- | ---: | --- |")
+    for phase, kinds in sorted(by_phase.items(), key=lambda item: -sum(item[1].values())):
+        seconds = sum(kinds.values())
+        most = ", ".join(f"{kind} {100 * part / seconds:.0f}%" for kind, part in kinds.most_common(7))
+        print(f"| {phase} | {seconds:.1f} | {most} |")

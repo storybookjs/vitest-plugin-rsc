@@ -68,6 +68,16 @@ const stopTrace: BrowserCommand<[name: string]> = async (_context, name) => {
   await writeFile(`traces/${name}.json`, JSON.stringify(events));
 };
 
+// With `VITEST_PROFILE=timings`, the timings of test/profile.ts in timings/.
+const writeTimings: BrowserCommand<[name: string, timings: string]> = async (
+  _context,
+  name,
+  timings,
+) => {
+  await mkdir("timings", { recursive: true });
+  await writeFile(`timings/${name}.json`, timings);
+};
+
 export default mergeConfig(config, {
   // What test/profile.ts reads, which Vite gives the page only for `VITE_*`.
   define: {
@@ -75,7 +85,7 @@ export default mergeConfig(config, {
     "import.meta.env.VITEST_PROFILE": JSON.stringify(process.env.VITEST_PROFILE ?? ""),
   },
   test: {
-    browser: { commands: { startProfile, stopProfile, startTrace, stopTrace } },
+    browser: { commands: { startProfile, stopProfile, startTrace, stopTrace, writeTimings } },
     setupFiles: ["./test/profile.ts"],
   },
 });

@@ -117,6 +117,8 @@ jobs:
         run: pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1 tests/vitest-user-event/
       - name: Sum up the profiles
         run: python3 test/profile-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Sum up the timings of the requests
+        run: python3 test/timings-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Trace Chrome for two test files
         env:
           VITEST_PROFILE: trace
@@ -131,6 +133,7 @@ jobs:
           name: cpu-profiles-and-traces
           path: |
             playground/vitest-vs-playwright-notes/profiles/
+            playground/vitest-vs-playwright-notes/timings/
             playground/vitest-vs-playwright-notes/traces/
 
   playwright:
