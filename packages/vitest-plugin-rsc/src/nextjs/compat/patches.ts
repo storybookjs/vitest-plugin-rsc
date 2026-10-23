@@ -38,22 +38,6 @@ export const nextPatches = (registry: string): NextPatch[] => [
       ],
     ],
   },
-  // A page of fast mode's kept app (`keepApp`, page.ts) has no use for a document,
-  // not even the empty one of `ssr: false`: Next answers its request with
-  // the Flight payload that it would inline in the document, as it is. See
-  // `flightOnly` of `Opened`.
-  {
-    file: appRender,
-    lost: "fast mode loads the empty document of every page",
-    edits: [
-      [
-        "// This is a regular dynamic render\n",
-        "// This is a regular dynamic render\n" +
-          `if (${registry}?.openedByRequest?.getStore()?.flightOnly) { ` +
-          `finishHtmlRender(); return reactServerResult.consume(); }\n`,
-      ],
-    ],
-  },
   // The kept app of fast mode renders every page with a router of its own
   // (`renderAgain()` in client.tsx). Next creates the action queue of its
   // router once per page load, and throws when it is created again.
@@ -84,22 +68,6 @@ export const nextPatches = (registry: string): NextPatch[] => [
         "export function mountFormInstance(element, href, router, fetchStrategy) {",
         "export function mountFormInstance(element, href, router, fetchStrategy) {" +
           `\n    if (${registry}?.fast?.skipPrefetch) return;`,
-      ],
-    ],
-  },
-  // In fast mode a navigation does not scroll to the segment that changed. To
-  // find out whether it is in view, Next reads the layout of the document
-  // after every navigation, which makes the browser lay it out then: about 2%
-  // of the time of fast mode in a profile of the notes app. A test does not
-  // see scrolling.
-  {
-    file: /\/next\/dist\/esm\/client\/components\/layout-router\.js$/,
-    lost: "fast mode scrolls after a navigation",
-    edits: [
-      [
-        "if (scrollRef === null || !scrollRef.current) return;",
-        "if (scrollRef === null || !scrollRef.current) return;" +
-          `\n        if (${registry}?.fast?.keepApp) {\n            scrollRef.current = false;\n            return;\n        }`,
       ],
     ],
   },

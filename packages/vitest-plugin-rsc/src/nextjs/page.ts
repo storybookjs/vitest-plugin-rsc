@@ -134,13 +134,14 @@ let current: Page | undefined;
 
 type Client = typeof import("./client.tsx");
 
-// Fast mode's app: the one the first page of a test file started, which
-// renders the pages after it in its root, from their Flight payload, without
-// a module graph, a root or Next's entry of their own: see `renderAgain()` in
-// client.tsx. A page that the app loads itself from one of them, like after
-// a `<form>` without JavaScript, renders in it too. It is left with the
-// first page that does not, like one of `renderServer({ url, ssr: true })`,
-// or as the test file ends: see `leaveKeptApp()`.
+// Fast mode's app (`keepApp`): the one the first page of a test file started,
+// which renders the pages after it in its root, from the Flight payload in
+// their document, without a module graph, a root or Next's entry of their
+// own: see `renderAgain()` in client.tsx. A page that the app loads itself
+// from one of them, like after a `<form>` without JavaScript, renders in it
+// too. It is left with the first page that does not, like one of
+// `renderServer({ url, ssr: true })`, or as the test file ends: see
+// `leaveKeptApp()`.
 let kept: { client: Client; leave(): void } | undefined;
 
 /**
@@ -308,10 +309,6 @@ async function openPage(
     }
   };
 
-  // A page of the kept app needs no document: see `renderInKeptApp()`.
-  if (opening && page.inKeptApp && kept && !("html" in request)) {
-    return renderInKeptApp(page, kept.client, url, request, from, opening.opened);
-  }
   // The test's request, or the document that a navigation has: see `navigate()`.
   const { response, html, after } = "html" in request ? request : await requestDocument(request);
   superseded();
@@ -335,8 +332,8 @@ async function openPage(
   await loadDocument(html, response.url, container, after);
   superseded();
   const { inKeptApp } = page;
-  // A page that the app loads from a page of the kept app renders in it,
-  // from its document.
+  // A page of the kept app renders in it, from its document: the empty one
+  // of `ssr: false`, or the HTML of a page that the app loads itself.
   if (inKeptApp && kept) {
     await startInKeptApp(page, kept.client);
     superseded();
@@ -433,77 +430,19 @@ async function openPage(
   return response;
 }
 
-// The document of a page of a kept app that the server sent its Flight
-// payload for: the app renders all of it, and the document is the page's
-// own, for its URL, its entry of the history and what React adds to it.
-const flightDocument = '<!DOCTYPE html><html id="__next_error__"><head></head><body></body></html>';
-
-// Opens a page in the app that the page before kept: its request
-// asks Next for the Flight payload alone, without HTML (`flightOnly` of
-// `Opened`), and the app renders it in its root (`renderAgain()` in
-// client.tsx). No HTML to parse, no scripts to run, no module graph to make
-// and no Next's entry to run. The server may still send a document, like
-// the one of a route that it prerenders, from which the app renders the
-// page, as it is.
-async function renderInKeptApp(
-  page: Page,
-  client: Client,
-  url: URL,
-  init: RequestInit,
-  from: PageStore,
-  opened: Opened,
-): Promise<Response> {
-  const { signal } = page;
-  let response: Response;
-  let body: Uint8Array;
-  try {
-    response = await sendPageLoad(
-      url,
-      init,
-      { from, navigation: "test", opened: { ...opened, flightOnly: true } },
-      signal,
-    );
-    signal.throwIfAborted();
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!/^text\/html\b/i.test(contentType)) {
-      await response.body?.cancel();
-      throw new Error(
-        `vitest-plugin-rsc: ${response.url} responded with ${contentType || "no content type"}, ` +
-          `which is not a page to open. Use handleRequest() to assert on the response itself.`,
-      );
-    }
-    body = new Uint8Array(await response.arrayBuffer());
-  } catch (error) {
-    // Leaving the page cuts off the answer.
-    signal.throwIfAborted();
-    throw error;
-  }
-  signal.throwIfAborted();
-  // A page that was redirected is the app's, and so are the requests to it.
-  if (new URL(response.url).pathname !== opened.pathname) registry.opened = undefined;
-  // A document starts with markup, after any white space; a Flight payload
-  // with the id of a row.
-  const html = /^\s*</.test(new TextDecoder().decode(body.subarray(0, 64)));
-  await loadDocument(html ? new TextDecoder().decode(body) : flightDocument, response.url);
-  signal.throwIfAborted();
-  await startInKeptApp(page, client, html ? undefined : body);
-  signal.throwIfAborted();
-  return response;
-}
-
 // What a browser fires on the window as it leaves a page and shows the next,
 // for a page that is not kept for back and forward.
 function dispatchPageTransition(type: "pagehide" | "pageshow"): void {
   window.dispatchEvent(new PageTransitionEvent(type, { persisted: false }));
 }
 
-// Renders the page in the kept app, from its Flight payload, or else from
-// the payload in its document: see `renderAgain()` in client.tsx.
-async function startInKeptApp(page: Page, client: Client, flight?: Uint8Array): Promise<void> {
+// Renders the page in the kept app, from the Flight payload in its document:
+// see `renderAgain()` in client.tsx.
+async function startInKeptApp(page: Page, client: Client): Promise<void> {
   const { signal } = page;
   dispatchPageTransition("pageshow");
   const started = client
-    .renderAgain(signal, page.errors, flight)
+    .renderAgain(signal, page.errors)
     .then(({ unmount }) => page.defer(unmount));
   page.starts(started, () => {});
   setOpenPage(signal);
@@ -524,7 +463,7 @@ const moduleChecks = new Map<string, Promise<void>>();
 async function sendPageLoad(
   url: URL,
   init: RequestInit,
-  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
+  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network">,
   signal: AbortSignal,
 ): Promise<Response> {
   await oncePerTestFile(moduleChecks, "", checkFetchedModules);

@@ -79,12 +79,6 @@ export type Opened = {
    * Read from `openedByRequest`.
    */
   ssr?: boolean;
-  /**
-   * For the request of a page of fast mode's kept app alone: Next answers it
-   * with the Flight payload of the page in place of its document
-   * (`nextPatches` in compat/patches.ts). Read from `openedByRequest`.
-   */
-  flightOnly?: boolean;
 };
 
 /**
@@ -200,7 +194,7 @@ export type NextRegistry = {
    * itself, like the route of a node of `runInServerAction()`, or else
    * `opened` at its URL (`openedAt()`). The page of the route of a node reads
    * it, and else `opened`. The server's `fetch` reads its `rendersRedirect`,
-   * and Next's renderer its `ssr` and `flightOnly`.
+   * and Next's renderer its `ssr`.
    */
   openedByRequest: SequentialAsyncLocalStorage<Opened | undefined>;
   /**
