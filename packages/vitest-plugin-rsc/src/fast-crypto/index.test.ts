@@ -1,4 +1,4 @@
-// The stand-ins of `fastCrypto`: each keeps the contract of what it stands in
+// The stand-ins of `fast.crypto`: each keeps the contract of what it stands in
 // for, which Node's own `crypto` is here to compare with, and costs
 // microseconds where the real one costs a tenth of a second or more.
 

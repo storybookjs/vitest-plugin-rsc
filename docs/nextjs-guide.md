@@ -818,13 +818,22 @@ vitestPluginNext({ fast: true });
 VITEST_PLUGIN_RSC_FAST=1 npx vitest
 ```
 
-What changes:
+What changes, each with its flag:
 
-- **One app per test file.** The first page of a test file starts the app, and every `renderServer({ url })` after it renders its page in that app, from its Flight payload, without loading the page. Each page gets a React tree and a router of its own, so the state of a component doesn't carry over from one test to the next. The state of a module does, as in an app that never reloads: a module that keeps a value from the test before has it in the next one.
-- **No HTML from the server.** The page renders on the client, as with `ssr: false`, so a test doesn't see the server's HTML or a hydration mismatch. A test that asserts on them passes `renderServer({ url, ssr: true })` and gets a page load of its own. In development, the page has no dev overlay.
-- **No prefetching and no scrolling.** `<Link>` and `<Form>` don't prefetch, and a navigation doesn't scroll.
-- **Less waiting.** `expect.element()` looks for an element again on every change of the DOM, and `expect.poll()` every 5 ms, unless your config sets `expect.poll.interval`. The server doesn't wait the few milliseconds a browser adds to a timeout of `0` between the steps of a render.
-- **Password hashes that cost microseconds.** Password hashes and key derivation of `bcryptjs`, `node:crypto` and Web Crypto cost microseconds, with the same API, so a hash a test makes verifies in the app. `fastCrypto: false` keeps the real ones. See [Fast crypto](nodejs-in-the-browser.md#fast-crypto).
+- **One app per test file** (`keepApp`). The first page of a test file starts the app, and every `renderServer({ url })` after it renders its page in that app, from its Flight payload, without loading the page. Each page gets a React tree and a router of its own, so the state of a component doesn't carry over from one test to the next. The state of a module does, as in an app that never reloads: a module that keeps a value from the test before has it in the next one. The page renders on the client, as with `ssr: false`, so a test doesn't see the server's HTML or a hydration mismatch. A test that asserts on them passes `renderServer({ url, ssr: true })` and gets a page load of its own. In development, the page has no dev overlay, and a navigation doesn't scroll.
+- **No prefetching** (`skipPrefetch`). `<Link>` and `<Form>` don't prefetch.
+- **No delay between the steps of a render** (`immediates`). The server doesn't wait the few milliseconds a browser adds to a timeout of `0` between the steps of a render, unless the test fakes the timers.
+- **Less waiting for the DOM** (`watchDom`). `expect.element()` looks for an element again on every change of the DOM, and `expect.poll()` every 5 ms, unless your config sets `expect.poll.interval`.
+- **One answer of the dev server per test file** (`cacheDevServer`). What the dev server says about the stylesheets and the modules of a test file is asked once per test file, not for every page.
+- **Password hashes that cost microseconds** (`crypto`). Password hashes and key derivation of `bcryptjs`, `node:crypto` and Web Crypto cost microseconds, with the same API, so a hash a test makes verifies in the app. See [Fast crypto](nodejs-in-the-browser.md#fast-crypto).
+
+`fast: true` turns on every feature. An object is fast mode with exceptions: a feature you set to `false` is off, and every other one is on. To keep the real password hashes:
+
+```ts
+vitestPluginNext({ fast: { crypto: false } });
+```
+
+To run one feature alone, set every other one to `false`.
 
 A suite that passes in fast mode should pass in the default mode too. CI tells you when it doesn't.
 

@@ -1,33 +1,36 @@
+import type { FastOptions } from "./fast-options.ts";
 import { registry } from "./registry.ts";
 
 // The fast mode of `vitestPluginNext({ fast: true })`: what it changes in the
 // page, for a quick feedback loop, like an agent's, at the cost of some of
-// what a test sees of a browser. See `VitestPluginNextOptions.fast`.
+// what a test sees of a browser. Each feature has a flag of its own: see
+// `VitestPluginNextOptions.fast`.
 //
 // What the dev server answers about the files of a test, like the
 // stylesheets of a route or whether a module changed, does not change while
-// a test file runs: a change of a file runs the file again. So in fast mode
-// an answer is kept until the test file ends, where it is asked for again
-// for every page and every test otherwise. The caches are the registry's,
-// as the layers that ask are module graphs of their own.
+// a test file runs: a change of a file runs the file again. So with
+// `cacheDevServer` an answer is kept until the test file ends, where it is
+// asked for again for every page and every test otherwise. The caches are
+// the registry's, as the layers that ask are module graphs of their own.
 
 const caches = () => (registry.testFileCaches ??= new Set());
 
-/** Whether the page runs in fast mode. */
-export function fastMode(): boolean {
-  return registry.fast === true;
+/** Whether a feature of fast mode is on in the page. */
+export function fast(feature: keyof FastOptions): boolean {
+  return registry.fast?.[feature] === true;
 }
 
 /**
- * What `ask` answers for `key`: in fast mode the answer of the first time in
- * the test file, else a new one. An answer that fails is asked for again.
+ * What `ask` answers for `key`: with `cacheDevServer` the answer of the first
+ * time in the test file, else a new one. An answer that fails is asked for
+ * again.
  */
 export function oncePerTestFile<T>(
   cache: Map<string, Promise<T>>,
   key: string,
   ask: () => Promise<T>,
 ): Promise<T> {
-  if (!fastMode()) return ask();
+  if (!fast("cacheDevServer")) return ask();
   caches().add(cache as Map<string, Promise<unknown>>);
   let answer = cache.get(key);
   if (!answer) {
@@ -46,16 +49,16 @@ export function forgetTestFileAnswers(): void {
 // Vitest's `expect.element()` looks for an element that is not there yet
 // again after 0, 20, 50, 100, 100 and then every 500 ms. A Server Action or a
 // navigation here takes 15 to 30 ms, so the test noticed most of them tens of
-// milliseconds late: about a fifth of the time of a suite. In fast mode it
+// milliseconds late: about a fifth of the time of a suite. With `watchDom` it
 // looks again on every change of the DOM, and every few milliseconds besides.
 const findInterval = 5;
 // On the function, as the module may be evaluated again, like the setup
 // file that calls this for every test file.
 const onEveryChange = Symbol.for("vitest-plugin-rsc:find-on-every-change");
 
-/** In fast mode, has `locator` (a Locator of `vitest/browser`) look on every change of the DOM. */
+/** With `watchDom`, has `locator` (a Locator of `vitest/browser`) look on every change of the DOM. */
 export function findOnEveryChange(locator: object): void {
-  if (!fastMode()) return;
+  if (!fast("watchDom")) return;
   let proto: { findElement?: unknown } | null = Object.getPrototypeOf(locator);
   while (proto && !Object.prototype.hasOwnProperty.call(proto, "findElement")) {
     proto = Object.getPrototypeOf(proto);

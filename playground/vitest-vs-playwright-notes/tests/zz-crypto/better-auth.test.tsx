@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 // What Better Auth's sign-up and sign-in with a password cost in the page:
 // each hashes the password with scrypt, which in a browser is @noble/hashes,
 // in JavaScript. A Better Auth of its own, on a database in memory, called
-// as a Server Action calls it, through `auth.api`. With `fastCrypto` it
+// as a Server Action calls it, through `auth.api`. With `fast.crypto` it
 // hashes with the stand-in, by the same code: the app's config is the same.
 
 const db: Record<string, Record<string, unknown>[]> = {

@@ -516,7 +516,7 @@ async function startInKeptApp(page: Page, client: Client, flight?: Uint8Array): 
 }
 
 // Whether the dev server still has the modules that were fetched: before
-// every page load, in fast mode once per test file.
+// every page load, with fast mode's `cacheDevServer` once per test file.
 const moduleChecks = new Map<string, Promise<void>>();
 
 // The request of a page load, with the modules of the server and of the

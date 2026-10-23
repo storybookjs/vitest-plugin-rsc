@@ -9,6 +9,7 @@ import type { Stylesheets } from "./styles-shared.ts";
 // Each graph has its own copy of this module. They share the object.
 
 import type { SequentialAsyncLocalStorage } from "../async-local-storage.ts";
+import type { ResolvedFastOptions } from "./fast-options.ts";
 
 export type ServerRequest = {
   url: string;
@@ -102,8 +103,8 @@ export type RequestTiming = {
 };
 
 export type NextRegistry = {
-  /** The `fast` option of `vitestPluginNext()`: see fast-mode.ts. */
-  fast?: boolean;
+  /** The features of fast mode that are on, `fast` of `vitestPluginNext()`: see fast-mode.ts. */
+  fast?: ResolvedFastOptions;
   /** The caches of `oncePerTestFile()` in fast-mode.ts, which a test file ends with. */
   testFileCaches?: Set<Map<string, Promise<unknown>>>;
   /**

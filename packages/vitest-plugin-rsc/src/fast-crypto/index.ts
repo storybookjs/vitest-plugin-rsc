@@ -1,4 +1,4 @@
-// The stand-ins of `fastCrypto` (plugin.ts): password hashes and key
+// The stand-ins of `fast.crypto` (plugin.ts): password hashes and key
 // derivations that cost microseconds, for a test that signs up or signs in a
 // user and should not spend a tenth of a second, or a whole second in the
 // JavaScript of a browser, on a hash that only an attacker would have to
@@ -65,10 +65,10 @@ export function derive(algorithm: string, inputs: Input[], length: number): Byte
 /** The error of a hash that the stand-in did not make. */
 export function notMadeHere(api: string, hash: string): Error {
   return new Error(
-    `vitest-plugin-rsc: \`fastCrypto\` stands in for ${api}, which got a hash it did not make: ` +
+    `vitest-plugin-rsc: \`fast.crypto\` stands in for ${api}, which got a hash it did not make: ` +
       `${JSON.stringify(hash.slice(0, 32))}... A hash made by the real algorithm, like one of a ` +
       `fixture, does not verify under the stand-in. Make the hash in the test, with the app's ` +
-      `own function, or run the test without \`fastCrypto\`.`,
+      `own function, or run the test with \`fast: { crypto: false }\`.`,
   );
 }
 

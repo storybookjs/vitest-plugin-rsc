@@ -266,7 +266,8 @@ export async function linkStylesheetsOf(
 
 // The URLs of the stylesheets of files of the host by their paths: from the
 // dev server, see styles.ts, or from the files of a static build.
-// Every test asks for those of its files: in fast mode once per test file.
+// Every test asks for those of its files: with fast mode's `cacheDevServer`
+// once per test file.
 const hostStylesheets = new Map<string, Promise<string[]>>();
 async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
   if (hostFiles.length === 0) return [];

@@ -7,7 +7,7 @@ import { keepHostDocument, noRouter } from "./host-document.ts";
 import { leaveKeptAppWithPage } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
-// With `fastCrypto`, PBKDF2 of the page's `crypto.subtle` is a stand-in that
+// With `fast.crypto`, PBKDF2 of the page's `crypto.subtle` is a stand-in that
 // costs microseconds, for the app and the tests alike: see fast-crypto.ts.
 // Here, as the setup file is in a test run of Vitest only.
 import "virtual:vitest-plugin-rsc/next-fast-crypto";
@@ -78,5 +78,5 @@ beforeEach(async () => {
   await linkStylesheetsOf(nodeFiles);
 });
 
-// Fast mode looks for an element on every change of the DOM: see fast-mode.ts.
+// Fast mode's `watchDom` looks for an element on every change of the DOM: see fast-mode.ts.
 findOnEveryChange(page.getByText(""));

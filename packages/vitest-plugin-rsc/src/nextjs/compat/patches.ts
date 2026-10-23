@@ -38,7 +38,7 @@ export const nextPatches = (registry: string): NextPatch[] => [
       ],
     ],
   },
-  // A page of fast mode in the kept app (page.ts) has no use for a document,
+  // A page of fast mode's kept app (`keepApp`, page.ts) has no use for a document,
   // not even the empty one of `ssr: false`: Next answers its request with
   // the Flight payload that it would inline in the document, as it is. See
   // `flightOnly` of `Opened`.
@@ -67,7 +67,7 @@ export const nextPatches = (registry: string): NextPatch[] => [
       ],
     ],
   },
-  // In fast mode `<Link>` and `<Form>` prefetch nothing. In production every
+  // With fast mode's `skipPrefetch`, `<Link>` and `<Form>` prefetch nothing. In production every
   // link that comes into view, and every link the pointer of a click passes,
   // is requested, and the server takes one request at a time: the click of a
   // test waited for them.
@@ -78,12 +78,12 @@ export const nextPatches = (registry: string): NextPatch[] => [
       [
         "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {",
         "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {" +
-          `\n    if (${registry}?.fast) prefetchEnabled = false;`,
+          `\n    if (${registry}?.fast?.skipPrefetch) prefetchEnabled = false;`,
       ],
       [
         "export function mountFormInstance(element, href, router, fetchStrategy) {",
         "export function mountFormInstance(element, href, router, fetchStrategy) {" +
-          `\n    if (${registry}?.fast) return;`,
+          `\n    if (${registry}?.fast?.skipPrefetch) return;`,
       ],
     ],
   },
@@ -99,7 +99,7 @@ export const nextPatches = (registry: string): NextPatch[] => [
       [
         "if (scrollRef === null || !scrollRef.current) return;",
         "if (scrollRef === null || !scrollRef.current) return;" +
-          `\n        if (${registry}?.fast) {\n            scrollRef.current = false;\n            return;\n        }`,
+          `\n        if (${registry}?.fast?.keepApp) {\n            scrollRef.current = false;\n            return;\n        }`,
       ],
     ],
   },
@@ -114,7 +114,7 @@ export const nextPatches = (registry: string): NextPatch[] => [
     edits: [
       [
         "didWarnScriptTags ||",
-        `didWarnScriptTags || ${registry}?.fast || ${registry}?.opened?.ssr === false ||`,
+        `didWarnScriptTags || ${registry}?.fast?.keepApp || ${registry}?.opened?.ssr === false ||`,
       ],
     ],
   },

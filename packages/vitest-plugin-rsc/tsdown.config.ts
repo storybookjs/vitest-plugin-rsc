@@ -161,7 +161,7 @@ export default defineConfig([
     },
     dts,
   },
-  // The stand-ins of `fastCrypto`, src/nextjs/fast-crypto.ts: one file, with
+  // The stand-ins of `fast.crypto`, src/nextjs/fast-crypto.ts: one file, with
   // the SHA-256 of @noble/hashes in it, which Vite serves as it is, as the
   // modules of Node.js below.
   {
