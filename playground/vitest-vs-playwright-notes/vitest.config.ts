@@ -27,6 +27,8 @@ export default defineConfig({
   ],
   test: {
     name: "vitest-vs-playwright-notes",
+    // Every test with its time, where the default lists only the slow ones.
+    reporters: ["tree"],
     // tests/vitest/ acts with Playwright, tests/vitest-user-event/ with Testing
     // Library in the page: a run picks one with a filter, as the workflow does.
     include: ["tests/vitest/*.test.tsx", "tests/vitest-user-event/*.test.tsx"],
