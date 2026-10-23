@@ -61,10 +61,10 @@ export async function proxy(request: NextRequest) {
   }
 
   // Lets the request through with a `Link` header, next to the one Next
-  // sends for the stylesheets of the page.
-  if (pathname === "/styles") {
+  // sends for the fonts of the page.
+  if (pathname === "/fonts") {
     const response = NextResponse.next();
-    response.headers.set("link", '<https://example.com/styles>; rel="alternate"; hreflang="en"');
+    response.headers.set("link", '<https://example.com/fonts>; rel="alternate"; hreflang="en"');
     return response;
   }
 
