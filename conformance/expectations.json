@@ -16,6 +16,10 @@
       "category": "not-yet",
       "text": "The plugin decides at a route's first page load or navigation whether the build would prerender it, by rendering it as the build does. `next build` decides that before the first request. A route that takes seconds to render and turns out dynamic pays that render once, at its first request, and this test's budget does not allow it: a prerender of 5 s, for a `generateMetadata` of 5 s, which the server throws away as the root layout reads the request, then the dynamic render, 5 s more, against 10.5 s."
     },
+    "prefetch-then-prerender": {
+      "category": "not-yet",
+      "text": "A navigation to a page that the build would prerender, after the router prefetched it: a prefetch never prerenders a route, so the prefetch renders the page as a dynamic one, and the navigation, the route's first, prerenders it once more. The router keeps the metadata of the prefetch and shows the page of the navigation, two renders with a `cache()` and a `Math.random()` of their own. `next build` prerenders the page once, and the prefetch and the navigation get that one render."
+    },
     "another-origin": {
       "category": "not-yet",
       "text": "A redirect or a navigation to another origin. The tab cannot leave the test."
@@ -267,11 +271,12 @@
       }
     },
     "metadata": {
-      "passed": 45,
+      "passed": 44,
       "failed": {
         "metadata.test.ts > app dir - metadata > icons > should support root level of favicon.ico": "node-in-test",
         "metadata.test.ts > app dir - metadata > static routes > should build favicon.ico as a custom route": "build-output",
         "metadata.test.ts > app dir - metadata > static optimization > should build static files into static route": "build-output",
+        "metadata.test.ts > app dir - metadata > react cache > should have same title and page value when navigating": "prefetch-then-prerender",
         "metadata.test.ts > app dir - metadata > should not effect metadata images convention like files under pages directory": "pages-router"
       }
     },
@@ -531,10 +536,8 @@
       "failed": {}
     },
     "router-autoscroll": {
-      "passed": 19,
-      "failed": {
-        "router-autoscroll.test.ts > router autoscrolling on navigation > bugs > Should apply scroll when loading.js is used": "one-request-at-a-time"
-      }
+      "passed": 20,
+      "failed": {}
     },
     "root-layout": {
       "passed": 8,
