@@ -304,13 +304,19 @@ test("gives the app the headers and the cookies the proxy sets", async () => {
 });
 
 test("keeps a header of the proxy that the route adds to", async () => {
-  const response = await handleRequest("/styles");
+  const response = await handleRequest("/fonts");
 
   const link = response.headers.get("link");
-  expect(link).toContain('<https://example.com/styles>; rel="alternate"; hreflang="en"');
-  // React adds the stylesheets of the page as it renders it at the request.
-  // In production `next build` prerenders the page, which has none.
-  if (inject("build") === "development") expect(link).toMatch(/\/_next\/static\/css\//);
+  expect(link).toContain('<https://example.com/fonts>; rel="alternate"; hreflang="en"');
+  // React adds a preload of each font of the page to the header as it renders
+  // it at the request, as `next dev` does. Not of its stylesheets: React puts
+  // those in the header only while the shell still waits as its first task
+  // ends, here on modules that load for the first time. A page whose modules
+  // have loaded, as in `next dev`, has them in its HTML alone. In production
+  // `next build` prerenders the page, which has none.
+  if (inject("build") === "development") {
+    expect(link).toMatch(/<\/_next\/static\/media\/[^>]+>; rel=preload; as="font"/);
+  }
 });
 
 test("takes a header that only Next's own server sets off a request that comes in", async () => {

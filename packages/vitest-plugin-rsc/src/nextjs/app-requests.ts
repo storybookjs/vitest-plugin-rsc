@@ -1,4 +1,5 @@
 import "./globals.ts";
+import { fast } from "./fast-mode.ts";
 import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
@@ -85,10 +86,35 @@ function sameOriginRequest(
 // goes once the page is. Without a page, a request of Next's has none to
 // hear it.
 let page: AbortSignal | undefined;
+// Whether the router of a page outlives it: in fast mode's kept app (see
+// `renderAgain()` in client.tsx) the modules of Next's router stay, and so
+// does what they count, like the prefetches in flight. A request that never
+// settles would count for good, so one of a page that was left fails as the
+// page is left, as a browser stops the requests of a page it unloads. The
+// page says so first, with `pagehide`, as a browser's does: Next's router
+// reports no failure of a request then (see `leave()` of `Page` in page.ts).
+// Not a Server Action: Next rejects the call of the action with its failure,
+// and code that does not wait for the call, like `onClick={() => action()}`,
+// would reject unhandled. It hears nothing, as in the default mode: the queue
+// it waits in is its page's alone, which no page after it uses.
+let routerOutlivesPage = false;
 
 /** Says which page of the app is open, by its signal, which aborts as it is left. */
 export function setOpenPage(signal: AbortSignal | undefined): void {
   page = signal;
+}
+
+/** Says whether the router of the pages outlives them, from now on. */
+export function setRouterOutlivesPage(outlives: boolean): void {
+  routerOutlivesPage = outlives;
+}
+
+// What a request of a page that was left gets, from the router that sent it:
+// see `routerOutlivesPage`. `action` for a Server Action.
+const pageLeft = () => new DOMException("The page was left.", "AbortError");
+const failsAsPageLeft = (action: boolean) => routerOutlivesPage && !action;
+function ofLeftPage(action: boolean): Promise<never> {
+  return failsAsPageLeft(action) ? Promise.reject(pageLeft()) : never();
 }
 
 // What a browser adds to a request for the app's origin, with the headers and
@@ -361,6 +387,25 @@ const appFetch =
 // per request: a pending promise holds on to what awaits it.
 const never = () => new Promise<never>(() => {});
 
+// A prefetch of Next's router, which fast mode's `skipPrefetch` answers
+// itself. Each has `priority: "low"`, and all but the data of a
+// `<Link prefetch>` to a route the router knows a `next-router-prefetch`
+// header too.
+function isPrefetch(sent: AppRequest, init: RequestInit | undefined): boolean {
+  return (
+    sent.headers.has("rsc") &&
+    (sent.headers.has("next-router-prefetch") || init?.priority === "low")
+  );
+}
+
+// What a prefetch gets with `skipPrefetch`: no content, which the router
+// takes for a miss, silently. It marks the prefetch of the route failed for
+// a while, and a navigation to it fetches the page, as without a prefetch.
+// In production every link that comes into view, and every link the pointer
+// of a click passes, is prefetched, and the server takes one request at a
+// time: the click of a test waited for them.
+const noPrefetch = () => new Response(null, { status: 204 });
+
 // What a page hears of a request that Next sent for it, one of its router
 // or a Server Action: nothing once the page is left, as in a browser, where
 // it is gone. Leaving drops the requests that wait for the server
@@ -368,11 +413,33 @@ const never = () => new Promise<never>(() => {});
 // there, would report that as an error while the next page runs: "Failed to
 // fetch RSC payload". Nobody reads the body of a response that comes after
 // that, so it stops.
-async function heardBy(sender: AbortSignal, response: Promise<Response>): Promise<Response> {
+async function heardBy(
+  sender: AbortSignal,
+  response: Promise<Response>,
+  action: boolean,
+): Promise<Response> {
+  if (failsAsPageLeft(action)) return failsAsLeft(sender, response);
   const answered = await response.catch(() => undefined);
   if (!sender.aborted) return response;
   void answered?.body?.cancel().catch(() => {});
-  return never();
+  return ofLeftPage(action);
+}
+
+// For a router that outlives its page: the request fails at once as the page
+// is left, while the page still says that it is being left. What answers
+// after that is not read.
+function failsAsLeft(sender: AbortSignal, response: Promise<Response>): Promise<Response> {
+  const left = new Promise<never>((_, reject) =>
+    sender.addEventListener("abort", () => reject(pageLeft()), { once: true }),
+  );
+  left.catch(() => {});
+  void response.then(
+    (answered) => {
+      if (sender.aborted) void answered.body?.cancel().catch(() => {});
+    },
+    () => {},
+  );
+  return Promise.race([response, left]);
 }
 
 /**
@@ -396,9 +463,13 @@ export function pageFetch(
   const browserFetch = appFetch(() => store()!, network);
   return async (input, init) => {
     if (!store()) return network()(input, init);
-    if (!sameOriginRequest(input, init)?.marked) return browserFetch(input, init);
+    const sent = sameOriginRequest(input, init);
+    if (!sent?.marked) return browserFetch(input, init);
+    const action = sent.headers.has("next-action");
     const sender = page;
-    return sender && !sender.aborted ? heardBy(sender, browserFetch(input, init)) : never();
+    if (!sender || sender.aborted) return ofLeftPage(action);
+    if (fast("skipPrefetch") && isPrefetch(sent, init)) return noPrefetch();
+    return heardBy(sender, browserFetch(input, init), action);
   };
 }
 // The server's `fetch`. A request to the app itself is one the server makes

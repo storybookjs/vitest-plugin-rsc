@@ -29,6 +29,12 @@
       "path": "./playground/rsc-vitest-demo"
     },
     {
+      "path": "./playground/vitest-vs-playwright"
+    },
+    {
+      "path": "./playground/vitest-vs-playwright-notes"
+    },
+    {
       "path": "./playground/test-helpers"
     },
     {

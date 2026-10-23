@@ -26,6 +26,9 @@ const serverGlobals = [
   // Node.js has these and a browser does not: see globals.ts.
   "setImmediate",
   "clearImmediate",
+  // A browser's, which fast mode runs as an immediate for no delay: see globals.ts.
+  "setTimeout",
+  "clearTimeout",
 ];
 
 const mentionsServerGlobal = new RegExp(`\\b(?:${serverGlobals.join("|")})\\b`);

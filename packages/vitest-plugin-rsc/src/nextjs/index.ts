@@ -5,6 +5,7 @@ import { closeContext, openContext } from "./browser-context.ts";
 import { unlinkStylesheets } from "./client-graph.ts";
 import { resetDisk } from "./disk.ts";
 import "./document-loads.ts";
+import { fast } from "./fast-mode.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { leavePage, loadPage } from "./page.ts";
 import { registry, type Opened } from "./registry.ts";
@@ -215,6 +216,20 @@ export type RenderServerOptions = RequestOptions & {
    * pass it as a node, `renderServer(<Page />, { url })`.
    */
   layouts?: boolean;
+  /**
+   * Whether the server renders the HTML of the page, which the browser then
+   * hydrates. With `false` the browser renders the app from the Flight
+   * payload alone, with `createRoot()`, as Next does for an error page: a
+   * test no longer sees the HTML of the server, or a mismatch between it and
+   * the browser.
+   *
+   * Defaults to `true`, and to `false` in fast mode (`fast.keepApp` of
+   * `vitestPluginNext()`), where a page without HTML of the server renders
+   * in the app of the page before it in the test file: see
+   * `VitestPluginNextOptions.fast`. A test that asserts on the HTML of the
+   * server passes `ssr: true`, and gets a page load of its own.
+   */
+  ssr?: boolean;
 };
 
 export type RenderServerResult = {
@@ -370,7 +385,9 @@ export async function renderServer(
           "`renderServer(<Page />, { url })`.",
       );
     }
-    const opened = { pathname, proxy: first.proxy ?? true };
+    // Fast mode renders a page without HTML in the app of the page before.
+    const ssr = first.ssr ?? !fast("keepApp");
+    const opened = { pathname, proxy: first.proxy ?? true, ssr };
     return {
       response: await loadPage(url, { headers }, store, {
         opened,
@@ -378,6 +395,7 @@ export async function renderServer(
         cookie,
         signal,
         errors,
+        inKeptApp: fast("keepApp") && !ssr,
       }),
       errors,
       unmount,

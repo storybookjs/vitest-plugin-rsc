@@ -137,6 +137,8 @@ test("navigates on the client with next/link", async () => {
 });
 ```
 
+`ssr: false` opens the page without HTML from the server: the browser renders it from its Flight payload, as Next does for its error page. The test no longer sees the server's HTML, or a hydration mismatch. [Fast mode](#fast-mode) opens every page this way, and `ssr: true` opts a test out of it.
+
 It resolves with `{ response, errors, unmount }`: the server's `Response`, any errors React reported, and a function to leave the page.
 
 ```tsx
@@ -803,6 +805,37 @@ By default, Next and React run their development builds, like `next dev`. Set `v
 Why might you want it? In development, React sends a Server Component's error message to the client, so `error.tsx` can show it. A deployment sends only a digest. So a test that checks such an error message passes here but wouldn't match production. With `build: "production"`, it behaves like a deployment.
 
 See [Development or production](internals/next-routes.md#development-or-production) for everything that changes.
+
+## Fast mode
+
+Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run takes about half the time on the same machine (2× in production, 1.7× in development), and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in the default mode:
+
+```ts
+vitestPluginNext({ fast: true });
+```
+
+```bash
+VITEST_PLUGIN_RSC_FAST=1 npx vitest
+```
+
+What changes, each with its flag:
+
+- **One app per test file** (`keepApp`). The first page of a test file starts the app, and every `renderServer({ url })` after it renders its page in that app, from its Flight payload, without loading the page. Each page gets a React tree and a router of its own, so the state of a component doesn't carry over from one test to the next. The state of a module does, as in an app that never reloads: a module that keeps a value from the test before has it in the next one. The page renders on the client, as with `ssr: false`, so a test doesn't see the server's HTML or a hydration mismatch. A test that asserts on them passes `renderServer({ url, ssr: true })` and gets a page load of its own. In development, the page has no dev overlay.
+- **No prefetching** (`skipPrefetch`). `<Link>` and `<Form>` don't prefetch.
+- **No delay between the steps of a render** (`immediates`). The server doesn't wait the few milliseconds a browser adds to a timeout of `0` between the steps of a render, unless the test fakes the timers.
+- **Less waiting for the DOM** (`watchDom`). `expect.element()` looks for an element again on every change of the DOM, and `expect.poll()` every 5 ms, unless your config sets `expect.poll.interval`.
+- **One answer of the dev server per test file** (`cacheDevServer`). What the dev server says about the stylesheets and the modules of a test file is asked once per test file, not for every page.
+- **Password hashes that cost microseconds** (`crypto`). Password hashes and key derivation of `bcryptjs`, `node:crypto` and Web Crypto cost microseconds, with the same API, so a hash a test makes verifies in the app. See [Fast crypto](nodejs-in-the-browser.md#fast-crypto).
+
+`fast: true` turns on every feature. An object is fast mode with exceptions: a feature you set to `false` is off, and every other one is on. To keep the real password hashes:
+
+```ts
+vitestPluginNext({ fast: { crypto: false } });
+```
+
+To run one feature alone, set every other one to `false`.
+
+A suite that passes in fast mode should pass in the default mode too. CI tells you when it doesn't.
 
 ## Watch mode
 

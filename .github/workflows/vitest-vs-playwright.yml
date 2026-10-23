@@ -1,0 +1,273 @@
+name: Vitest vs Playwright
+
+# The same tests of two apps, each in Vitest with `renderServer()` and in
+# Playwright on Postgres in Docker, with 1 worker: Vitest in development
+# against `next dev`, Vitest in production against `next build` and
+# `next start`. playground/vitest-vs-playwright is a todo app with 25 tests,
+# playground/vitest-vs-playwright-notes a notes app with accounts and 500
+# tests: see their README.md. Each job writes what its steps took to the
+# summary of the run, and every test with its time to its log.
+on:
+  pull_request:
+    paths:
+      - playground/vitest-vs-playwright/**
+      - playground/vitest-vs-playwright-notes/**
+      - packages/vitest-plugin-rsc/**
+      - .github/workflows/vitest-vs-playwright.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# With pipefail, so that a test that fails fails the step, through `tee`.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  vitest:
+    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # tests/vitest/ clicks and fills with Vitest's commands, which
+        # Playwright carries out; tests/vitest-user-event/ with Testing
+        # Library's user-event, in the page. `fast` runs them in the plugin's
+        # fast mode (`VITEST_PLUGIN_RSC_FAST=1`): see its README.md.
+        include:
+          - { app: vitest-vs-playwright, tests: vitest }
+          - { app: vitest-vs-playwright-notes, tests: vitest }
+          - { app: vitest-vs-playwright-notes, tests: vitest-user-event }
+          - { app: vitest-vs-playwright-notes, tests: vitest-user-event, fast: true }
+    defaults:
+      run:
+        working-directory: playground/${{ matrix.app }}
+    env:
+      VITEST_PLUGIN_RSC_FAST: ${{ matrix.fast && '1' || '' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm --filter vitest-plugin-rsc build
+      - name: Run the tests, Next and React in production
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          end=$(date +%s.%N)
+          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
+          {
+            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "VITEST_SECONDS_${{ matrix.fast && 'FAST' || 'DEFAULT' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
+      - name: Run the tests, Next and React in development
+        env:
+          VITEST_PLUGIN_RSC_BUILD: development
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          end=$(date +%s.%N)
+          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
+          {
+            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "VITEST_SECONDS_${{ matrix.fast && 'FAST' || 'DEFAULT' }}_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
+      # The job of fast mode runs the tests in the default mode too, on the
+      # same runner: the ratio of the two is what fast mode gains, which the
+      # times of two runners, a minute apart and of other machines, hide.
+      - name: Run the tests in the default mode, Next and React in production
+        if: matrix.fast
+        env:
+          VITEST_PLUGIN_RSC_FAST: ""
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          end=$(date +%s.%N)
+          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
+          {
+            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "VITEST_SECONDS_DEFAULT_PRODUCTION=$duration" >> "$GITHUB_ENV"
+      - name: Run the tests in the default mode, Next and React in development
+        if: matrix.fast
+        env:
+          VITEST_PLUGIN_RSC_FAST: ""
+          VITEST_PLUGIN_RSC_BUILD: development
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          end=$(date +%s.%N)
+          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
+          {
+            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "VITEST_SECONDS_DEFAULT_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
+      - name: Compare the default mode with fast mode
+        if: matrix.fast
+        run: |
+          {
+            echo "### Vitest, ${{ matrix.app }}, ${{ matrix.tests }}, default mode and fast mode on one runner"
+            echo
+            echo "| Next and React | Default mode, seconds | Fast mode, seconds | Default / fast |"
+            echo "| --- | ---: | ---: | ---: |"
+            for build in production development; do
+              default="VITEST_SECONDS_DEFAULT_${build^^}"
+              fast="VITEST_SECONDS_FAST_${build^^}"
+              printf "| %s | %.1f | %.1f | %.2f |\n" "$build" "${!default}" "${!fast}" \
+                "$(echo "${!default} / ${!fast}" | bc -l)"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Where the time of fast mode goes: a CPU profile of the page for every
+  # test file, summed up by package in the summary of the run, a trace of
+  # Chrome for two files, summed up by what the browser did, and both as an
+  # artifact, to open in Chrome's DevTools.
+  profile:
+    name: Vitest, vitest-vs-playwright-notes, vitest-user-event, fast mode, CPU profile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: playground/vitest-vs-playwright-notes
+    env:
+      VITEST_PLUGIN_RSC_FAST: 1
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm --filter vitest-plugin-rsc build
+      - name: Run the tests with a CPU profile of the page
+        run: pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1 tests/vitest-user-event/
+      - name: Sum up the profiles
+        run: python3 test/profile-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Sum up the timings of the requests
+        run: python3 test/timings-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Trace Chrome for two test files
+        env:
+          VITEST_PROFILE: trace
+        run: >-
+          pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1
+          tests/vitest-user-event/note-create.test.tsx
+          tests/vitest-user-event/flow-edit-chain.test.tsx
+      - name: Sum up the traces
+        run: python3 test/trace-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpu-profiles-and-traces
+          path: |
+            playground/vitest-vs-playwright-notes/profiles/
+            playground/vitest-vs-playwright-notes/timings/
+            playground/vitest-vs-playwright-notes/traces/
+
+  playwright:
+    name: Playwright, ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [vitest-vs-playwright, vitest-vs-playwright-notes]
+    defaults:
+      run:
+        working-directory: playground/${{ matrix.app }}
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # Next's test mode, for `next build` too: see playwright.config.ts.
+      __NEXT_TEST_MODE: 1
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - name: Start Postgres in Docker, in RAM
+        run: |
+          start=$(date +%s.%N)
+          docker run -d --name postgres -p 5432:5432 \
+            -e POSTGRES_PASSWORD=postgres \
+            --tmpfs /var/lib/postgresql/data \
+            postgres:17 \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+          until docker exec postgres pg_isready -U postgres -h localhost; do sleep 0.2; done
+          end=$(date +%s.%N)
+          echo "DATABASE_SECONDS=$(echo "$end - $start" | bc)" >> "$GITHUB_ENV"
+      - name: Run the tests against next dev
+        env:
+          PLAYWRIGHT_SERVER: dev
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec playwright test | tee playwright.log
+          end=$(date +%s.%N)
+          tests=$(grep -oP '[0-9]+(?= passed)' playwright.log)
+          duration=$(grep -oP 'passed \(\K[0-9.]+(?:m|s)' playwright.log)
+          {
+            echo "### Playwright, development, ${{ matrix.app }}"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| Postgres in Docker | %.1f |\n" "$DATABASE_SECONDS"
+            printf "| %s tests, 1 worker, \`next dev\` included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            echo "| Of which Playwright's own time | $duration |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build the app with next build
+        run: |
+          start=$(date +%s.%N)
+          pnpm build
+          end=$(date +%s.%N)
+          echo "BUILD_SECONDS=$(echo "$end - $start" | bc)" >> "$GITHUB_ENV"
+      - name: Run the tests against next start
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec playwright test | tee playwright.log
+          end=$(date +%s.%N)
+          tests=$(grep -oP '[0-9]+(?= passed)' playwright.log)
+          duration=$(grep -oP 'passed \(\K[0-9.]+(?:m|s)' playwright.log)
+          {
+            echo "### Playwright, production, ${{ matrix.app }}"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| \`next build\` | %.1f |\n" "$BUILD_SECONDS"
+            printf "| %s tests, 1 worker, \`next start\` included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            echo "| Of which Playwright's own time | $duration |"
+          } >> "$GITHUB_STEP_SUMMARY"

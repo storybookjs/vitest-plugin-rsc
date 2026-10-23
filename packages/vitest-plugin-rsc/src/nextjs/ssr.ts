@@ -37,6 +37,7 @@ import {
   type Opened,
   type PrerenderVerdict,
   type RequestHandler,
+  type RequestTiming,
   type ServerRequest,
 } from "./registry.ts";
 import {
@@ -179,6 +180,18 @@ export type HandleOptions = {
   pageLoad?: boolean;
 };
 
+// A body that is there in full, as a stream for the middleware. Most
+// requests have none, and every request needs one: not by a `Blob`, which
+// was the native call that took the longest in a profile of the notes app.
+function streamOf(body: Uint8Array | null | undefined): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      if (body) controller.enqueue(body);
+      controller.close();
+    },
+  });
+}
+
 // What `handle()` makes of a request, and when the server is done with it.
 type Handled = { response?: Response; finished: Promise<void> };
 
@@ -203,6 +216,8 @@ export function handleRequest(
   const requested = generation;
   queued++;
   requestQueued.resolve();
+  const timing = registry.requestTimings && timingOf(request);
+  if (timing) registry.requestTimings!.push(timing);
   const result = queue.then(() => {
     // `settleRequests()` has forgotten the ones that waited before it.
     if (requested !== generation) {
@@ -210,7 +225,19 @@ export function handleRequest(
     }
     queued--;
     requestQueued = Promise.withResolvers();
-    return untilAnswered(request, handle(request, unrouted, false, opened, pageLoad));
+    if (timing) timing.started = performance.now();
+    const handled = untilAnswered(request, handle(request, unrouted, false, opened, pageLoad));
+    if (timing) {
+      void handled.then(
+        ({ finished }) => {
+          timing.answered = performance.now();
+          const record = () => (timing.finished = performance.now());
+          void finished.then(record, record);
+        },
+        () => {},
+      );
+    }
+    return handled;
   });
   // The next request waits for the body too: the server writes it as it
   // renders, long after the response is there.
@@ -219,6 +246,13 @@ export function handleRequest(
     () => {},
   );
   return result.then(({ response }) => response);
+}
+
+// The timing of a request for `requestTimings` of the registry, as it reaches the server.
+function timingOf(request: ServerRequest): RequestTiming {
+  const { headers } = request;
+  const kind = headers.has("next-action") ? "action" : headers.has("rsc") ? "flight" : "page";
+  return { method: request.method, url: request.url, kind, queued: performance.now() };
 }
 
 // Keeps a request in `unanswered` until the server has answered it.
@@ -491,10 +525,12 @@ async function handle(
   // once another request waits for it: then for one second at most, and so
   // for a nested one, inside the request that waits for it.
   const scope = enterScope(nested ? () => Promise.resolve() : nextRequest);
-  // A route of its own, for the page of the route of a node that renders in
-  // this request. Not for the requests the server makes to itself meanwhile:
-  // see `loadComponent()` in rsc.ts.
-  if (openedByRequest) registry.openedByRequest.run(openedByRequest, () => {});
+  // What this request opened, for what renders in it: the page of the route
+  // of a node (see `loadComponent()` in rsc.ts), and whether the page has
+  // HTML (`nextPatches` in compat/patches.ts). Its own, also when that is
+  // nothing: not what a request it is part of opened, nor one before it that
+  // is still at work, nor what the test opened at another pathname.
+  registry.openedByRequest.run(opened, () => {});
   const context = { waitUntil: scope.waitUntil };
   const endRequest = scope.end;
 
@@ -503,7 +539,7 @@ async function handle(
     let { body } = request;
     let middlewareBody: ReadableStream<Uint8Array>;
     if (body instanceof ReadableStream) [middlewareBody, body] = body.tee();
-    else middlewareBody = new Blob(body ? [body as BlobPart] : []).stream();
+    else middlewareBody = streamOf(body);
 
     // What the middleware answers itself, and the headers it sends the
     // request on with.

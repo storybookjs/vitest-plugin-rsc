@@ -228,6 +228,24 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
 }
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
 
+// Immediates of fast mode's `immediates`: a task each, by a message of one
+// channel, which no browser delays as it does a timeout. Each by a symbol of
+// its own, which is no id of a timer.
+const immediates = new Map<symbol, () => void>();
+const channel = new MessageChannel();
+channel.port1.onmessage = () => {
+  const [id, run] = immediates.entries().next().value ?? [];
+  if (id === undefined) return;
+  immediates.delete(id);
+  run!();
+};
+function immediate(callback: (...args: unknown[]) => void, args: unknown[]): symbol {
+  const id = Symbol("immediate");
+  immediates.set(id, () => callback(...args));
+  channel.port2.postMessage(null);
+  return id;
+}
+
 // What Next's Node.js server asks of its process. The `process` is the page's
 // and the test's too, so as little as it needs: a library that finds a
 // `setImmediate` or a full `process` takes itself to be on Node.js.
@@ -248,8 +266,28 @@ scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
   // a timer of the test, which may be fake.
   const nativeSetTimeout = globalThis.setTimeout;
   const nativeClearTimeout = globalThis.clearTimeout;
-  registry.setImmediate = (callback, ...args) => nativeSetTimeout(callback, 0, ...args);
-  registry.clearImmediate = (id) => nativeClearTimeout(id as number);
+  registry.setImmediate = (callback, ...args) =>
+    registry.fast?.immediates ? immediate(callback, args) : nativeSetTimeout(callback, 0, ...args);
+  registry.clearImmediate = (id) =>
+    typeof id === "symbol" ? immediates.delete(id) : nativeClearTimeout(id as number);
+
+  // Server code's `setTimeout` (server-code.ts), the global as the code calls
+  // it, also a fake one of the test. React renders Flight and HTML for the
+  // edge with `setTimeout(work, 0)` between its steps, where on Node.js it
+  // takes `setImmediate`: a browser waits at least 4 ms for a timeout that a
+  // timeout started, five deep, so a render of a page waited longer than it
+  // worked. Fast mode's `immediates` runs a timeout of no delay as an
+  // immediate, unless the test made the timers fake.
+  registry.setTimeout = (callback, delay, ...args) =>
+    registry.fast?.immediates &&
+    !(Number(delay) > 0) &&
+    typeof callback === "function" &&
+    globalThis.setTimeout === nativeSetTimeout
+      ? immediate(callback as (...args: unknown[]) => void, args)
+      : // As Node.js, which takes no code in a string.
+        globalThis.setTimeout(callback as (...args: unknown[]) => void, delay, ...args);
+  registry.clearTimeout = (id) =>
+    typeof id === "symbol" ? immediates.delete(id) : globalThis.clearTimeout(id as number);
 
   // Node's own `Buffer` has these, and busboy reads the parts of a form with
   // them. Every layer has its own copy of the `Buffer` polyfill, and each is a

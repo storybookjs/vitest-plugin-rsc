@@ -43,6 +43,21 @@ const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
 
 let unload: (() => void) | undefined;
+// What a kept app has set on the document, which stays as its pages are left:
+// see `keepProperties()`.
+const keptProperties = new WeakMap<object, Set<PropertyKey>>();
+
+/**
+ * Keeps the properties `keys` of `target`, the document or one of its
+ * elements, as the pages are left, until it is called again: the marks of
+ * React DOM on the root of an app that renders the pages after its first
+ * (`renderAgain()` in client.tsx). Without `keys` they are no longer kept,
+ * and the app that kept them removes them.
+ */
+export function keepProperties(target: object, keys?: Iterable<PropertyKey>): void {
+  if (keys) keptProperties.set(target, new Set(keys));
+  else keptProperties.delete(target);
+}
 // The preloads of the page that loads next, until it is there.
 let preloads: HTMLLinkElement[] = [];
 // The URL that leaving the page puts back, while a page is open.
@@ -270,10 +285,12 @@ export async function loadDocument(
       setAttributes(element, runnerAttributes[index]!),
     );
     document.adoptedStyleSheets = runnerAdopted;
-    // One that is not configurable cannot be deleted, and stays.
+    // One that is not configurable cannot be deleted, and stays. So does one
+    // of a kept app, which outlives the page.
     reactTargets.forEach((target, index) => {
       for (const key of Reflect.ownKeys(target)) {
-        if (!runnerProperties[index]!.has(key)) Reflect.deleteProperty(target, key);
+        if (runnerProperties[index]!.has(key) || keptProperties.get(target)?.has(key)) continue;
+        Reflect.deleteProperty(target, key);
       }
     });
     // Where Next's scripts leave the Flight payload and the scripts to run

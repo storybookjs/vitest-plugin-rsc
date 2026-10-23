@@ -1,3 +1,5 @@
+import "../compile-cache.ts";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,7 +34,10 @@ import {
   runtimeImports as nextRuntimeImports,
   serverReferenceInfo,
 } from "./compat/paths.ts";
+import { nextPatches } from "./compat/patches.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
+import { fastCryptoModule, fastCryptoModuleOf, fastCryptoSetup } from "./fast-crypto.ts";
+import { resolveFast, type FastOptions, type ResolvedFastOptions } from "./fast-options.ts";
 import { createNodePlatform, instrumentationPlugin } from "./node-platform.ts";
 import { registryGlobal } from "./registry-global.ts";
 import {
@@ -203,6 +208,10 @@ const devAssetPrefixShim = `export const assetPrefix = "";\n`;
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
 // What a run has said of the installed Next, which its projects share.
 const saidOfNext = new Set<string>();
+// The modules of `fast.crypto`, see fast-crypto.ts: one for each package.
+const fastCryptoPrefix = `${bridgePrefix}fast-crypto/`;
+// What the plugin's setup file imports: Web Crypto's stand-in, or nothing.
+const fastCryptoSetupId = "virtual:vitest-plugin-rsc/next-fast-crypto";
 
 type Alias = { key: string; exact: boolean; target: string | false };
 
@@ -213,7 +222,11 @@ type Alias = { key: string; exact: boolean; target: string | false };
 // every environment. And it names a file of Next one way only: Vite keeps a
 // pre-bundled dependency per specifier, so a second spelling is a second copy
 // of the module, found mid-test.
-function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
+function createLayerResolver(
+  getProject: () => NextProject,
+  layer: NextLayer,
+  fastCrypto: () => boolean,
+) {
   let aliases: Alias[] | undefined;
   const normalized = new Map<string, string | false>();
 
@@ -373,6 +386,16 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         // such an id as it is, and a build asks.
         if (source.startsWith(bridgePrefix) || source === emptyModuleId) return source;
         if (source.startsWith("\0")) return;
+        // A package that hashes passwords, and `node:crypto`, in the server
+        // layers and the test files, with `fast.crypto`: the stand-ins. Not
+        // for a dependency whose `browser` field says what it uses for
+        // `crypto`, which gets that, as without the option.
+        if (layer !== "browser" && fastCrypto()) {
+          const name = fastCryptoModuleOf(source);
+          if (name && (name !== "node-crypto" || browserMapping(source, importer) === undefined)) {
+            return fastCryptoPrefix + name;
+          }
+        }
         // The shim wraps the module it replaces.
         if (importer === `${bridgePrefix}server-reference-info`) {
           return nextFile(serverReferenceInfo);
@@ -473,6 +496,9 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
         if (name === "dev-asset-prefix") return devAssetPrefixShim;
+        if (id.startsWith(fastCryptoPrefix)) {
+          return fastCryptoModule(id.slice(fastCryptoPrefix.length), nodeModuleOf("node:crypto")!);
+        }
         const { flightExports, version, newExports } = getProject();
         const nodeModule = nodePlatform.load(name, newExports[name], version);
         if (nodeModule) return nodeModule;
@@ -538,6 +564,31 @@ function flightConsolePlugin(): Plugin {
           this.warn(`vitest-plugin-rsc: React's patchConsole() in ${id} is not turned off.`);
         }
         return { code: patched, map: null };
+      },
+    },
+  };
+}
+
+function nextPatchesPlugin(): Plugin {
+  const patches = nextPatches(registry);
+  return {
+    name: "vitest-plugin-rsc:next-patches",
+    transform: {
+      // Rolldown matches the id with `/` for a separator.
+      filter: { id: { include: patches.map(({ file }) => file) } },
+      handler(code, id) {
+        let patched = code;
+        for (const { file, lost, edits } of patches) {
+          if (!file.test(id)) continue;
+          for (const [find, replace] of edits) {
+            if (!patched.includes(find)) {
+              this.warn(`vitest-plugin-rsc: ${id} has no \`${find.trim()}\`: ${lost}.`);
+              continue;
+            }
+            patched = patched.replaceAll(find, () => replace);
+          }
+        }
+        return patched === code ? undefined : { code: patched, map: null };
       },
     },
   };
@@ -643,26 +694,55 @@ const clientBoundaryFiles = new Map<string, string[]>();
 // the page. By the file, which is how a payload names one: an import of the
 // app does not, like `next/legacy/image`, so the dependency scan finds another
 // spelling. This is what Next's client entry plugin does for its own bundles.
-function findClientBoundaries(nextDir: string, resolver: LayerResolver): string[] {
+function findClientBoundaries(nextDir: string, root: string, resolver: LayerResolver): string[] {
   let files = clientBoundaryFiles.get(nextDir);
   if (!files) {
-    const entries = fs.readdirSync(path.join(nextDir, "dist/esm"), {
-      recursive: true,
-      withFileTypes: true,
-    });
-    files = entries.flatMap((entry) => {
-      if (!entry.isFile() || !entry.name.endsWith(".js")) return [];
-      const file = path.join(entry.parentPath, entry.name);
-      const code = fs.readFileSync(file, "utf8");
-      return code.includes("use client") && hasDirective(parseAst(code).body, "use client")
-        ? [file]
-        : [];
-    });
+    files = scanClientBoundaries(nextDir, root);
     clientBoundaryFiles.set(nextDir, files);
   }
   // Vite keeps the pre-bundled dependencies by a hash of this list, and a
   // directory is listed in the order of its disk.
   return files.map((file) => resolver.toSpecifier(file)).sort();
+}
+
+// The scan parses the files that have the words, about 50 of Next's 1300,
+// which is a tenth of a second at every start of Vitest. So its result is
+// kept on disk, in the project's `node_modules/.cache/`, as other tools keep
+// theirs, by the size and the time of change of every file it reads: a
+// version of Next, or a patch of one, has other files. Listing and stating
+// them costs a third of the scan. The version of the format is in the name.
+function scanClientBoundaries(nextDir: string, root: string): string[] {
+  const entries = fs.readdirSync(path.join(nextDir, "dist/esm"), {
+    recursive: true,
+    withFileTypes: true,
+  });
+  const scripts = entries.flatMap((entry) =>
+    entry.isFile() && entry.name.endsWith(".js") ? [path.join(entry.parentPath, entry.name)] : [],
+  );
+  const key = createHash("sha256");
+  for (const file of scripts) {
+    const stats = fs.statSync(file, { throwIfNoEntry: false });
+    key.update(`${file}\0${stats?.size}\0${stats?.mtimeMs}\n`);
+  }
+  const cache = path.join(root, "node_modules/.cache/vitest-plugin-rsc/client-boundaries-1.json");
+  const digest = key.digest("hex");
+  try {
+    const cached = JSON.parse(fs.readFileSync(cache, "utf8")) as { key: string; files: string[] };
+    if (cached.key === digest) return cached.files;
+  } catch {}
+  const files = scripts.filter((file) => {
+    const code = fs.readFileSync(file, "utf8");
+    return code.includes("use client") && hasDirective(parseAst(code).body, "use client");
+  });
+  // By a rename, so that a run that reads it at the same time reads all of
+  // it. A disk that cannot be written to only means the scan again next time.
+  try {
+    fs.mkdirSync(path.dirname(cache), { recursive: true });
+    const written = `${cache}.${process.pid}`;
+    fs.writeFileSync(written, JSON.stringify({ key: digest, files }));
+    fs.renameSync(written, cache);
+  } catch {}
+  return files;
 }
 
 // What the runtime modules of this package, and the modules Vite and Vite RSC
@@ -698,6 +778,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
 };
 
 export type { NextBuild };
+export type { FastOptions, ResolvedFastOptions };
 
 export type VitestPluginNextOptions = ServerCodeOptions & {
   /**
@@ -712,9 +793,63 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * for `vite build`, a static build of the app
    */
   build?: NextBuild;
+  /**
+   * Experimental. A fast mode for a quick feedback loop, like an agent's or
+   * a watch run's, which gives up some of what a test sees of a browser. A
+   * suite that passes in fast mode is to pass without it too, as in CI.
+   *
+   * `true` turns on every feature of it, `false` none. An object is fast mode
+   * with exceptions: a feature it sets to `false` is off, and every other is
+   * on, so `{ crypto: false }` is fast mode with the real password hashes. To
+   * run one feature alone, set every other to `false`. The features, by
+   * their flags in `FastOptions`:
+   *
+   * - `keepApp`: the pages of a test file render in one app: the first page
+   *   starts it, and every `renderServer({ url })` after it renders its page
+   *   in it, from the page's Flight payload, without a page load. Each page
+   *   gets a tree, a router and caches of the router of its own, so no state
+   *   of a component carries over from one test to the next. What does is
+   *   the state of the modules of the app, of a package and of Next and
+   *   React, as in a single-page app that never reloads. The server renders
+   *   no HTML (`ssr: false`): a test that asserts on it passes `ssr: true`,
+   *   and gets a page load of its own. In development the page has no dev
+   *   overlay.
+   * - `skipPrefetch`: Next's `<Link>` and `<Form>` prefetch nothing.
+   * - `immediates`: the server runs the steps of a render, which React
+   *   separates with `setTimeout(work, 0)`, without the delay a browser adds
+   *   to a timeout, unless the test has faked the timers.
+   * - `watchDom`: `expect.element()` looks for an element again on every
+   *   change of the DOM, not after a growing wait, and `expect.poll()` every
+   *   5 ms unless the config sets `expect.poll.interval`.
+   * - `cacheDevServer`: what the dev server answers about the stylesheets and
+   *   the modules of a test file is asked once per test file, not for every
+   *   page.
+   * - `crypto`: password hashes and key derivations cost microseconds, with
+   *   the same API, for the server code in the page and the test files:
+   *   PBKDF2 of `crypto.subtle`, `pbkdf2`, `scrypt` and `argon2` of
+   *   `node:crypto`, and the packages bcryptjs, bcrypt, @node-rs/bcrypt,
+   *   argon2, @node-rs/argon2 and the scrypt, pbkdf2 and argon2 of
+   *   @noble/hashes, which Better Auth hashes with. A hash a test makes
+   *   verifies in the app, and a password verifies against its own hash
+   *   only. It is one SHA-256: never a password hash outside a test, and the
+   *   plugin gives it to a test run of Vitest only, never to a build. A hash
+   *   made by the real algorithm, like one in a fixture, does not verify
+   *   under a stand-in: bcrypt's and Argon2's throw an error that says so.
+   *   See docs/nodejs-in-the-browser.md, "Fast crypto".
+   *
+   * @default `true` when the environment variable `VITEST_PLUGIN_RSC_FAST`
+   * is `1`, else `false`
+   */
+  fast?: boolean | FastOptions;
 };
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
+  // oxlint-disable-next-line no-process-env -- The switch of an agent's run, as `CI` is.
+  const fastOption = resolveFast(options.fast, process.env);
+  // The features of fast mode, with `crypto` in a test run of Vitest only,
+  // once the `config` hook knows: a static build, or a dev server of another
+  // host, hashes for real.
+  let fast: ResolvedFastOptions = { ...fastOption, crypto: false };
   let project: NextProject;
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
@@ -757,7 +892,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       serverCode.isHostPackage(source) ? { id: source, external: true } : undefined,
   };
   const resolvers = Object.fromEntries(
-    layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
+    layers.map((layer) => [layer, createLayerResolver(getProject, layer, () => fast.crypto)]),
   ) as Record<NextLayer, LayerResolver>;
   // The CSS of the app, as the stylesheets of a route.
   let pageRoutes: { of: NextProject; routes: Map<string, NextRoute | ComponentRoute> } | undefined;
@@ -847,6 +982,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       async config(config, { command }) {
         const isBuild = command === "build";
         build = options.build ?? (isBuild ? "production" : "development");
+        // Vitest says it runs in the env of its process, before it loads a
+        // config: what tells a test run from a dev server here.
+        // oxlint-disable-next-line no-process-env
+        const crypto = fastOption.crypto && !isBuild && process.env.VITEST !== undefined;
+        fast = { ...fastOption, crypto };
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
           static: isBuild,
@@ -911,7 +1051,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           // later would have Vite pre-bundle again, mid-test.
           ...(build === "production" ? prerenderImports : []),
         ]);
-        const clientBoundaries = findClientBoundaries(project.nextDir, resolvers.rsc);
+        const clientBoundaries = findClientBoundaries(project.nextDir, project.root, resolvers.rsc);
         const include: Record<NextLayer, string[]> = {
           rsc: [...rscInclude, nextRouting],
           ssr: [
@@ -959,6 +1099,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               createScanCompilePlugin(getProject, layer, serverCode.isAppCode),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
+              nextPatchesPlugin(),
               ...(layer === "browser"
                 ? []
                 : [
@@ -983,6 +1124,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ...definesOf(project, layer),
                 ...(layer === "browser" ? serverCode.browserCacheKey : serverCode.cacheKey),
                 ...optimizerCacheKey(project, layer),
+                // A pre-bundle has the stand-ins of `fast.crypto` in it, or not.
+                __vitest_plugin_rsc_fast_crypto__: JSON.stringify(fast.crypto),
               },
             },
           },
@@ -1028,12 +1171,25 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // Next's server needs the server's platform to be there.
         const test = ((
           config as {
-            test?: { setupFiles?: string | string[]; browser?: { testerHtmlPath?: string } };
+            test?: {
+              setupFiles?: string | string[];
+              browser?: { testerHtmlPath?: string; dependencySourcemaps?: boolean };
+              expect?: { poll?: { interval?: number } };
+            };
           }
         ).test ??= {});
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
         // A page of the project's own wins.
         (test.browser ??= {}).testerHtmlPath ??= testerHtml;
+        // Without the source maps of the dependencies in what the page
+        // fetches, unless the config asks for them: Vite inlines each map,
+        // which makes a pre-bundled dependency three times the size, and the
+        // three layers pre-bundle much of Next and React. Vitest still maps
+        // the stack of an error it reports with the maps on disk, and only
+        // a headless run leaves them out.
+        test.browser.dependencySourcemaps ??= false;
+        // An assertion of fast mode looks again sooner: see `fast.watchDom`.
+        if (fast.watchDom) ((test.expect ??= {}).poll ??= {}).interval ??= 5;
 
         // JSX compiled for production, as `next build` compiles it: JSX
         // compiled for development calls `jsxDEV()`, which React's production
@@ -1257,6 +1413,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         if (source === manifestId || source === envId || isRouteModule(source)) {
           return `\0${source}`;
         }
+        if (source === fastCryptoSetupId) return `\0${source}`;
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
         if (source === useCacheId || source === cacheHandlersId) return `\0${source}`;
         if (source === prerenderId) return `\0${source}`;
@@ -1300,6 +1457,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           );
         }
 
+        if (id === `\0${fastCryptoSetupId}`) return fastCryptoSetup(fast.crypto);
+
         // Of every layer: the page's `process.env` is one.
         if (id === `\0${envId}`) {
           for (const name of env.files) this.addWatchFile(path.join(project.root, name));
@@ -1322,7 +1481,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             `export const routing = ${JSON.stringify(project.routing)};\n` +
             `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n` +
             `export const preview = ${JSON.stringify(project.preview)};\n` +
-            `export const build = ${JSON.stringify(build)};\n`
+            `export const build = ${JSON.stringify(build)};\n` +
+            `export const fast = ${JSON.stringify(fast)};\n`
           );
         }
 
@@ -1408,6 +1568,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     // which has no optimizer.
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
+    { ...nextPatchesPlugin(), apply: "build" },
     { ...instrumentationPlugin(), apply: "build" },
     nextStaticBuild({
       environments: environmentOf,

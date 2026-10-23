@@ -53,6 +53,13 @@ export const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/client/app-bootstrap",
     "next/dist/client/app-call-server",
     "next/dist/client/app-index",
+    // browser/client.ts, for a page of a kept app: `renderAgain()` of client.tsx
+    "next/dist/client/components/app-router",
+    "next/dist/client/components/app-router-instance",
+    "next/dist/client/components/router-reducer/create-initial-router-state",
+    "next/dist/client/components/segment-cache/bfcache",
+    "next/dist/client/components/segment-cache/cache",
+    "next/dist/shared/lib/head-manager-context.shared-runtime",
   ],
 };
 

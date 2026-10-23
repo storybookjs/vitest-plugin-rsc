@@ -162,6 +162,8 @@ Pretty much everything Next does. Your files go through Next's own compiler, so 
 
 Head to the **[Next.js guide](docs/nextjs-guide.md)** for an example of each.
 
+For a quicker feedback loop, `VITEST_PLUGIN_RSC_FAST=1 npx vitest` runs in [fast mode](docs/nextjs-guide.md#fast-mode): the pages of a test file render in one app, without HTML from the server, prefetching or page loads. Keep CI in the default mode.
+
 ### Databases
 
 Browsers have no TCP sockets, so the database runs in the tab: a real engine in WebAssembly. Your app keeps its ORM, queries and migrations. Tests mock just one module, `db.ts`.

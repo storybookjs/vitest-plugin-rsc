@@ -11,6 +11,29 @@ import type { AppRoutes } from "./routes.ts";
 import type { FoundMiddleware } from "./routing.ts";
 import { componentPagePath } from "../styles-shared.ts";
 
+// Next's app loader gets the module of each segment with `() => import(file)`,
+// which a bundler answers from its bundle, and Next calls it for every
+// request. A browser answers `import()` of a module it has evaluated after
+// walking the module's whole graph again, a task for each module in it: in
+// the notes app about 500 tasks for a request of a page. Each module is
+// asked for once, then: `import()` of the same file is the same module
+// anyway. One that failed to load is asked for again.
+const loadOnce =
+  "const __vitest_plugin_rsc_once__ = (load) => {\n" +
+  "  let loaded;\n" +
+  "  return () => (loaded ??= load().catch((error) => { loaded = undefined; throw error; }));\n" +
+  "};\n";
+const segmentLoader =
+  /\binstrumentModuleGetter\(\(\) => import\((\/\* webpackMode: "eager" \*\/ "(?:[^"\\]|\\.)*")\)\)/g;
+
+function loadingOnce(code: string): string {
+  const once = code.replace(
+    segmentLoader,
+    "instrumentModuleGetter(__vitest_plugin_rsc_once__(() => import($1)))",
+  );
+  return once === code ? code : loadOnce + once;
+}
+
 // The entry of a route: the module of the rsc layer that Next's build makes
 // for it, and what the plugin makes for the route of a node.
 
@@ -261,7 +284,7 @@ export function routeEntries(
       fail(`${where} no longer imports the module of a page by its file`);
     }
     return {
-      code: named.code,
+      code: loadingOnce(named.code),
       watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)),
       segments: route.kind === "page" ? named.segments : [],
     };

@@ -161,6 +161,19 @@ export default defineConfig([
     },
     dts,
   },
+  // The stand-ins of `fast.crypto`, src/nextjs/fast-crypto.ts: one file, with
+  // the SHA-256 of @noble/hashes in it, which Vite serves as it is, as the
+  // modules of Node.js below.
+  {
+    entry: { index: "src/fast-crypto/index.ts" },
+    outDir: "dist/fast-crypto",
+    format: ["esm" as const],
+    fixedExtension: false,
+    outputOptions: { codeSplitting: false as const },
+    deps: { onlyBundle: ["@noble/hashes"] },
+    plugins: [licenses],
+    dts: false,
+  },
   // The modules of Node.js for the server layers, `vitest-plugin-rsc/node/*`:
   // each one file of its own, with memfs or unenv in it, which are
   // devDependencies for that. Vite serves such a file as it is, and a build

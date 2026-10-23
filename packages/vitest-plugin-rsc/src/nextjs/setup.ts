@@ -1,10 +1,16 @@
 import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
-import { server } from "vitest/browser";
+import { page, server } from "vitest/browser";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
+import { findOnEveryChange, forgetTestFileAnswers } from "./fast-mode.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
+import { leaveKeptAppWithPage } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
+// With `fast.crypto`, PBKDF2 of the page's `crypto.subtle` is a stand-in that
+// costs microseconds, for the app and the tests alike: see fast-crypto.ts.
+// Here, as the setup file is in a test run of Vitest only.
+import "virtual:vitest-plugin-rsc/next-fast-crypto";
 
 // Registered by `vitestPluginNext()` as a setup file. The only module of the
 // layers that imports Vitest, which another host, or a static build, runs
@@ -42,7 +48,18 @@ beforeAll(async ({}, suite) => {
   // hooks too.
   await linkStylesheetsOf(nodeFiles);
 });
-afterAll(() => keptDocument?.());
+// The kept app of fast mode (page.ts) is one test file's: the next file
+// starts with its modules evaluated again, as it does its setup files. Also
+// after a page that could not be left, which fails this file.
+afterAll(async () => {
+  try {
+    await leaveKeptAppWithPage("the end of the test file");
+  } finally {
+    keptDocument?.();
+    // The next file asks the dev server again: see fast-mode.ts.
+    forgetTestFileAnswers();
+  }
+});
 
 // The ssr layer, which the entry does not wait for: with a dev server, the
 // first time it loads compiles Next's server, which takes longer than a test
@@ -60,3 +77,6 @@ beforeEach(async () => {
   await (clientFile ? cleanup() : newBrowserContext());
   await linkStylesheetsOf(nodeFiles);
 });
+
+// Fast mode's `watchDom` looks for an element on every change of the DOM: see fast-mode.ts.
+findOnEveryChange(page.getByText(""));

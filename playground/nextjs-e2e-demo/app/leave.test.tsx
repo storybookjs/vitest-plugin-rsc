@@ -185,6 +185,25 @@ test("sends no Server Action of a page once it is left", async () => {
   expect(consoleError).not.toHaveBeenCalled();
 });
 
+// Also in fast mode (`VITEST_PLUGIN_RSC_FAST=1`), where the next page renders
+// in the app of this one: its router's requests fail as the page is left,
+// and a Server Action of the page hears nothing, as in the default mode. The
+// button does not wait for the action, which would reject unhandled.
+test("hears nothing of a Server Action of a page that the test leaves for another page", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer({ url: "/notes/1" });
+  const star = page.getByRole("button", { name: "Star" });
+  await expect.element(star).toBeVisible();
+
+  // Next sends the action a few microtasks after the click: the next page
+  // leaves this one before it is sent, or while it is answered.
+  (star.element() as HTMLElement).click();
+  await renderServer({ url: "/settings" });
+
+  await expect.element(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
 test("sends nothing more for a page once it is left, also what its router sends a moment later", async () => {
   await renderServer(<RefreshButton />, { proxy: true });
   const seen = seenByProxy.length;

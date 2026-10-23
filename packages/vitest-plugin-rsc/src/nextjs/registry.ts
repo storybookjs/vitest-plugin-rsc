@@ -9,6 +9,7 @@ import type { Stylesheets } from "./styles-shared.ts";
 // Each graph has its own copy of this module. They share the object.
 
 import type { SequentialAsyncLocalStorage } from "../async-local-storage.ts";
+import type { ResolvedFastOptions } from "./fast-options.ts";
 
 export type ServerRequest = {
   url: string;
@@ -73,9 +74,38 @@ export type Opened = {
    * `runInServerAction()`, which shows no page. Read from `openedByRequest`.
    */
   rendersRedirect?: boolean;
+  /**
+   * `false`: Next renders no HTML of the page, see `RenderServerOptions.ssr`.
+   * Read from `openedByRequest`.
+   */
+  ssr?: boolean;
+};
+
+/**
+ * When a request of the page reached the server, started, was answered and
+ * was done, by `performance.now()`: see `NextRegistry.requestTimings`.
+ */
+export type RequestTiming = {
+  method: string;
+  url: string;
+  /** Whether it is a Server Action, a request of Next's router for Flight, or a page. */
+  kind: "action" | "flight" | "page";
+  queued: number;
+  started?: number;
+  answered?: number;
+  finished?: number;
 };
 
 export type NextRegistry = {
+  /** The features of fast mode that are on, `fast` of `vitestPluginNext()`: see fast-mode.ts. */
+  fast?: ResolvedFastOptions;
+  /** The caches of `oncePerTestFile()` in fast-mode.ts, which a test file ends with. */
+  testFileCaches?: Set<Map<string, Promise<unknown>>>;
+  /**
+   * For a profile of a test run: set to an array, the server adds the timing
+   * of each request of the page to it, in the order they reached it.
+   */
+  requestTimings?: RequestTiming[];
   /** A `Request` and `Response` that keep the headers a browser drops. */
   Request: typeof Request;
   Response: typeof Response;
@@ -86,6 +116,9 @@ export type NextRegistry = {
   /** Node's, for Next's server: a task after the microtasks. Not globals. */
   setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
   clearImmediate(id: unknown): void;
+  /** The `setTimeout` and `clearTimeout` of server code: see globals.ts. */
+  setTimeout(callback: unknown, delay?: number, ...args: unknown[]): unknown;
+  clearTimeout(id: unknown): void;
   /** Starts the scope of one request, see `enterAmbientScope`. Returns its end. */
   enterRequestScope(): () => void;
   /** What an async function of server code is compiled to call: server-code.ts. */
@@ -157,10 +190,11 @@ export type NextRegistry = {
   /** What the Server Action of `runInServerAction()` runs, by the number it is called with. */
   serverActions: Map<number, () => Promise<void>>;
   /**
-   * The route of a node that a request brings for itself, like the one of
-   * `runInServerAction()`, for as long as it is handled. The page of the route of
-   * a node reads it, and else `opened`. The server's `fetch` reads its
-   * `rendersRedirect`.
+   * What a request opened, for as long as it is handled: what it brings for
+   * itself, like the route of a node of `runInServerAction()`, or else
+   * `opened` at its URL (`openedAt()`). The page of the route of a node reads
+   * it, and else `opened`. The server's `fetch` reads its `rendersRedirect`,
+   * and Next's renderer its `ssr`.
    */
   openedByRequest: SequentialAsyncLocalStorage<Opened | undefined>;
   /**
@@ -183,6 +217,12 @@ export type NextRegistry = {
    * loader of the page that started last, until it is left.
    */
   loadBrowserModule?(id: string): Promise<unknown>;
+  /**
+   * Set while the browser layer gives the router of fast mode's kept app the
+   * state of its next page, which Next's patched router reads: see
+   * `nextPatches` in compat/patches.ts.
+   */
+  replacingRouter?: boolean;
   /**
    * Next's route module for a page, loaded in the ssr layer, for the rsc
    * layer: its class, its renderer, and the contexts of its
