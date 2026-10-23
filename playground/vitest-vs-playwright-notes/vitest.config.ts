@@ -31,7 +31,11 @@ export default defineConfig({
     reporters: ["tree"],
     // tests/vitest/ acts with Playwright, tests/vitest-user-event/ with Testing
     // Library in the page: a run picks one with a filter, as the workflow does.
-    include: ["tests/vitest/*.test.tsx", "tests/vitest-user-event/*.test.tsx"],
+    include: [
+      "tests/vitest/*.test.tsx",
+      "tests/vitest-user-event/*.test.tsx",
+      "tests/zz-*/*.test.tsx",
+    ],
     browser: {
       enabled: true,
       headless: true,

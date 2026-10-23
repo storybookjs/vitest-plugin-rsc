@@ -824,6 +824,7 @@ What changes:
 - **No HTML from the server.** The page renders on the client, as with `ssr: false`, so a test doesn't see the server's HTML or a hydration mismatch. A test that asserts on them passes `renderServer({ url, ssr: true })` and gets a page load of its own. In development, the page has no dev overlay.
 - **No prefetching and no scrolling.** `<Link>` and `<Form>` don't prefetch, and a navigation doesn't scroll.
 - **Less waiting.** `expect.element()` looks for an element again on every change of the DOM, and `expect.poll()` every 5 ms, unless your config sets `expect.poll.interval`. The server doesn't wait the few milliseconds a browser adds to a timeout of `0` between the steps of a render.
+- **Password hashes that cost microseconds.** Password hashes and key derivation of `bcryptjs`, `node:crypto` and Web Crypto cost microseconds, with the same API, so a hash a test makes verifies in the app. `fastCrypto: false` keeps the real ones. See [Fast crypto](nodejs-in-the-browser.md#fast-crypto).
 
 A suite that passes in fast mode should pass in the default mode too. CI tells you when it doesn't.
 

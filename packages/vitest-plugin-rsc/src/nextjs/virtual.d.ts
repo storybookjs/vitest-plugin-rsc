@@ -72,3 +72,6 @@ declare module "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser" {
     options?: { callServer?: unknown },
   ): Promise<T>;
 }
+
+// Web Crypto's stand-in of `fastCrypto`, or nothing: see fast-crypto.ts.
+declare module "virtual:vitest-plugin-rsc/next-fast-crypto" {}

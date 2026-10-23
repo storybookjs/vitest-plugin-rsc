@@ -7,6 +7,10 @@ import { keepHostDocument, noRouter } from "./host-document.ts";
 import { leaveKeptAppWithPage } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
+// With `fastCrypto`, PBKDF2 of the page's `crypto.subtle` is a stand-in that
+// costs microseconds, for the app and the tests alike: see fast-crypto.ts.
+// Here, as the setup file is in a test run of Vitest only.
+import "virtual:vitest-plugin-rsc/next-fast-crypto";
 
 // Registered by `vitestPluginNext()` as a setup file. The only module of the
 // layers that imports Vitest, which another host, or a static build, runs

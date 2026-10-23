@@ -36,6 +36,7 @@ import {
 } from "./compat/paths.ts";
 import { nextPatches } from "./compat/patches.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
+import { fastCryptoModule, fastCryptoModuleOf, fastCryptoSetup } from "./fast-crypto.ts";
 import { createNodePlatform, instrumentationPlugin } from "./node-platform.ts";
 import { registryGlobal } from "./registry-global.ts";
 import {
@@ -206,6 +207,10 @@ const devAssetPrefixShim = `export const assetPrefix = "";\n`;
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
 // What a run has said of the installed Next, which its projects share.
 const saidOfNext = new Set<string>();
+// The modules of `fastCrypto`, see fast-crypto.ts: one for each package.
+const fastCryptoPrefix = `${bridgePrefix}fast-crypto/`;
+// What the plugin's setup file imports: Web Crypto's stand-in, or nothing.
+const fastCryptoSetupId = "virtual:vitest-plugin-rsc/next-fast-crypto";
 
 type Alias = { key: string; exact: boolean; target: string | false };
 
@@ -216,7 +221,11 @@ type Alias = { key: string; exact: boolean; target: string | false };
 // every environment. And it names a file of Next one way only: Vite keeps a
 // pre-bundled dependency per specifier, so a second spelling is a second copy
 // of the module, found mid-test.
-function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
+function createLayerResolver(
+  getProject: () => NextProject,
+  layer: NextLayer,
+  fastCrypto: () => boolean,
+) {
   let aliases: Alias[] | undefined;
   const normalized = new Map<string, string | false>();
 
@@ -376,6 +385,16 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         // such an id as it is, and a build asks.
         if (source.startsWith(bridgePrefix) || source === emptyModuleId) return source;
         if (source.startsWith("\0")) return;
+        // A package that hashes passwords, and `node:crypto`, in the server
+        // layers and the test files, with `fastCrypto`: the stand-ins. Not
+        // for a dependency whose `browser` field says what it uses for
+        // `crypto`, which gets that, as without the option.
+        if (layer !== "browser" && fastCrypto()) {
+          const name = fastCryptoModuleOf(source);
+          if (name && (name !== "node-crypto" || browserMapping(source, importer) === undefined)) {
+            return fastCryptoPrefix + name;
+          }
+        }
         // The shim wraps the module it replaces.
         if (importer === `${bridgePrefix}server-reference-info`) {
           return nextFile(serverReferenceInfo);
@@ -476,6 +495,9 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
         if (name === "dev-asset-prefix") return devAssetPrefixShim;
+        if (id.startsWith(fastCryptoPrefix)) {
+          return fastCryptoModule(id.slice(fastCryptoPrefix.length), nodeModuleOf("node:crypto")!);
+        }
         const { flightExports, version, newExports } = getProject();
         const nodeModule = nodePlatform.load(name, newExports[name], version);
         if (nodeModule) return nodeModule;
@@ -793,11 +815,35 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    *   the config sets `expect.poll.interval`.
    * - What the dev server answers about the stylesheets and the modules of
    *   a test file is asked once per test file, not for every page.
+   * - Password hashes and key derivation of `bcryptjs`, `node:crypto` and
+   *   Web Crypto cost microseconds, with the same API: a hash a test makes
+   *   verifies in the app. See `fastCrypto`.
    *
    * @default `true` when the environment variable `VITEST_PLUGIN_RSC_FAST`
    * is `1`, else `false`
    */
   fast?: boolean;
+  /**
+   * Experimental, and for tests only. Password hashes and key derivations
+   * that cost microseconds, for the server code in the page and the test
+   * files: PBKDF2 of `crypto.subtle`, `pbkdf2`, `scrypt` and `argon2` of
+   * `node:crypto`, and the packages bcryptjs, bcrypt, @node-rs/bcrypt,
+   * argon2, @node-rs/argon2 and the scrypt, pbkdf2 and argon2 of
+   * @noble/hashes, which Better Auth hashes with. Each stand-in keeps the
+   * API and the shape of what it returns, and a password verifies against
+   * its own hash only. It is one SHA-256: never a password hash outside a
+   * test, and the plugin gives it to a test run of Vitest only.
+   *
+   * A hash made by the real algorithm, like one in a fixture, does not
+   * verify under a stand-in: bcrypt's and Argon2's throw an error that says
+   * so. See docs/nodejs-in-the-browser.md, "Fast crypto".
+   *
+   * Fast mode turns it on: `fastCrypto: false` keeps the real hashes in fast
+   * mode, and `fastCrypto: true` has the stand-ins without it.
+   *
+   * @default the `fast` option: `true` in fast mode, else `false`
+   */
+  fastCrypto?: boolean;
 };
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
@@ -817,6 +863,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // it: development for a test run and a dev server, production for a static
   // build, which is a site to look at, not a test that reads React's warnings.
   let build: NextBuild = options.build ?? "development";
+  // The option, or fast mode's default, in a test run of Vitest only, once
+  // the `config` hook knows: a static build, or a dev server of another
+  // host, hashes for real.
+  let fastCrypto = false;
   // What `envId` has: the project's, until an env file changes. One load
   // after the other, so that the last change has the last word.
   let env: PageEnv;
@@ -845,7 +895,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       serverCode.isHostPackage(source) ? { id: source, external: true } : undefined,
   };
   const resolvers = Object.fromEntries(
-    layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
+    layers.map((layer) => [layer, createLayerResolver(getProject, layer, () => fastCrypto)]),
   ) as Record<NextLayer, LayerResolver>;
   // The CSS of the app, as the stylesheets of a route.
   let pageRoutes: { of: NextProject; routes: Map<string, NextRoute | ComponentRoute> } | undefined;
@@ -935,6 +985,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       async config(config, { command }) {
         const isBuild = command === "build";
         build = options.build ?? (isBuild ? "production" : "development");
+        // Vitest says it runs in the env of its process, before it loads a
+        // config: what tells a test run from a dev server here.
+        // oxlint-disable-next-line no-process-env
+        fastCrypto = (options.fastCrypto ?? fast) && !isBuild && process.env.VITEST !== undefined;
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
           static: isBuild,
@@ -1072,6 +1126,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ...definesOf(project, layer),
                 ...(layer === "browser" ? serverCode.browserCacheKey : serverCode.cacheKey),
                 ...optimizerCacheKey(project, layer),
+                // A pre-bundle has the stand-ins of `fastCrypto` in it, or not.
+                __vitest_plugin_rsc_fast_crypto__: JSON.stringify(fastCrypto),
               },
             },
           },
@@ -1359,6 +1415,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         if (source === manifestId || source === envId || isRouteModule(source)) {
           return `\0${source}`;
         }
+        if (source === fastCryptoSetupId) return `\0${source}`;
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
         if (source === useCacheId || source === cacheHandlersId) return `\0${source}`;
         if (source === prerenderId) return `\0${source}`;
@@ -1401,6 +1458,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             `export const cacheHandlers = {\n${kinds.join("\n")}\n};\n`
           );
         }
+
+        if (id === `\0${fastCryptoSetupId}`) return fastCryptoSetup(fastCrypto);
 
         // Of every layer: the page's `process.env` is one.
         if (id === `\0${envId}`) {
