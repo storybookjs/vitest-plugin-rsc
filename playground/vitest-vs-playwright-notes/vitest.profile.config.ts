@@ -25,9 +25,57 @@ const stopProfile: BrowserCommand<[name: string]> = async (_context, name) => {
   await writeFile(`profiles/${name}.cpuprofile`, JSON.stringify(profile));
 };
 
+// With `VITEST_PROFILE=trace`, a trace of Chrome in traces/ instead, which
+// test/trace-summary.py sums up: what the browser itself does, like layout,
+// style and the microtasks of promises, which a CPU profile calls
+// `(program)`.
+type TraceSession = Session & {
+  on(event: "Tracing.dataCollected", listener: (data: { value: unknown[] }) => void): void;
+  once(event: "Tracing.tracingComplete", listener: () => void): void;
+};
+let trace: { session: TraceSession; events: unknown[]; complete: Promise<void> } | undefined;
+
+const startTrace: BrowserCommand<[]> = async ({ page }) => {
+  const session = (await page.context().newCDPSession(page)) as unknown as TraceSession;
+  const events: unknown[] = [];
+  session.on("Tracing.dataCollected", ({ value }) => events.push(...value));
+  const complete = new Promise<void>((resolve) => session.once("Tracing.tracingComplete", resolve));
+  trace = { session, events, complete };
+  await session.send("Tracing.start", {
+    transferMode: "ReportEvents",
+    traceConfig: {
+      includedCategories: [
+        "toplevel",
+        "blink",
+        "v8",
+        "v8.execute",
+        "devtools.timeline",
+        "disabled-by-default-devtools.timeline",
+        "disabled-by-default-v8.gc",
+        "loading",
+      ],
+    },
+  });
+};
+
+const stopTrace: BrowserCommand<[name: string]> = async (_context, name) => {
+  if (!trace) return;
+  const { session, events, complete } = trace;
+  trace = undefined;
+  await session.send("Tracing.end");
+  await complete;
+  await mkdir("traces", { recursive: true });
+  await writeFile(`traces/${name}.json`, JSON.stringify(events));
+};
+
 export default mergeConfig(config, {
+  // What test/profile.ts reads, which Vite gives the page only for `VITE_*`.
+  define: {
+    // oxlint-disable-next-line no-process-env
+    "import.meta.env.VITEST_PROFILE": JSON.stringify(process.env.VITEST_PROFILE ?? ""),
+  },
   test: {
-    browser: { commands: { startProfile, stopProfile } },
+    browser: { commands: { startProfile, stopProfile, startTrace, stopTrace } },
     setupFiles: ["./test/profile.ts"],
   },
 });

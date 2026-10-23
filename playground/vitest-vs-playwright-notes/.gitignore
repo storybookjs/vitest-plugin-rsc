@@ -9,3 +9,4 @@ next-env.d.ts
 AGENTS.md
 # CPU profiles of vitest.profile.config.ts
 /profiles/
+/traces/

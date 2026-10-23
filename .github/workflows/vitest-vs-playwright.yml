@@ -92,8 +92,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Where the time of fast mode goes: a CPU profile of the page for every
-  # test file, summed up by package in the summary of the run, and the
-  # profiles as an artifact, to open in Chrome's DevTools.
+  # test file, summed up by package in the summary of the run, a trace of
+  # Chrome for two files, summed up by what the browser did, and both as an
+  # artifact, to open in Chrome's DevTools.
   profile:
     name: Vitest, vitest-vs-playwright-notes, vitest-user-event, fast mode, CPU profile
     runs-on: ubuntu-latest
@@ -116,10 +117,21 @@ jobs:
         run: pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1 tests/vitest-user-event/
       - name: Sum up the profiles
         run: python3 test/profile-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Trace Chrome for two test files
+        env:
+          VITEST_PROFILE: trace
+        run: >-
+          pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1
+          tests/vitest-user-event/note-create.test.tsx
+          tests/vitest-user-event/flow-edit-chain.test.tsx
+      - name: Sum up the traces
+        run: python3 test/trace-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
-          name: cpu-profiles
-          path: playground/vitest-vs-playwright-notes/profiles/
+          name: cpu-profiles-and-traces
+          path: |
+            playground/vitest-vs-playwright-notes/profiles/
+            playground/vitest-vs-playwright-notes/traces/
 
   playwright:
     name: Playwright, ${{ matrix.app }}
