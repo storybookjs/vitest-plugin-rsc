@@ -808,7 +808,7 @@ See [Development or production](internals/next-routes.md#development-or-producti
 
 ## Fast mode
 
-Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run takes about 2.5 times less time. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in the default mode:
+Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run takes about half the time on the same machine (2× in production, 1.7× in development), and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in the default mode:
 
 ```ts
 vitestPluginNext({ fast: true });
