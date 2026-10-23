@@ -72,6 +72,7 @@ jobs:
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "VITEST_SECONDS_${{ matrix.fast && 'FAST' || 'DEFAULT' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
       - name: Run the tests, Next and React in development
         env:
           VITEST_PLUGIN_RSC_BUILD: development
@@ -89,6 +90,66 @@ jobs:
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "VITEST_SECONDS_${{ matrix.fast && 'FAST' || 'DEFAULT' }}_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
+      # The job of fast mode runs the tests in the default mode too, on the
+      # same runner: the ratio of the two is what fast mode gains, which the
+      # times of two runners, a minute apart and of other machines, hide.
+      - name: Run the tests in the default mode, Next and React in production
+        if: matrix.fast
+        env:
+          VITEST_PLUGIN_RSC_FAST: ""
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          end=$(date +%s.%N)
+          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
+          {
+            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "VITEST_SECONDS_DEFAULT_PRODUCTION=$duration" >> "$GITHUB_ENV"
+      - name: Run the tests in the default mode, Next and React in development
+        if: matrix.fast
+        env:
+          VITEST_PLUGIN_RSC_FAST: ""
+          VITEST_PLUGIN_RSC_BUILD: development
+        run: |
+          start=$(date +%s.%N)
+          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          end=$(date +%s.%N)
+          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
+          {
+            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
+            echo
+            echo "| Step | Seconds |"
+            echo "| --- | ---: |"
+            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "VITEST_SECONDS_DEFAULT_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
+      - name: Compare the default mode with fast mode
+        if: matrix.fast
+        run: |
+          {
+            echo "### Vitest, ${{ matrix.app }}, ${{ matrix.tests }}, default mode and fast mode on one runner"
+            echo
+            echo "| Next and React | Default mode, seconds | Fast mode, seconds | Default / fast |"
+            echo "| --- | ---: | ---: | ---: |"
+            for build in production development; do
+              default="VITEST_SECONDS_DEFAULT_${build^^}"
+              fast="VITEST_SECONDS_FAST_${build^^}"
+              printf "| %s | %.1f | %.1f | %.2f |\n" "$build" "${!default}" "${!fast}" \
+                "$(echo "${!default} / ${!fast}" | bc -l)"
+            done
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Where the time of fast mode goes: a CPU profile of the page for every
