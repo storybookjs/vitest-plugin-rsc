@@ -46,7 +46,9 @@ const browserMode = () => ({
   instances: [{ browser: "chromium" as const }],
 });
 
-export const nextjsNotesProjects = [
+// The tests of the app, which open its routes: as CI runs them, and in fast
+// mode (`fast` of `vitestPluginNext()`), which they pass in too.
+const browserProject = (name: string, fast: boolean) =>
   defineProject({
     root,
     // MSW's worker lives in the repo-root public/ (package.json#msw). Vitest 5
@@ -68,10 +70,11 @@ export const nextjsNotesProjects = [
       // oxlint-disable-next-line no-process-env
       vitestPluginNext({
         build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
+        fast,
       }),
     ],
     test: {
-      name: "nextjs-notes-demo-browser",
+      name,
       include: ["**/*.test.{ts,tsx}"],
       // e2e/ runs Storybook: see vitest.storybook.config.ts.
       exclude: ["e2e/**", "node_modules"],
@@ -89,7 +92,11 @@ export const nextjsNotesProjects = [
       expect: { poll: { timeout: 10_000 } },
       setupFiles: ["./vitest.setup.ts"],
     },
-  }),
+  });
+
+export const nextjsNotesProjects = [
+  browserProject("nextjs-notes-demo-browser", false),
+  browserProject("nextjs-notes-demo-fast", true),
   // Every story of the app, as a test of Storybook's Vitest addon, which
   // makes a story file a test file: a server story renders in a page of the
   // app, a client story in the browser layer, each with the preview its file

@@ -76,9 +76,9 @@ export type Opened = {
   /** `false`: Next renders no HTML of the page, see `RenderServerOptions.ssr`. */
   ssr?: boolean;
   /**
-   * For the request of a page of a kept app alone: Next answers it with the
-   * Flight payload of the page in place of its document (`flightOnlyPlugin()`
-   * in plugin.ts). Read from `openedByRequest`.
+   * For the request of a page of fast mode's kept app alone: Next answers it
+   * with the Flight payload of the page in place of its document
+   * (`nextPatches` in plugin.ts). Read from `openedByRequest`.
    */
   flightOnly?: boolean;
 };
@@ -101,6 +101,8 @@ export type RequestTiming = {
 export type NextRegistry = {
   /** The `fast` option of `vitestPluginNext()`: see fast-mode.ts. */
   fast?: boolean;
+  /** The caches of `oncePerTestFile()` in fast-mode.ts, which a test file ends with. */
+  testFileCaches?: Set<Map<string, Promise<unknown>>>;
   /**
    * For a profile of a test run: set to an array, the server adds the timing
    * of each request of the page to it, in the order they reached it.
@@ -217,9 +219,9 @@ export type NextRegistry = {
    */
   loadBrowserModule?(id: string): Promise<unknown>;
   /**
-   * Set while the browser layer gives the router of a kept app the state of
-   * its next page, which Next's patched router reads: see
-   * `replaceableRouterPlugin()` in plugin.ts.
+   * Set while the browser layer gives the router of fast mode's kept app the
+   * state of its next page, which Next's patched router reads: see
+   * `nextPatches` in plugin.ts.
    */
   replacingRouter?: boolean;
   /**

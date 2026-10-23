@@ -284,7 +284,8 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
     typeof callback === "function" &&
     globalThis.setTimeout === nativeSetTimeout
       ? immediate(callback as (...args: unknown[]) => void, args)
-      : globalThis.setTimeout(callback as TimerHandler, delay, ...args);
+      : // As Node.js, which takes no code in a string.
+        globalThis.setTimeout(callback as (...args: unknown[]) => void, delay, ...args);
   registry.clearTimeout = (id) =>
     typeof id === "symbol" ? immediates.delete(id) : globalThis.clearTimeout(id as number);
 

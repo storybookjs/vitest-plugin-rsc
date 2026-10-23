@@ -11,9 +11,7 @@ import { registry } from "./registry.ts";
 // for every page and every test otherwise. The caches are the registry's,
 // as the layers that ask are module graphs of their own.
 
-type Caches = Set<Map<string, Promise<unknown>>>;
-const caches = (): Caches =>
-  ((registry as { testFileCaches?: Caches }).testFileCaches ??= new Set());
+const caches = () => (registry.testFileCaches ??= new Set());
 
 /** Whether the page runs in fast mode. */
 export function fastMode(): boolean {

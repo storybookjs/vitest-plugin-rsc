@@ -85,30 +85,18 @@ function sameOriginRequest(
 // goes once the page is. Without a page, a request of Next's has none to
 // hear it.
 let page: AbortSignal | undefined;
-// Whether the router of a page outlives it: in a kept app (see `renderAgain()`
-// in client.tsx) the modules of Next's router stay, and so does what they
-// count, like the prefetches in flight. A request that never settles would
-// count for good, so one of a page that was left fails, as the request of a
-// page that a browser stops.
+// Whether the router of a page outlives it: in fast mode's kept app (see
+// `renderAgain()` in client.tsx) the modules of Next's router stay, and so
+// does what they count, like the prefetches in flight. A request that never
+// settles would count for good, so one of a page that was left fails as the
+// page is left, as a browser stops the requests of a page it unloads. The
+// page says so first, with `pagehide`, as a browser's does: Next's router
+// reports no failure of a request then (see `leave()` of `Page` in page.ts).
 let routerOutlivesPage = false;
 
 /** Says which page of the app is open, by its signal, which aborts as it is left. */
 export function setOpenPage(signal: AbortSignal | undefined): void {
   page = signal;
-}
-
-// Counts the tests that a page stays open for: see `forgetRequestsOfOpenPage()`.
-let pageTest = 0;
-
-/**
- * Has the page that is open hear nothing more of the requests it has sent,
- * as if it had been left, and stays open: a page of
- * `renderServer({ url, reuse: "navigation" })` as its test ends. Leaving the
- * test drops what the server still does for them, and the router would take
- * that for a failure, and fall back to a page load of the document.
- */
-export function forgetRequestsOfOpenPage(): void {
-  pageTest++;
 }
 
 /** Says whether the router of the pages outlives them, from now on. */
@@ -117,10 +105,9 @@ export function setRouterOutlivesPage(outlives: boolean): void {
 }
 
 // What a request of a page that was left gets, from the router that sent it.
+const pageLeft = () => new DOMException("The page was left.", "AbortError");
 function ofLeftPage(): Promise<never> {
-  return routerOutlivesPage
-    ? Promise.reject(new DOMException("The page was left.", "AbortError"))
-    : never();
+  return routerOutlivesPage ? Promise.reject(pageLeft()) : never();
 }
 
 // What a browser adds to a request for the app's origin, with the headers and
@@ -400,15 +387,29 @@ const never = () => new Promise<never>(() => {});
 // there, would report that as an error while the next page runs: "Failed to
 // fetch RSC payload". Nobody reads the body of a response that comes after
 // that, so it stops.
-async function heardBy(
-  sender: AbortSignal,
-  response: Promise<Response>,
-  test = pageTest,
-): Promise<Response> {
+async function heardBy(sender: AbortSignal, response: Promise<Response>): Promise<Response> {
+  if (routerOutlivesPage) return failsAsLeft(sender, response);
   const answered = await response.catch(() => undefined);
-  if (!sender.aborted && test === pageTest) return response;
+  if (!sender.aborted) return response;
   void answered?.body?.cancel().catch(() => {});
   return ofLeftPage();
+}
+
+// For a router that outlives its page: the request fails at once as the page
+// is left, while the page still says that it is being left. What answers
+// after that is not read.
+function failsAsLeft(sender: AbortSignal, response: Promise<Response>): Promise<Response> {
+  const left = new Promise<never>((_, reject) =>
+    sender.addEventListener("abort", () => reject(pageLeft()), { once: true }),
+  );
+  left.catch(() => {});
+  void response.then(
+    (answered) => {
+      if (sender.aborted) void answered.body?.cancel().catch(() => {});
+    },
+    () => {},
+  );
+  return Promise.race([response, left]);
 }
 
 /**

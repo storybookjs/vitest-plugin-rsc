@@ -7,7 +7,7 @@ import { resetDisk } from "./disk.ts";
 import "./document-loads.ts";
 import { fastMode } from "./fast-mode.ts";
 import { NodeOnPage } from "./node-on-page.ts";
-import { leavePage, loadPage, suspendNavigablePage } from "./page.ts";
+import { leavePage, loadPage } from "./page.ts";
 import { registry, type Opened } from "./registry.ts";
 import { loadedSsrLayer, rscLayer, ssrLayer } from "./server-layers.ts";
 
@@ -218,48 +218,18 @@ export type RenderServerOptions = RequestOptions & {
   layouts?: boolean;
   /**
    * Whether the server renders the HTML of the page, which the browser then
-   * hydrates. Defaults to `true`. With `false` the document is empty, and the
-   * browser renders the app from the Flight payload with `createRoot()`, as
-   * Next does for an error page: faster, but a test no longer sees the HTML
-   * of the server, or a mismatch between it and the browser.
+   * hydrates. With `false` the browser renders the app from the Flight
+   * payload alone, with `createRoot()`, as Next does for an error page: a
+   * test no longer sees the HTML of the server, or a mismatch between it and
+   * the browser.
+   *
+   * Defaults to `true`, and to `false` in fast mode (`fast` of
+   * `vitestPluginNext()`), where a page without HTML of the server renders
+   * in the app of the page before it in the test file: see
+   * `VitestPluginNextOptions.fast`. A test that asserts on the HTML of the
+   * server passes `ssr: true`, and gets a page load of its own.
    */
   ssr?: boolean;
-  /**
-   * Renders the page in the app of the page before it, when that one was
-   * opened with `reuse` too: a fast mode for a suite that opens a page in
-   * every test. Defaults to `false`. Implies `ssr: false`, which it cannot be
-   * passed with.
-   *
-   * The first page of `reuse` starts the app as any page does, without SSR,
-   * and its app stays when it is left: its module graph, React's root on the
-   * document and Next's client. The next page of `reuse` is not loaded into
-   * it, but rendered: the server sends its document as for `ssr: false`, and
-   * the app decodes the Flight payload in it, gives Next's router a new state
-   * from it and mounts a new tree in its root, as Next's entry does as a page
-   * loads. Leaving the page unmounts its tree, so no state of a component
-   * carries over, nor the router's; the caches of Next's router are emptied.
-   * What carries over is the state of the modules of the app, of a package
-   * and of Next and React themselves, as in a single-page app that is never
-   * reloaded: a module that keeps a value of the page before has it on the
-   * next page. A page that the app loads itself from a page of `reuse`,
-   * like after a `<form>` without JavaScript or `location.assign()`, renders
-   * in the kept app too, from its document. A page that is not one of
-   * `reuse` starts an app of its own, and so does the first page of a test
-   * file.
-   *
-   * In development the page has no dev overlay of Next's.
-   *
-   * Defaults to `true` in fast mode, unless `ssr` is passed: see `fast` of
-   * `vitestPluginNext()`.
-   *
-   * With `"navigation"`, the page stays open when the test ends, until the
-   * test file ends, and the next `renderServer()` of `"navigation"` is a
-   * navigation of its router to `url`, and a refresh, which renders the
-   * whole tree again with the cookies and `headers` of the test: one page
-   * load per test file, besides the ones the app makes itself. The state of a layout's Client Components and of
-   * Next's router carries over, and `response` has no body.
-   */
-  reuse?: boolean | "navigation";
 };
 
 export type RenderServerResult = {
@@ -415,16 +385,8 @@ export async function renderServer(
           "`renderServer(<Page />, { url })`.",
       );
     }
-    if (first.reuse === true && first.ssr) {
-      throw new Error(
-        "vitest-plugin-rsc: `renderServer({ url, reuse: true })` renders the page in the root " +
-          "of the app that is there, which cannot hydrate HTML of the server: it implies " +
-          "`ssr: false`.",
-      );
-    }
-    // Fast mode reuses the app, unless the test asks for the HTML of the server.
-    const reuse = first.reuse ?? (fastMode() && first.ssr === undefined);
-    const ssr = reuse === true ? false : first.ssr;
+    // Fast mode renders a page without HTML in the app of the page before.
+    const ssr = first.ssr ?? !fastMode();
     const opened = { pathname, proxy: first.proxy ?? true, ssr };
     return {
       response: await loadPage(url, { headers }, store, {
@@ -433,7 +395,7 @@ export async function renderServer(
         cookie,
         signal,
         errors,
-        reuse,
+        inKeptApp: fastMode() && !ssr,
       }),
       errors,
       unmount,
@@ -588,7 +550,7 @@ export type CleanupOptions = {
  * on its first use, is prepared before the first page.
  */
 export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
-  if (!(await suspendNavigablePage())) await leavePage("cleanup()");
+  await leavePage("cleanup()");
   for (const container of containers) container.remove();
   containers.clear();
   unlinkStylesheets();

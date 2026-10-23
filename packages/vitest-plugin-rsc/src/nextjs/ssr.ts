@@ -230,8 +230,8 @@ export function handleRequest(
       void handled.then(
         ({ finished }) => {
           timing.answered = performance.now();
-          const done = () => (timing.finished = performance.now());
-          void finished.then(done, done);
+          const record = () => (timing.finished = performance.now());
+          void finished.then(record, record);
         },
         () => {},
       );

@@ -525,157 +525,140 @@ function flightConsolePlugin(): Plugin {
   };
 }
 
-// `renderServer({ url, ssr: false })`: Next's renderer renders no HTML of
-// the page, only an empty document, as it does for an error page, with the
-// Flight payload in its scripts. Next's client sees the document of an error
-// page and renders the app with `createRoot()` instead of hydrating it.
-function noSsrPlugin(): Plugin {
-  const render =
-    "workUnitAsyncStorage.run(requestStore, renderToWebFizzStream, appElement, fizzOptions)";
-  return {
-    name: "vitest-plugin-rsc:no-ssr",
-    transform: {
-      filter: { id: /\/next\/dist\/esm\/server\/app-render\/app-render\.js$/ },
-      handler(code, id) {
-        if (!code.includes(render)) {
-          this.warn(
-            `vitest-plugin-rsc: Next's HTML render in ${id} is not found: ssr: false renders it anyway.`,
-          );
-          return;
-        }
-        const patched = code.replace(
-          render,
-          `workUnitAsyncStorage.run(requestStore, renderToWebFizzStream, ` +
-            `globalThis.${registryGlobal}?.opened?.ssr === false ` +
-            `? _jsx("html", { id: "__next_error__", children: _jsx("body", {}) }) ` +
-            `: appElement, fizzOptions)`,
-        );
-        return { code: patched, map: null };
-      },
-    },
-  };
-}
+// What the plugin changes in Next's own code. Each edit replaces every `find`
+// in a file of Next with `replace`. The code it adds reads the registry as it
+// runs, so that the pre-bundled files are the same with fast mode and
+// without, and with HTML of the server and without. A `find` that a version
+// of Next no longer has leaves its file as it is, with a warning that says
+// what then does not work: see `lost`.
+type NextPatch = {
+  file: RegExp;
+  /** What does not work without the patch. */
+  lost: string;
+  edits: [find: string, replace: string][];
+};
 
-// `renderServer({ url, reuse: true })` in a kept app: the request of the
-// page has no use for HTML, not even the empty document of `ssr: false`. So
-// Next's renderer answers it with the Flight payload that it would inline in
-// the document, as it is, and renders no HTML: see `flightOnly` of `Opened`.
-function flightOnlyPlugin(): Plugin {
-  const anchor = /\/\/ This is a regular dynamic render\n/g;
-  return {
-    name: "vitest-plugin-rsc:flight-only",
-    transform: {
-      filter: { id: /\/next\/dist\/esm\/server\/app-render\/app-render\.js$/ },
-      handler(code, id) {
-        if (!code.includes("// This is a regular dynamic render\n")) {
-          this.warn(
-            `vitest-plugin-rsc: Next's HTML render in ${id} is not found: reuse: true loads ` +
-              "the empty document of every page.",
-          );
-          return;
-        }
-        const patched = code.replace(
-          anchor,
-          (comment) =>
-            `${comment}if (globalThis.${registryGlobal}?.openedByRequest?.getStore()?.flightOnly) { ` +
-            `finishHtmlRender(); return reactServerResult.consume(); }\n`,
-        );
-        return { code: patched, map: null };
-      },
-    },
-  };
-}
+const appRender = /\/next\/dist\/esm\/server\/app-render\/app-render\.js$/;
 
-// `renderServer({ url, reuse: true })`: the app that a page starts renders
-// the pages after it too, each with a router of its own (`renderAgain()` in
-// client.tsx). Next creates the action queue of its router once per page
-// load, and throws when it is created again: in a kept app it may be, while
-// the plugin replaces the router.
-function replaceableRouterPlugin(): Plugin {
-  const check = "if (globalActionQueue !== null) {";
-  return {
-    name: "vitest-plugin-rsc:replaceable-router",
-    transform: {
-      filter: { id: /\/next\/dist\/esm\/client\/components\/app-router-instance\.js$/ },
-      handler(code, id) {
-        if (!code.includes(check)) {
-          this.warn(
-            `vitest-plugin-rsc: Next's check of its action queue in ${id} is not found: ` +
-              "reuse: true cannot render a page in a kept app.",
-          );
-          return;
-        }
-        const patched = code
-          .replace(
-            check,
-            `if (globalActionQueue !== null && !globalThis.${registryGlobal}?.replacingRouter) {`,
-          )
-          // `renderServer({ url, reuse: "navigation" })` waits for the queue
-          // of the open page to be done: see `navigateTo()` in client.tsx.
-          .replace(
-            "export function getCurrentAppRouterState() {",
-            "export function vitestPluginRscActionQueue() { return globalActionQueue; }\n$&",
-          );
-        return { code: patched, map: null };
-      },
-    },
-  };
-}
-
-// Fast mode's patches of Next's client, read from the registry as the code
-// runs, so that the pre-bundled files are the same with it and without:
-// - `<Link>` and `<Form>` prefetch nothing. In production every link that
-//   comes into view, and every link the pointer of a click passes, is
-//   requested, and the server takes one request at a time: the click of a
-//   test waited for them.
-// - A navigation does not scroll to the segment that changed. To find out
-//   whether it is in view, Next reads the layout of the document after every
-//   navigation, which makes the browser lay it out then: in a profile of the
-//   notes app about 2% of the time of fast mode. A test does not see scrolling.
-const fastModePatches: { file: RegExp; what: string; pieces: [at: string, insert: string][] }[] = [
+const nextPatches: NextPatch[] = [
+  // `renderServer({ url, ssr: false })`: Next's renderer renders no HTML of
+  // the page, only an empty document, as it does for an error page, with the
+  // Flight payload in its scripts. Next's client sees the document of an
+  // error page and renders the app with `createRoot()` instead of hydrating.
   {
-    file: /\/next\/dist\/esm\/client\/components\/links\.js$/,
-    what: "prefetches",
-    pieces: [
+    file: appRender,
+    lost: "`ssr: false` renders the HTML of the page anyway",
+    edits: [
       [
-        "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {",
-        `\n    if (${registry}?.fast) prefetchEnabled = false;`,
-      ],
-      [
-        "export function mountFormInstance(element, href, router, fetchStrategy) {",
-        `\n    if (${registry}?.fast) return;`,
+        "workUnitAsyncStorage.run(requestStore, renderToWebFizzStream, appElement, fizzOptions)",
+        `workUnitAsyncStorage.run(requestStore, renderToWebFizzStream, ` +
+          `${registry}?.opened?.ssr === false ` +
+          `? _jsx("html", { id: "__next_error__", children: _jsx("body", {}) }) ` +
+          `: appElement, fizzOptions)`,
       ],
     ],
   },
+  // A page of fast mode in the kept app (page.ts) has no use for a document,
+  // not even the empty one of `ssr: false`: Next answers its request with
+  // the Flight payload that it would inline in the document, as it is. See
+  // `flightOnly` of `Opened`.
+  {
+    file: appRender,
+    lost: "fast mode loads the empty document of every page",
+    edits: [
+      [
+        "// This is a regular dynamic render\n",
+        "// This is a regular dynamic render\n" +
+          `if (${registry}?.openedByRequest?.getStore()?.flightOnly) { ` +
+          `finishHtmlRender(); return reactServerResult.consume(); }\n`,
+      ],
+    ],
+  },
+  // The kept app of fast mode renders every page with a router of its own
+  // (`renderAgain()` in client.tsx). Next creates the action queue of its
+  // router once per page load, and throws when it is created again.
+  {
+    file: /\/next\/dist\/esm\/client\/components\/app-router-instance\.js$/,
+    lost: "fast mode cannot render a page in the kept app",
+    edits: [
+      [
+        "if (globalActionQueue !== null) {",
+        `if (globalActionQueue !== null && !${registry}?.replacingRouter) {`,
+      ],
+    ],
+  },
+  // In fast mode `<Link>` and `<Form>` prefetch nothing. In production every
+  // link that comes into view, and every link the pointer of a click passes,
+  // is requested, and the server takes one request at a time: the click of a
+  // test waited for them.
+  {
+    file: /\/next\/dist\/esm\/client\/components\/links\.js$/,
+    lost: "fast mode prefetches",
+    edits: [
+      [
+        "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {",
+        "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {" +
+          `\n    if (${registry}?.fast) prefetchEnabled = false;`,
+      ],
+      [
+        "export function mountFormInstance(element, href, router, fetchStrategy) {",
+        "export function mountFormInstance(element, href, router, fetchStrategy) {" +
+          `\n    if (${registry}?.fast) return;`,
+      ],
+    ],
+  },
+  // In fast mode a navigation does not scroll to the segment that changed. To
+  // find out whether it is in view, Next reads the layout of the document
+  // after every navigation, which makes the browser lay it out then: about 2%
+  // of the time of fast mode in a profile of the notes app. A test does not
+  // see scrolling.
   {
     file: /\/next\/dist\/esm\/client\/components\/layout-router\.js$/,
-    what: "scrolls after a navigation",
-    pieces: [
+    lost: "fast mode scrolls after a navigation",
+    edits: [
       [
         "if (scrollRef === null || !scrollRef.current) return;",
-        `\n        if (${registry}?.fast) {\n            scrollRef.current = false;\n            return;\n        }`,
+        "if (scrollRef === null || !scrollRef.current) return;" +
+          `\n        if (${registry}?.fast) {\n            scrollRef.current = false;\n            return;\n        }`,
+      ],
+    ],
+  },
+  // React DOM, in development, warns once that a `<script>` it renders on the
+  // client never runs. A page without HTML of the server, like every page of
+  // fast mode, renders on the client what the server would have rendered as
+  // HTML, like the inline script of a theme: the warning is the plugin's doing,
+  // not the app's. A page that hydrates gets it as it would in the app.
+  {
+    file: /\/next\/dist\/compiled\/react-dom\/cjs\/react-dom-(?:client|profiling)\.development\.js$/,
+    lost: "a page without HTML of the server warns of the `<script>` elements of the app",
+    edits: [
+      [
+        "didWarnScriptTags ||",
+        `didWarnScriptTags || ${registry}?.fast || ${registry}?.opened?.ssr === false ||`,
       ],
     ],
   },
 ];
 
-function fastModePlugin(): Plugin {
+function nextPatchesPlugin(): Plugin {
   return {
-    name: "vitest-plugin-rsc:fast-mode",
+    name: "vitest-plugin-rsc:next-patches",
     transform: {
-      filter: { id: { include: fastModePatches.map(({ file }) => file) } },
+      // Rolldown matches the id with `/` for a separator.
+      filter: { id: { include: nextPatches.map(({ file }) => file) } },
       handler(code, id) {
-        const patch = fastModePatches.find(({ file }) => file.test(id));
-        if (!patch) return;
         let patched = code;
-        for (const [at, insert] of patch.pieces) {
-          if (!patched.includes(at)) {
-            this.warn(`vitest-plugin-rsc: ${id} has no \`${at}\`: fast mode ${patch.what}.`);
-            continue;
+        for (const { file, lost, edits } of nextPatches) {
+          if (!file.test(id)) continue;
+          for (const [find, replace] of edits) {
+            if (!patched.includes(find)) {
+              this.warn(`vitest-plugin-rsc: ${id} has no \`${find.trim()}\`: ${lost}.`);
+              continue;
+            }
+            patched = patched.replaceAll(find, () => replace);
           }
-          patched = patched.replace(at, at + insert);
         }
-        return { code: patched, map: null };
+        return patched === code ? undefined : { code: patched, map: null };
       },
     },
   };
@@ -873,22 +856,29 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    */
   build?: NextBuild;
   /**
-   * Experimental. A fast mode, for a quick feedback loop like an agent's,
-   * which gives up some of what a test sees of a browser:
+   * Experimental. A fast mode for a quick feedback loop, like an agent's or
+   * a watch run's, which gives up some of what a test sees of a browser. A
+   * suite that passes in fast mode is to pass without it too, as in CI.
    *
-   * - `renderServer({ url })` renders the page with `reuse: true`, in the app
-   *   of the page before it, from its Flight payload alone: no HTML of the
-   *   server, so no mismatch of hydration, and the state of the modules of
-   *   the app carries over from one test to the next in a test file.
-   * - Next's `<Link>` and `<Form>` prefetch nothing: a prefetch waits for
-   *   no test, and the requests of the test wait for it.
-   * - `expect.element()` looks for an element on every change of the DOM,
-   *   not after a growing wait, and `expect.poll()` every 5 ms, unless the
-   *   config sets `expect.poll.interval`.
+   * - The pages of a test file render in one app: the first page starts it,
+   *   and every `renderServer({ url })` after it renders its page in it, from
+   *   the page's Flight payload alone, without a page load. Each page gets a
+   *   tree, a router and caches of the router of its own, so no state of a
+   *   component carries over from one test to the next. What does is the
+   *   state of the modules of the app, of a package and of Next and React,
+   *   as in a single-page app that never reloads. The server renders no HTML
+   *   (`ssr: false`): a test that asserts on it passes `ssr: true`, and gets
+   *   a page load of its own. In development the page has no dev overlay.
+   * - Next's `<Link>` and `<Form>` prefetch nothing, and a navigation does
+   *   not scroll.
+   * - The server runs the steps of a render, which React separates with
+   *   `setTimeout(work, 0)`, without the delay a browser adds to a timeout,
+   *   unless the test has faked the timers.
+   * - `expect.element()` looks for an element again on every change of the
+   *   DOM, not after a growing wait, and `expect.poll()` every 5 ms unless
+   *   the config sets `expect.poll.interval`.
    * - What the dev server answers about the stylesheets and the modules of
    *   a test file is asked once per test file, not for every page.
-   *
-   * A suite that passes in fast mode is to pass without it, as in CI.
    *
    * @default `true` when the environment variable `VITEST_PLUGIN_RSC_FAST`
    * is `1`, else `false`
@@ -1104,10 +1094,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
-              noSsrPlugin(),
-              fastModePlugin(),
-              replaceableRouterPlugin(),
-              flightOnlyPlugin(),
+              nextPatchesPlugin(),
               ...(layer === "browser"
                 ? []
                 : [
@@ -1561,10 +1548,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     // which has no optimizer.
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
-    { ...noSsrPlugin(), apply: "build" },
-    { ...fastModePlugin(), apply: "build" },
-    { ...replaceableRouterPlugin(), apply: "build" },
-    { ...flightOnlyPlugin(), apply: "build" },
+    { ...nextPatchesPlugin(), apply: "build" },
     nextStaticBuild({
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },

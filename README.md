@@ -192,6 +192,8 @@ The [Next.js guide](docs/nextjs-guide.md) covers each of these:
 
 In watch mode, saving a file of your app reruns the test files that open a route: see [Watch mode](docs/nextjs-guide.md#watch-mode).
 
+For a quicker feedback loop, `VITEST_PLUGIN_RSC_FAST=1 npx vitest` runs in [fast mode](docs/nextjs-guide.md#fast-mode): the pages of a test file render in one app, without HTML from the server, prefetching or page loads. Keep CI in the default mode.
+
 ## Databases
 
 There are no TCP sockets in a browser, so your database runs in the tab instead: a real engine in WebAssembly. [`playground/nextjs-db-recipes`](playground/nextjs-db-recipes) has a recipe for each database and ORM. Your app keeps its ORM, its queries and its migrations, and the tests mock one module, `db.ts`.
