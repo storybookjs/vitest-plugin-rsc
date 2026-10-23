@@ -83,9 +83,29 @@ export type Opened = {
   flightOnly?: boolean;
 };
 
+/**
+ * When a request of the page reached the server, started, was answered and
+ * was done, by `performance.now()`: see `NextRegistry.requestTimings`.
+ */
+export type RequestTiming = {
+  method: string;
+  url: string;
+  /** Whether it is a Server Action, a request of Next's router for Flight, or a page. */
+  kind: "action" | "flight" | "page";
+  queued: number;
+  started?: number;
+  answered?: number;
+  finished?: number;
+};
+
 export type NextRegistry = {
   /** The `fast` option of `vitestPluginNext()`: see fast-mode.ts. */
   fast?: boolean;
+  /**
+   * For a profile of a test run: set to an array, the server adds the timing
+   * of each request of the page to it, in the order they reached it.
+   */
+  requestTimings?: RequestTiming[];
   /** A `Request` and `Response` that keep the headers a browser drops. */
   Request: typeof Request;
   Response: typeof Response;

@@ -33,6 +33,7 @@ import {
   registry,
   type Opened,
   type RequestHandler,
+  type RequestTiming,
   type ServerRequest,
 } from "./registry.ts";
 import {
@@ -214,6 +215,8 @@ export function handleRequest(
   const requested = generation;
   queued++;
   requestQueued.resolve();
+  const timing = registry.requestTimings && timingOf(request);
+  if (timing) registry.requestTimings!.push(timing);
   const result = queue.then(() => {
     // `settleRequests()` has forgotten the ones that waited before it.
     if (requested !== generation) {
@@ -221,7 +224,19 @@ export function handleRequest(
     }
     queued--;
     requestQueued = Promise.withResolvers();
-    return untilAnswered(request, handle(request, unrouted, false, opened, pageLoad));
+    if (timing) timing.started = performance.now();
+    const handled = untilAnswered(request, handle(request, unrouted, false, opened, pageLoad));
+    if (timing) {
+      void handled.then(
+        ({ finished }) => {
+          timing.answered = performance.now();
+          const done = () => (timing.finished = performance.now());
+          void finished.then(done, done);
+        },
+        () => {},
+      );
+    }
+    return handled;
   });
   // The next request waits for the body too: the server writes it as it
   // renders, long after the response is there.
@@ -230,6 +245,13 @@ export function handleRequest(
     () => {},
   );
   return result.then(({ response }) => response);
+}
+
+// The timing of a request for `requestTimings` of the registry, as it reaches the server.
+function timingOf(request: ServerRequest): RequestTiming {
+  const { headers } = request;
+  const kind = headers.has("next-action") ? "action" : headers.has("rsc") ? "flight" : "page";
+  return { method: request.method, url: request.url, kind, queued: performance.now() };
 }
 
 // Keeps a request in `unanswered` until the server has answered it.
