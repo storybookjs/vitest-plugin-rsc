@@ -4,7 +4,7 @@ import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
 import { findOnEveryChange, forgetTestFileAnswers } from "./fast-mode.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
-import { leaveKeptApp } from "./page.ts";
+import { leaveKeptAppWithPage } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
 
@@ -46,8 +46,8 @@ beforeAll(async ({}, suite) => {
 });
 // The kept app of fast mode (page.ts) is one test file's: the next file
 // starts with its modules evaluated again, as it does its setup files.
-afterAll(() => {
-  leaveKeptApp();
+afterAll(async () => {
+  await leaveKeptAppWithPage("the end of the test file");
   keptDocument?.();
   // The next file asks the dev server again: see fast-mode.ts.
   forgetTestFileAnswers();

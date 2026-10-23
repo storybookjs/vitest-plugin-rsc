@@ -146,13 +146,22 @@ let kept: { client: Client; leave(): void } | undefined;
 /**
  * Leaves the kept app, if any: its root, its module graph and what its
  * modules left behind as they loaded go. Once its page is left: see
- * `leavePage()`.
+ * `leavePage()`, and `leaveKeptAppWithPage()`.
  */
-export function leaveKeptApp(): void {
+function leaveKeptApp(): void {
   const app = kept;
   kept = undefined;
   setRouterOutlivesPage(false);
   app?.leave();
+}
+
+/**
+ * Leaves the page of the kept app that is open, as `leavePage()` does with
+ * `by`, and then the kept app: a test file ends with them.
+ */
+export async function leaveKeptAppWithPage(by: string): Promise<void> {
+  if (current?.inKeptApp) await leavePage(by);
+  leaveKeptApp();
 }
 
 // Releases in the order of a page's: the last first, also after one that throws.
