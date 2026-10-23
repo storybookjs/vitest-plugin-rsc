@@ -8,7 +8,7 @@ import { auditLog } from "./lib/audit.ts";
 // and those of Next's handler of an action and of its render in the ssr
 // layer, are compiled to put their stores back after an `await`, and take
 // them as they are when the function is called: see "The Scope Of A Cached
-// Function" in docs/next-routes.md.
+// Function" in docs/internals/next-routes.md.
 
 beforeEach(() => {
   auditLog.length = 0;
@@ -67,7 +67,7 @@ test("still reads the request after a yield and in a for await, which are left a
   // request store. Here such a function is not compiled, so it does not
   // break, and reads the store of the request it runs in, which in a route
   // is the same one. In a cached function it would not be: see "The Scope Of
-  // A Cached Function" in docs/next-routes.md.
+  // A Cached Function" in docs/internals/next-routes.md.
   const response = await handleRequest("/api/for-await", { headers: { cookie: "who=ada" } });
 
   expect(response.status).toBe(200);

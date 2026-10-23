@@ -1,27 +1,30 @@
-import {
-  NEXT_REWRITTEN_PATH_HEADER,
-  NEXT_REWRITTEN_QUERY_HEADER,
-  NEXT_RSC_UNION_QUERY,
-  RSC_HEADER,
-} from "next/dist/client/components/app-router-headers";
-import { isRSCRequestHeader } from "next/dist/server/lib/is-rsc-request";
-import * as appPageModule from "next/dist/server/route-modules/app-page/module";
-import { getIsPossibleServerAction } from "next/dist/server/lib/server-action-request-meta";
-import { normalizeNextQueryParam } from "next/dist/server/web/utils";
-import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
-import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, build, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { actionIdsOf } from "./action-ids.ts";
 import {
   demoteRoute,
   isPrerendered,
   nodeRouteDistDir,
+  prerenderManifest,
   recordRoute,
   setServerActions,
   setStylesheets,
+  withoutRoute,
 } from "./build-output.ts";
 import { loadCacheHandlers, shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
+import {
+  appPageModule,
+  getIsPossibleServerAction,
+  getRouteMatcher,
+  getRouteRegex,
+  isRSCRequestHeader,
+  NEXT_REWRITTEN_PATH_HEADER,
+  NEXT_REWRITTEN_QUERY_HEADER,
+  NEXT_ROUTER_PREFETCH_HEADER,
+  NEXT_RSC_UNION_QUERY,
+  normalizeNextQueryParam,
+  RSC_HEADER,
+} from "./compat/ssr/handler.ts";
 import {
   countBailouts,
   handleRequest as handleWith,
@@ -32,6 +35,7 @@ import {
   openedAt,
   registry,
   type Opened,
+  type PrerenderVerdict,
   type RequestHandler,
   type RequestTiming,
   type ServerRequest,
@@ -50,10 +54,7 @@ export { resetCaches } from "./cache.ts";
 // build-output.ts are what Next's Node.js server has around them, and a
 // browser does not.
 
-registry.ssr = {
-  AppPageRouteModule: appPageModule.AppPageRouteModule as never,
-  vendored: appPageModule.vendored,
-};
+registry.ssr = appPageModule as never;
 registerModuleLoader("ssr");
 
 // The routes of the app by their page name, and the route of a node for each
@@ -374,23 +375,44 @@ function nodeRouteFor(opened: Opened | undefined, matched: Route | undefined): R
 
 // Next's build's verdict on each route of the app that was requested, which
 // is the code's, and stays from one test to the next: see build-output.ts.
-const verdicts = new Map<string, Promise<void>>();
-function recordVerdict(route: Route): Promise<void> {
-  let recorded = verdicts.get(route.page);
-  if (!recorded) {
+const verdicts = new Map<string, Promise<PrerenderVerdict | undefined>>();
+function verdictOf(route: Route): Promise<PrerenderVerdict | undefined> {
+  let verdict = verdicts.get(route.page);
+  if (!verdict) {
     // In a scope of its own, as the build makes it in a worker, apart from
     // any request: Next enters its stores for `generateStaticParams`, which
     // are not the request's.
     const endScope = registry.enterRequestScope();
-    recorded = registry
-      .prerenderVerdict(route)
-      .then((verdict) => recordRoute(route, verdict))
-      .finally(endScope);
-    verdicts.set(route.page, recorded);
+    verdict = registry.prerenderVerdict(route).finally(endScope);
+    verdicts.set(route.page, verdict);
     // A route whose modules failed to load is asked for again.
-    recorded.catch(() => verdicts.delete(route.page));
+    verdict.catch(() => verdicts.delete(route.page));
   }
-  return recorded;
+  return verdict;
+}
+// The routes whose verdict is in the manifest: from their first page load or
+// navigation on, once.
+const recorded = new Set<string>();
+async function recordVerdict(route: Route): Promise<void> {
+  const verdict = await verdictOf(route);
+  if (recorded.has(route.page)) return;
+  recorded.add(route.page);
+  recordRoute(route, verdict);
+}
+
+// Whether a pathname of a route is one that the build does not prerender,
+// of a route with `dynamicParams = false`, which `next start` answers with
+// the not-found page: by the manifest once the route is in it, which also
+// has what a render of the route found since.
+async function isUnlisted(route: Route, pathname: string): Promise<boolean> {
+  if (recorded.has(route.page)) {
+    return (
+      prerenderManifest.dynamicRoutes[route.pathname]?.fallback === false &&
+      !(pathname in prerenderManifest.routes)
+    );
+  }
+  const verdict = await verdictOf(route);
+  return verdict?.fallback === false && !verdict.pathnames.includes(pathname);
 }
 
 // What the build finds as it prerenders a route, at the route's first
@@ -636,7 +658,19 @@ async function handle(
       build === "production" && !component && matched && matched.page !== notFoundPage
         ? matched
         : undefined;
-    if (prerenders) await recordVerdict(prerenders);
+    // A prefetch of Next's router, as Next's handler tells one
+    // (`app-page-runtime.js:200`): it never prerenders the route. The router
+    // prefetches every link in view, and the prerender renders the whole
+    // page, also a page that turns out to read the request, where the
+    // prefetch renders up to its `loading.js`. So the route is listed at its
+    // first page load or navigation, and a prefetch renders it as a dynamic
+    // route, from a manifest without it, also once it is kept: what it gets
+    // does not hang on whether a test before it loaded the page.
+    const prefetch =
+      prerenders?.kind === "page" &&
+      headers.get(NEXT_ROUTER_PREFETCH_HEADER) === "1" &&
+      isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined);
+    if (prerenders && !prefetch) await recordVerdict(prerenders);
     // What Next's server answers a request of a route it prerendered with
     // another method than `GET` or `HEAD`, unless it may be a Server Action:
     // `base-server.js`, before it serves the kept page. The route module
@@ -690,9 +724,11 @@ async function handle(
       const statusCode = page === notFoundPage ? 404 : undefined;
       // The not-found page is no page the build prerenders here, also where
       // it answers for a route that is.
-      return prerenderFirst(page === notFoundPage ? undefined : prerenders, scope, () =>
-        handleWith(routed, context, handler, meta, { statusCode, headers: routedHeaders }),
-      );
+      const respond = () =>
+        handleWith(routed, context, handler, meta, { statusCode, headers: routedHeaders });
+      if (page === notFoundPage) return respond();
+      if (prefetch) return withoutRoute(prerenders!, respond);
+      return prerenderFirst(prerenders, scope, respond);
     };
     const renderNotFound = async () =>
       finishWithBody(
@@ -726,6 +762,17 @@ async function handle(
       return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
     }
 
+    // A pathname that a route with `dynamicParams = false` does not list,
+    // which a prefetch asks for too: it gets the not-found page, as from
+    // `next start`, where the handler would render the route without it.
+    if (prefetch) {
+      const pathname = withoutBasePath(target?.pathname ?? url.pathname);
+      const unlisted = await isUnlisted(
+        prerenders!,
+        pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname,
+      );
+      if (unlisted) return renderNotFound();
+    }
     let response: Response;
     try {
       response = await renderPage(page, entry);

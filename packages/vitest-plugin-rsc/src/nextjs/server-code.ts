@@ -3,13 +3,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFilter, normalizePath, transformWithOxc, type Plugin } from "vite";
 import { transformAsyncFunctions } from "../async-local-storage-transform.ts";
+import {
+  nextModulesWithStores,
+  vendoredFlightServer as flightServer,
+  withStoresFiles,
+} from "./compat/paths.ts";
 import type { NextLayer } from "./project.ts";
 
 // The server layers run in a browser, which has a `window` and a `fetch`
 // of its own. A browser cannot lose its globals, but a module can be compiled
 // not to see them: `typeof window` becomes `"undefined"`, which is what Next's
 // build does to server code, and `fetch`, `Request` and `Response` become the
-// server's, which are in `registry` (globals.ts). See docs/next-routes.md.
+// server's, which are in `registry` (globals.ts). See docs/internals/next-routes.md.
 
 /** Globals of a browser that a server does not have. */
 const browserGlobals = ["window", "document", "location", "localStorage", "sessionStorage"];
@@ -232,42 +237,13 @@ type Warns = { warn(message: string): void };
 const name = "vitest-plugin-rsc:next-server-code";
 const asyncFunctionsName = "vitest-plugin-rsc:next-async-functions";
 
-// The modules of Next's server whose async functions are compiled to keep
-// their stores across an `await` (async-local-storage-transform.ts), as the
-// source files of the app are: the ones that await inside a store, one they
-// entered or left with `exit()`, or the request's own, and read it after the
-// `await`, as on Node.js. One entry per module, with the layer it is a
-// module of and the store it carries. Each server layer's optimizer compiles
-// its own, once, and keeps them in its cache. A static build does the same.
-export const nextModulesWithStores: { layer: "rsc" | "ssr"; module: string }[] = [
-  // The store of a `"use cache"` function: it enters the scope and awaits
-  // before it has React call the function.
-  { layer: "rsc", module: "use-cache/use-cache-wrapper.js" },
-  // The handler of a Server Action, through `app-page/module`: it enters the
-  // action's store, `actionAsyncStorage`, awaits the action, and renders the
-  // page after it in an `exit()` of that store, which it awaits. After each
-  // `await` it has its own request's stores back: not those of a request
-  // that the action made to the app and that is still at work, as one with
-  // `after()` is, and not the store it left.
-  { layer: "ssr", module: "app-render/action-handler.js" },
-  // The render, through `app-page/module`, with the request stores of a
-  // page, `workAsyncStorage` and `workUnitAsyncStorage`: it awaits the
-  // handler of an action, and its own work, before it starts React's.
-  { layer: "ssr", module: "app-render/app-render.js" },
-];
-// The modules of a layer in that list, by their file, of either build of
-// Next's server.
+// The modules of a layer in `nextModulesWithStores`, by their file, of either
+// build of Next's server.
 function nextModulesWithStoresOf(layer: NextLayer): RegExp | undefined {
   const modules = nextModulesWithStores.filter((entry) => entry.layer === layer);
   if (modules.length === 0) return;
-  const files = modules.map(({ module }) => module.replaceAll(".", "\\.")).join("|");
-  return new RegExp(`/next/dist/(?:esm/)?server/(?:${files})$`);
+  return withStoresFiles(modules.map(({ module }) => module));
 }
-// React's Flight server, of the React that Next ships: the build for
-// development and the one for production, of React and of its experimental
-// channel.
-const flightServer =
-  /\/next\/dist\/compiled\/react-server-dom-webpack(?:-experimental)?\/cjs\/react-server-dom-webpack-server\.edge\.\w+\.js$/;
 const performWork = "function performWork(request) {";
 const issues = "https://github.com/storybookjs/vitest-plugin-rsc/issues";
 
@@ -406,7 +382,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * transforms and the host's config, not with Next's.
      */
     isAppCode(file: string, layer: NextLayer): boolean {
-      if (!path.isAbsolute(file) || file.includes("/node_modules/")) return false;
+      // A path of the scan of the optimizer is the system's.
+      if (!path.isAbsolute(file) || normalizePath(file).includes("/node_modules/")) return false;
       if (layer !== "rsc") return !normalizePath(file).startsWith(ownDir) && !isHostFile(file);
       return knowsHostFiles() && isServerCode(file, layer);
     },

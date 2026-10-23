@@ -3,8 +3,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolveRoutesParams } from "@next/routing";
-import type { RoutesManifest } from "next/dist/build/index.js";
 import type { NextBuild } from "./build.ts";
+import type { RoutesManifest } from "./compat/types.ts";
 import type { FlightEntry } from "./flight.ts";
 import { openNextProject } from "./project/context.ts";
 import type { PageEnv } from "./project/env.ts";
@@ -14,7 +14,8 @@ import { createLoaders } from "./project/loaders.ts";
 import { createMetadataLoaders } from "./project/metadata.ts";
 import { discoverAppRoutes } from "./project/routes.ts";
 import { buildRouting, findMiddleware } from "./project/routing.ts";
-import { checkRuntime } from "./project/runtime.ts";
+import { checkRuntime } from "./compat/checks.ts";
+import type { NewExport } from "./node-platform.ts";
 import { createCompiler } from "./project/transform.ts";
 import { createWebpackRules, type WebpackRule } from "./project/webpack.ts";
 
@@ -103,6 +104,11 @@ export type NextProject = {
    * ones under a folder with a name that a URL percent-encodes.
    */
   unmatchedRoutes: string[];
+  /**
+   * The exports of Next's modules that their stand-ins in node-platform.ts
+   * have not, by the stand-in: new in the installed Next.
+   */
+  newExports: Record<string, NewExport[]>;
   /** The `proxy.ts` of the app, or its `middleware.ts`: its file, if it has one. */
   middlewareFile: string | undefined;
   /** What the server does with a request before a route gets it. */
@@ -263,7 +269,12 @@ export type RouteSegment = {
   stylesheetsKey: string;
 };
 
-export type Compiled = { code: string; map?: string };
+/**
+ * What Next's compiler makes of a module. `refused` where it stops at the
+ * module, as `next build` does, like a client hook in a Server Component:
+ * then the code throws Next's error.
+ */
+export type Compiled = { code: string; map?: string; refused?: true };
 
 /** Answers a request the way the server does: what Next calls for an image of the app. */
 export type ServeFile = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
@@ -307,7 +318,7 @@ export async function loadNextProject(
     adapterPath,
   );
   // What the modules of this package in the browser assume of Next's runtime.
-  const { builtinBoundaries } = checkRuntime(context);
+  const { builtinBoundaries, newExports } = checkRuntime(context);
   // What Next's build gives each layer, and its compiler and loaders for the
   // files of the app.
   const layers = await layerTables(context, build);
@@ -322,6 +333,7 @@ export async function loadNextProject(
     routes: app.routes,
     edgeRouteFiles: app.edgeRouteFiles,
     unmatchedRoutes,
+    newExports,
     middlewareFile: middleware.middlewareFile,
     routing,
     routesManifest,

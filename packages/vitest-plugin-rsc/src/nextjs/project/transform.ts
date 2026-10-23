@@ -122,7 +122,7 @@ export async function createCompiler(
             : frame,
         )
         .replaceAll(root + path.sep, "");
-      return { code: `throw new Error(${JSON.stringify(message)});\n${exports}` };
+      return { code: `throw new Error(${JSON.stringify(message)});\n${exports}`, refused: true };
     }
     // In the rsc layer Next turns a client module into its own proxy. Vite
     // RSC makes the references from the source, which it has to parse: where

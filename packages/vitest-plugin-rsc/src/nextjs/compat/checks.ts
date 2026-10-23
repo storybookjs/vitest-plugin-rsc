@@ -1,6 +1,13 @@
 import fs from "node:fs";
-import type { NextContext } from "./context.ts";
-import { hasExport } from "./module-exports.ts";
+import { createNodePlatform, instrumentationRequire, type NewExport } from "../node-platform.ts";
+import type { NextContext } from "../project/context.ts";
+import { declaredExports, exportNamesOf, hasExport } from "../project/module-exports.ts";
+import {
+  aliasPaths,
+  builtinBoundary,
+  instrumentationModule,
+  nodePlatformModules,
+} from "./paths.ts";
 
 /**
  * What the modules of this package in the browser assume about Next's runtime.
@@ -36,6 +43,7 @@ export function checkRuntime(context: NextContext) {
   // that says why. (A static import of a name that is gone fails when its
   // module links, naming it.) The runtime runs in the browser, so here its
   // files are read, not loaded.
+  const withoutWhitespace = (code: string) => code.replace(/\s+/g, "");
   const runtimeFile = (file: string) => {
     const id = `next/dist/esm/${file}.js`;
     let resolved: string;
@@ -46,12 +54,26 @@ export function checkRuntime(context: NextContext) {
     } catch (error) {
       return fail(`${id} is not there`, error);
     }
+    let compact: string | undefined;
     return {
+      code,
       export: (name: string) => {
         if (!hasExport(resolved, name)) fail(`${id} has no export \`${name}\``);
       },
       contains: (...pieces: string[]) => {
         for (const piece of pieces) if (!code.includes(piece)) fail(`${id} has no \`${piece}\``);
+      },
+      // Where the whitespace of a piece is the formatting of Next's compiled
+      // output, and not its meaning: the piece, with the whitespace of
+      // neither the piece nor the code.
+      containsCode: (...pieces: string[]) => {
+        compact ??= withoutWhitespace(code);
+        for (const piece of pieces) {
+          if (!compact.includes(withoutWhitespace(piece))) fail(`${id} has no \`${piece}\``);
+        }
+      },
+      matches: (pattern: RegExp, what: string) => {
+        if (!pattern.test(code)) fail(`${id} has no ${what}`);
       },
     };
   };
@@ -68,7 +90,7 @@ export function checkRuntime(context: NextContext) {
   // `forbidden()` and `unauthorized()`.
   const builtinBoundaries = Object.fromEntries(
     ["global-error", "not-found", "forbidden", "unauthorized"].map((name) => {
-      const file = `next/dist/client/components/builtin/${name}.js`;
+      const file = builtinBoundary(name);
       try {
         projectRequire.resolve(file);
       } catch (error) {
@@ -87,10 +109,15 @@ export function checkRuntime(context: NextContext) {
   // `rerender()` hears of an error that takes the place of a node from the
   // `onCaughtError` and `onUncaughtError` of the options of that root, which
   // it wraps. Without them a rerender would wait for a node that an error
-  // page has replaced. Indented, they are the ones of the options.
-  appIndex.contains(
-    "    onCaughtError,",
-    "    onUncaughtError",
+  // page has replaced. As properties of `reactRootOptions`, the options: the
+  // module also imports the two functions by those names.
+  for (const name of ["onCaughtError", "onUncaughtError"]) {
+    appIndex.matches(
+      new RegExp(`\\bconst\\s+reactRootOptions\\s*=\\s*\\{[^;]*[{,]\\s*${name}\\s*[:,}]`),
+      `\`${name}\` in \`reactRootOptions\``,
+    );
+  }
+  appIndex.containsCode(
     "ReactDOMClient.createRoot(appElement, reactRootOptions)",
     "...reactRootOptions",
   );
@@ -174,7 +201,7 @@ export function checkRuntime(context: NextContext) {
   // `dynamic` and `runtime`, the paths of `generateStaticParams`, and
   // without one `dynamic = "error"` or `"force-static"`.
   runtimeFile("build/utils").contains("config.dynamic = dynamic;", "config.runtime = runtime;");
-  runtimeFile("build/index").contains(
+  runtimeFile("build/index").containsCode(
     "if (workerResult.prerenderedRoutes) {",
     "ssgPageRoutes = workerResult.prerenderedRoutes.filter((route)=>route.isPrerenderOutput !== false).map((route)=>route.pathname);",
     "} else if (!hasGenerateStaticParams && (appConfig.dynamic === 'error' || appConfig.dynamic === 'force-static')) {",
@@ -186,12 +213,68 @@ export function checkRuntime(context: NextContext) {
   );
   // cleanup() expires the kept pages of an app's own `cacheHandler` by the
   // tag each has for the root layout.
-  runtimeFile("server/lib/implicit-tags").contains(
-    "const derivedTags = [\n        `/layout`\n    ];",
-  );
+  runtimeFile("server/lib/implicit-tags").containsCode("const derivedTags = [`/layout`];");
 
   // The plugin turns Next's renderer to web streams with this.
   runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
 
-  return { builtinBoundaries };
+  const newExports = checkNodePlatform(context);
+  // The module that loads `instrumentation.ts` is Next's own, and its call of
+  // `require` gets a function that finds no file (node-platform.ts).
+  const instrumentation = runtimeFile(instrumentationModule);
+  const required = instrumentationRequire(instrumentation.code);
+  if (typeof required === "string") {
+    fail(`next/dist/esm/${instrumentationModule}.js has ${required}`);
+  }
+
+  return { builtinBoundaries, newExports };
+}
+
+// The stand-ins of node-platform.ts replace a module of Next by its path, and
+// all of it. A module that is not there, at that path, has a stand-in for
+// nothing, and the run stops. And the same for `app-page/module.compiled`,
+// which the rsc layer has as a forward to the ssr layer's module (plugin.ts).
+// Returns the exports of the modules that their stand-ins have not, by the
+// stand-in, which node-platform.ts gives a stub that throws when it is used:
+// without one an export is `undefined` for the module that imports it, which
+// the dependency optimizer and a static build leave as it is
+// (`shimMissingExports`).
+function checkNodePlatform({ projectRequire, fail }: NextContext) {
+  const nodePlatform = createNodePlatform("registry", "");
+  const appPageModule = aliasPaths.routeModule("app-page").slice("next/dist/".length);
+  const standIns = Object.entries({
+    ...nodePlatformModules,
+    // The forward needs the exports of the module it is the bundle of.
+    "ssr-app-page-module": [appPageModule],
+  });
+  const compiled = `next/dist/esm/${appPageModule}.compiled.js`;
+  try {
+    projectRequire.resolve(compiled);
+  } catch (error) {
+    fail(`${compiled} is not there, which the plugin stands in for`, error);
+  }
+  const newExports: Record<string, NewExport[]> = {};
+  for (const [name, modules] of standIns) {
+    const { names } = declaredExports(nodePlatform.load(name)!);
+    for (const nextModule of modules) {
+      // The file the plugin loads in its place: of Next's ESM build, as
+      // plugin.ts takes it. `compiled/` has one build.
+      const id = nextModule.startsWith("compiled/")
+        ? `next/dist/${nextModule}`
+        : `next/dist/esm/${nextModule}.js`;
+      let file: string;
+      try {
+        file = projectRequire.resolve(id);
+      } catch (error) {
+        return fail(`${id} is not there, which the plugin stands in for`, error);
+      }
+      for (const exported of exportNamesOf(file)) {
+        // Two modules of one stand-in can have the same name: one stub.
+        if (names.has(exported)) continue;
+        names.add(exported);
+        (newExports[name] ??= []).push({ name: exported, module: id });
+      }
+    }
+  }
+  return newExports;
 }

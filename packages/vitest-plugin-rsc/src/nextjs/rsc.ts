@@ -7,13 +7,12 @@ import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import { fast, nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 import serverReferences from "virtual:vitest-plugin-rsc/server-references";
-import { NoFallbackError } from "next/dist/shared/lib/no-fallback-error.external";
 import { createElement, type ReactNode } from "react";
 import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
+import { NoFallbackError } from "./compat/rsc/handlers.ts";
 import { preloadPage } from "./document.ts";
 import { oncePerTestFile } from "./fast-mode.ts";
-import { prerenderVerdictOf } from "./prerender-verdict.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { askDevServer } from "../utils.ts";
 // By the package, so that it stays a module of its own with its "use client"
@@ -223,7 +222,11 @@ const loadRouteHandler = async (page: string) => {
 };
 registry.loadRouteHandler = async (page) => (await loadRouteHandler(page)).handler;
 
+// Only `build: "production"` asks for it, see ssr.ts: a run without it loads
+// none of the modules of Next's build that the verdict takes, and they are
+// not pre-bundled for it (`prerenderId` of plugin.ts).
 registry.prerenderVerdict = async ({ kind, page, pathname }) => {
+  const { prerenderVerdictOf } = await import("virtual:vitest-plugin-rsc/next-prerender");
   const entry = kind === "route" ? await loadRouteHandler(page) : await registry.loadAppPage(page);
   return prerenderVerdictOf(entry as never, pathname, kind);
 };

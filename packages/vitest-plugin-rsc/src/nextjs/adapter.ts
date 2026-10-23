@@ -1,4 +1,4 @@
-import type { NextAdapter } from "next/dist/build/adapter/build-complete.js";
+import type { NextAdapter } from "next";
 
 // The deployment adapter of this plugin. Next's build hands an adapter the
 // routes of the server in front of the app, and what it built for each route.

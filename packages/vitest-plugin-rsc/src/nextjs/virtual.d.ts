@@ -8,14 +8,19 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
     /** For a route of a node: with the layouts of the app's route `page`. */
     layouts?: true;
   }[];
-  export const nextConfig: import("next/dist/server/config-shared").NextConfigComplete;
+  export const nextConfig: import("./compat/types.ts").NextConfigComplete;
   export const routing: import("./project.ts").NextRouting;
-  export const routesManifest: import("next/dist/build").RoutesManifest;
+  export const routesManifest: import("./compat/types.ts").RoutesManifest;
   export const preview: import("./project.ts").NextProject["preview"];
   /** The `build` option: which code of Next runs, and so whether it keeps what it prerenders. */
   export const build: import("./build.ts").NextBuild;
   /** The `fast` option: see fast-mode.ts. */
   export const fast: boolean;
+}
+
+declare module "virtual:vitest-plugin-rsc/next-prerender" {
+  /** prerender-verdict.ts with `build: "production"`; a function that throws without it. */
+  export const prerenderVerdictOf: typeof import("./prerender-verdict.ts").prerenderVerdictOf;
 }
 
 declare module "virtual:vitest-plugin-rsc/next-cache-handlers" {

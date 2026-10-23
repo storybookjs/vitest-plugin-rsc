@@ -1,15 +1,15 @@
-import { NEXT_CACHE_IMPLICIT_TAG_ID } from "next/dist/lib/constants";
-import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
-import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
-import { nodeFs } from "next/dist/server/lib/node-fs-methods";
-import {
-  initializeCacheHandlers,
-  registerCustomCacheHandlers,
-  setCacheHandler,
-} from "next/dist/server/use-cache/handlers";
 import { cacheHandler, cacheHandlers } from "virtual:vitest-plugin-rsc/next-cache-handlers";
 import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
-import { prerenderManifest } from "./build-output.ts";
+import { forgetBuilt, keptAsBuilt, prerenderManifest } from "./build-output.ts";
+import {
+  IncrementalCache,
+  initializeCacheHandlers,
+  NEXT_CACHE_IMPLICIT_TAG_ID,
+  nodeFs,
+  registerCustomCacheHandlers,
+  setCacheHandler,
+  tagsManifest,
+} from "./compat/ssr/cache.ts";
 import { registry } from "./registry.ts";
 
 // Next's Data Cache: what `unstable_cache` and a cached `fetch` keep between
@@ -88,7 +88,7 @@ export function restoreIncrementalCache(): void {
  * cache between requests, for a test that calls a cached function itself.
  */
 export function shareIncrementalCache(headers = new Headers()): void {
-  globalThis.__incrementalCache = current = new IncrementalCache({
+  const cache = new IncrementalCache({
     // With these two Next takes its own handler, the one `next start` uses.
     // It keeps the entries on the disk, as `next start` keeps a prerendered
     // page and a cached fetch in `.next/`: the disk is the stand-in of the
@@ -110,6 +110,13 @@ export function shareIncrementalCache(headers = new Headers()): void {
     // What Next's route module reads too: build-output.ts.
     prerenderManifest,
   });
+  // What Next's handler keeps of a page it prerenders, as the build keeps it.
+  const set = cache.set.bind(cache);
+  cache.set = ((...args: Parameters<typeof set>) => {
+    keptAsBuilt(args[0], args[1], args[2] as { route?: { sourceRoute?: string } }, generation);
+    return set(...args);
+  }) as typeof set;
+  globalThis.__incrementalCache = current = cache;
 }
 
 /**
@@ -124,6 +131,7 @@ export function shareIncrementalCache(headers = new Headers()): void {
  */
 export async function resetCaches(): Promise<void> {
   tagsManifest.clear();
+  forgetBuilt();
   generation++;
   shareIncrementalCache();
   if (!CurCacheHandler || !hasPrerenders()) return;

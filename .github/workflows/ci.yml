@@ -119,7 +119,7 @@ jobs:
     steps:
       - run: test "${{ needs.vitest.result }}" = success
 
-  # The app as `next start` runs it: see docs/next-routes.md, "Development Or
+  # The app as `next start` runs it: see docs/internals/next-routes.md, "Development Or
   # Production".
   production:
     name: Test (production build)

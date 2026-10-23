@@ -20,7 +20,7 @@ const env = (name: string): string => {
   const value = process.env[name];
   if (!value)
     throw new Error(
-      `${name} is not set. Run the fixtures with \`pnpm conformance\`, see docs/next-conformance.md.`,
+      `${name} is not set. Run the fixtures with \`pnpm conformance\`, see docs/internals/next-conformance.md.`,
     );
   return value;
 };

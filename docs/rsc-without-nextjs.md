@@ -1,8 +1,9 @@
-# React Server Components without Next.js
+# RSC without Next.js
 
-`vitestPluginRSC()` on its own renders Server Components for any React app. There's no request and no router: `renderServer` renders a node to a Flight stream and reads it back, in the same test runtime.
+Not using Next? `vitestPluginRSC()` on its own renders Server Components for any React app. It's simpler: no request, no router. `renderServer` renders a node to a Flight stream and reads it right back, in the same test.
 
-On its own, the plugin only provides `node:async_hooks`. The other Node.js modules and the in-memory disk come with `vitestPluginNext()`: see [Node.js in the browser](nodejs-in-the-browser.md).
+> [!NOTE]
+> On its own, the plugin only provides `node:async_hooks`. The other Node.js modules and the in-memory disk come with `vitestPluginNext()`. See [Node.js in the browser](nodejs-in-the-browser.md).
 
 ## Set up
 
@@ -25,7 +26,7 @@ export default defineConfig({
 });
 ```
 
-Unlike the Next.js plugin, this one needs a setup file that initializes the renderer and cleans up before each test:
+Unlike the Next.js plugin, this one needs a setup file to start the renderer and clean up between tests:
 
 ```ts
 // src/vitest.setup.ts
@@ -62,9 +63,9 @@ This `renderServer` takes `{ container, baseElement, wrapper }` and resolves wit
 
 ## A static build
 
-`vite build` builds a project page that calls `renderServer()` into a static site, as it does for Next.js. See [Without Next.js](static-build.md#without-nextjs) and the [architecture notes](architecture.md#a-static-build).
+`vite build` can turn a page that calls `renderServer()` into a static site, just like with Next.js. See [Without Next.js](static-build.md#without-nextjs).
 
 ## Learn more
 
-- [docs/architecture.md](architecture.md) covers how this works: the two Vite environments and the Module Runner bridge between them.
-- `playground/rsc-vitest-demo` is a minimal RSC app without Next.js, and the smallest end-to-end example of the plugin on its own.
+- [Architecture](internals/architecture.md): the two Vite environments, and the bridge between them.
+- `playground/rsc-vitest-demo`: the smallest complete example.

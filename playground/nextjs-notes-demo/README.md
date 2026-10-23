@@ -1,18 +1,27 @@
-# Notes Demo
+# Notes demo
 
-This playground is a small Next.js App Router notes app used to exercise React Server Components with `vitest-plugin-rsc`. It is the acceptance app of this repository: a Next.js app with Better Auth, Drizzle on Postgres, Server Actions and flash cookies.
+A small Next.js App Router notes app, and the acceptance app of this repository. It has Better Auth, Drizzle on Postgres, Server Actions and flash cookies: the realistic mix the plugin has to keep working.
 
-A browser test opens a route with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/testing-library`, and Next's own request handler, renderer and router do the rest, in the browser test runtime. A page story, `app/**/page.stories.tsx`, renders a page the same way in Storybook.
+Tests open routes with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/testing-library`, and Next's own request handler, renderer and router do the rest, right in the browser. Page stories (`app/**/page.stories.tsx`) render pages the same way in Storybook.
 
-The tests and the stories mock one module: the database, `#lib/db.ts`, which is the app's Postgres. In its place they have a PGlite database in memory, one per document, which each test and story empties first (`lib/__mocks__/db.ts`, with `vi.mock()` in `vitest.setup.ts` and `sb.mock()` in `.storybook/preview.tsx`). And they stop the clock of the page at one instant, `TEST_NOW` of `test/now.ts`, so that a note that a test or a story writes shows the same date on every run: `vi.setSystemTime()` in `vitest.setup.ts`, and `MockDate.set()` of [mockdate](https://github.com/boblauer/MockDate), as Storybook's docs suggest, once for the page in the `beforeAll` of `.storybook/preview.tsx`. Everything else is the app's own: Better Auth on that database, its session cookie, `cookies()` and `headers()` of each request, the flash cookies of the forms, redirects. A test signs a user in with `signedInAs()` of `test/auth.ts`, as Better Auth would have: a session in the database and its signed cookie.
+## What's mocked
 
-- `app/**/page.test.tsx` open the pages of the app.
-- `components/*.test.tsx` render a probe component on its own, with `renderServer(<Probe />, { url })`: in a container, without the layouts of the app, with the params the app's route for the URL has.
+Only two things:
+
+- **The database**, `#lib/db.ts`. Tests and stories get an in-memory PGlite database instead, one per document, emptied before each test or story. See `lib/__mocks__/db.ts`, mocked with `vi.mock()` in `vitest.setup.ts` and `sb.mock()` in `.storybook/preview.tsx`.
+- **The clock**, frozen at `TEST_NOW` from `test/now.ts`, so a note shows the same date on every run. Tests use `vi.setSystemTime()` in `vitest.setup.ts`. Storybook uses `MockDate.set()` from [mockdate](https://github.com/boblauer/MockDate), as Storybook's docs suggest, in the `beforeAll` of `.storybook/preview.tsx`.
+
+Everything else is the real app: Better Auth on that database, its session cookie, `cookies()` and `headers()`, flash cookies and redirects. A test signs in with `signedInAs()` from `test/auth.ts`, which creates a session in the database and its signed cookie, just like Better Auth would.
+
+## Where the tests are
+
+- `app/**/page.test.tsx` open the app's pages.
+- `components/*.test.tsx` render a single probe component with `renderServer(<Probe />, { url })`, without the layouts.
 - `components/next-cache.test.tsx` covers Next's Data Cache: `unstable_cache`, cached `fetch` and what invalidates them.
 
-## Development
+## Running the app
 
-`pnpm dev` runs on Postgres at `DATABASE_URL`, and shows `SUPPORT_EMAIL`, both in `.env.local` (see `.env.example`). The tests and the stories read `.env.test` instead. A Postgres in Docker:
+`pnpm dev` needs a Postgres at `DATABASE_URL` and a `SUPPORT_EMAIL`, both in `.env.local` (see `.env.example`). Tests and stories read `.env.test` instead. With Docker:
 
 ```bash
 docker run -d --name notes-demo-postgres -p 5432:5432 \
@@ -23,7 +32,7 @@ pnpm db:push
 pnpm dev
 ```
 
-`pnpm db:push` makes the tables of `db/schema.ts`. Sign up with any email address: without Resend, `pnpm dev` prints the magic link in the terminal.
+`pnpm db:push` creates the tables from `db/schema.ts`. Sign up with any email address: without Resend, the magic link is printed in the terminal.
 
 ## Commands
 

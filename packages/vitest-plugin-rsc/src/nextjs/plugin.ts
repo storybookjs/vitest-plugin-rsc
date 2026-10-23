@@ -17,14 +17,25 @@ import {
   type ResolvedConfig,
   type ViteDevServer,
 } from "vite";
+import { escapePath } from "tinyglobby";
 import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
-import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
+import {
+  createCompilePlugin,
+  createDependencyCompilePlugin,
+  createScanCompilePlugin,
+} from "./compile.ts";
+import {
+  devAssetPrefix,
+  prerenderImports,
+  runtimeImports as nextRuntimeImports,
+  serverReferenceInfo,
+} from "./compat/paths.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
-import { createNodePlatform } from "./node-platform.ts";
+import { createNodePlatform, instrumentationPlugin } from "./node-platform.ts";
 import { registryGlobal } from "./registry-global.ts";
 import {
   loadNextProject,
@@ -46,7 +57,7 @@ import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
-// browser (docs/next-routes.md). Where Next's own bundler config says a module
+// browser (docs/internals/next-routes.md). Where Next's own bundler config says a module
 // belongs to another layer, it is bridged to that environment through
 // `registry` (registry.ts).
 const environmentOf: Record<NextLayer, string> = {
@@ -58,9 +69,12 @@ const layers = Object.keys(environmentOf) as NextLayer[];
 
 const registry = `globalThis.${registryGlobal}`;
 
+// An entry of a scan is a glob: a file by its path, escaped, as a path can
+// have a `(group)` or a `[id]` in it, which a glob reads as a pattern. As
+// Vite makes a path a glob, for `import.meta.glob` (`globSafePath()`).
+const fileEntry = (file: string) => escapePath(normalizePath(file));
 // What a dependency scan of the app starts from: every module of `app/`.
-const appEntriesOf = (project: NextProject) =>
-  normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
+const appEntriesOf = (project: NextProject) => `${fileEntry(project.appDir)}/**/*.{js,jsx,ts,tsx}`;
 // Shared by the layers: the routes and the `next.config`.
 const manifestId = "virtual:vitest-plugin-rsc/next-manifest";
 // The modules of the routes, all in the rsc layer: one for each route, by its
@@ -88,6 +102,12 @@ const envId = virtual("env");
 const cacheHandlersId = virtual("cache-handlers");
 // `next/root-params`, which Next's build makes for the app.
 const rootParamsId = virtual("root-params");
+// The verdict of Next's build on which pathnames of a route it prerenders,
+// for rsc.ts: prerender-verdict.ts with `build: "production"`, the one build
+// that asks for it. Without it the module imports nothing, so that Vite
+// neither finds the modules of Next's build that the verdict imports, which
+// would have it pre-bundle again mid-test, nor loads them.
+const prerenderId = virtual("prerender");
 // Next's route resolution: the rsc layer, the document's, says with it which
 // requests are the app's, and the ssr layer routes with it each request that
 // it handles. Not a part of `next`: it is the project's, next to its `next`.
@@ -135,7 +155,6 @@ const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 // `undefined`, by `shimMissingExports` of the pre-bundling.
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const emptyModule = "const empty = {};\nexport default empty;\n";
-const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
 const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
 // The directory of the files of this package: `src` or `dist`.
 const ownDir = normalizePath(fileURLToPath(new URL("..", import.meta.url)));
@@ -181,10 +200,11 @@ export function extractInfoFromServerReferenceId(id) {
 // router imports it on its first navigation, where nothing runs as a script,
 // and the navigation fails. The plugin has no dev server, and Next opens that
 // WebSocket only on one: the prefix is for nothing here.
-const devAssetPrefix = /^next\/dist\/(esm\/)?client\/dev\/hot-reloader\/app\/asset-prefix(\.js)?$/;
 const devAssetPrefixShim = `export const assetPrefix = "";\n`;
 
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
+// What a run has said of the installed Next, which its projects share.
+const saidOfNext = new Set<string>();
 
 type Alias = { key: string; exact: boolean; target: string | false };
 
@@ -455,9 +475,9 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
         if (name === "dev-asset-prefix") return devAssetPrefixShim;
-        const nodeModule = nodePlatform.load(name);
+        const { flightExports, version, newExports } = getProject();
+        const nodeModule = nodePlatform.load(name, newExports[name], version);
         if (nodeModule) return nodeModule;
-        const { flightExports, version } = getProject();
         const entry = name.slice("flight-".length) as FlightEntry;
         return flightBridge(entry, flightExports[entry], version, registry);
       },
@@ -693,6 +713,58 @@ function findMetadataRequests(code: string): string[] {
   );
 }
 
+/**
+ * The files of the cache handlers that `next.config` names, which Next's
+ * server loads before its first request (cache.ts): `cacheHandler`, and one
+ * of `cacheHandlers` for each kind of `"use cache"` that has one. A path, or
+ * a `file:` URL, as Next takes one. A relative path is of the project, as
+ * Next's server resolves it.
+ */
+function cacheHandlerFilesOf(project: Pick<NextProject, "config" | "root">): {
+  cacheHandler: string | undefined;
+  cacheHandlers: Record<string, string>;
+} {
+  const { cacheHandler, cacheHandlers = {} } = project.config as {
+    cacheHandler?: string;
+    cacheHandlers?: Record<string, string | undefined>;
+  };
+  const fileOf = (file: string) =>
+    normalizePath(
+      file.startsWith("file:") ? fileURLToPath(file) : path.resolve(project.root, file),
+    );
+  return {
+    cacheHandler: cacheHandler ? fileOf(cacheHandler) : undefined,
+    cacheHandlers: Object.fromEntries(
+      Object.entries(cacheHandlers).flatMap(([kind, file]) => (file ? [[kind, fileOf(file)]] : [])),
+    ),
+  };
+}
+
+/**
+ * What the dependency optimizer of the ssr layer, which loads the cache
+ * handlers, is to know of them before the first request. Vite's scan does not
+ * follow the `import()` of a file that a virtual module makes from the
+ * config. A file of Next, like its `default.external.js`, is a dependency:
+ * the layer imports it by the specifier `toSpecifier()` gives it. Any other
+ * file, of the app or of another package, is an entry of the scan, which
+ * then finds what it imports.
+ */
+function cacheHandlerScan(
+  project: Pick<NextProject, "config" | "root" | "nextDir">,
+  toSpecifier: (file: string) => string,
+): { include: string[]; entries: string[] } {
+  const { cacheHandler, cacheHandlers } = cacheHandlerFilesOf(project);
+  const files = [...new Set([cacheHandler ?? [], Object.values(cacheHandlers)].flat())];
+  const isOfNext = (file: string) => {
+    const relative = path.relative(project.nextDir, file);
+    return !relative.startsWith("..") && !path.isAbsolute(relative);
+  };
+  return {
+    include: files.filter(isOfNext).map(toSpecifier),
+    entries: files.filter((file) => !isOfNext(file)).map(fileEntry),
+  };
+}
+
 function findImports(code: string): string[] {
   return [
     ...code.matchAll(
@@ -766,56 +838,20 @@ function scanClientBoundaries(nextDir: string, root: string): string[] {
 // What the runtime modules of this package, and the modules Vite and Vite RSC
 // generate, import from Next and from React, per layer.
 const react = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react/compiler-runtime"];
+// Not what only `build: "production"` loads: see `prerenderImports`.
 const runtimeImports: Record<NextLayer, string[]> = {
   rsc: [
     ...react,
     "react-dom",
-    "next/dist/server/route-kind",
-    // What a `"use cache"` function is compiled to call: use-cache.ts.
-    "next/dist/build/webpack/loaders/next-flight-loader/cache-wrapper",
+    ...nextRuntimeImports.rsc,
     vendoredFlight("server.edge"),
     vendoredFlight("static.edge"),
     vendoredFlight("client.edge"),
-    // server-in-front.ts
-    "next/dist/server/lib/server-ipc/utils",
-    "next/dist/server/web/utils",
-    // prerender-verdict.ts
-    "next/dist/build/segment-config/app/app-segments",
-    "next/dist/build/segment-config/app/collect-root-param-keys",
-    "next/dist/build/static-paths/app",
-    "next/dist/lib/fallback",
-    "next/dist/lib/is-edge-runtime",
-    "next/dist/lib/metadata/is-metadata-route",
-    "next/dist/server/lib/params-utils",
-    "next/dist/server/route-modules/app-route/helpers/is-static-gen-enabled",
-    "next/dist/shared/lib/router/routes/app",
-    // rsc.ts
-    "next/dist/shared/lib/no-fallback-error.external",
   ],
   ssr: [
     ...react,
     "react-dom",
-    "next/dist/server/route-modules/app-page/module",
-    "next/dist/server/lib/incremental-cache",
-    "next/dist/server/lib/incremental-cache/tags-manifest.external",
-    "next/dist/server/lib/node-fs-methods",
-    "next/dist/server/use-cache/handlers",
-    // cache.ts and build-output.ts
-    "next/dist/lib/constants",
-    "next/dist/shared/lib/page-path/normalize-page-path",
-    // ssr.ts, for what the server in front of the app routes to it
-    "next/dist/client/components/app-router-headers",
-    "next/dist/server/lib/server-action-request-meta",
-    "next/dist/server/lib/is-rsc-request",
-    "next/dist/shared/lib/router/utils/route-matcher",
-    "next/dist/shared/lib/router/utils/route-regex",
-    // server-in-front.ts
-    "next/dist/server/lib/server-ipc/utils",
-    // node-server.ts
-    "next/dist/server/lib/mock-request",
-    "next/dist/client/components/hooks-server-context",
-    // node-server.ts, ssr.ts and server-in-front.ts
-    "next/dist/server/web/utils",
+    ...nextRuntimeImports.ssr,
     vendoredFlight("client.edge"),
     // node-rendered.tsx, around every node
     "next/navigation",
@@ -824,16 +860,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     ...react,
     "react-dom",
     "react-dom/client",
-    "next/dist/client/app-bootstrap",
-    "next/dist/client/app-call-server",
-    "next/dist/client/app-index",
-    // client.tsx, for a page of a kept app: `renderAgain()`.
-    "next/dist/client/components/app-router",
-    "next/dist/client/components/app-router-instance",
-    "next/dist/client/components/router-reducer/create-initial-router-state",
-    "next/dist/client/components/segment-cache/bfcache",
-    "next/dist/client/components/segment-cache/cache",
-    "next/dist/shared/lib/head-manager-context.shared-runtime",
+    ...nextRuntimeImports.browser,
     // node-rendered.tsx, around every node
     "next/navigation",
     vendoredFlight("client.browser"),
@@ -849,7 +876,7 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * `next start` runs it after `next build`. Production renders faster,
    * without what the development code checks and reports. In a test run
    * the app's `process.env.NODE_ENV` stays as it is, in a static build it is
-   * the build. See docs/next-routes.md, "Development Or Production".
+   * the build. See docs/internals/next-routes.md, "Development Or Production".
    *
    * @default `"development"` for a test run and a dev server, `"production"`
    * for `vite build`, a static build of the app
@@ -908,6 +935,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   let env: PageEnv;
   let envLoad: Promise<unknown> = Promise.resolve();
   let server: ViteDevServer | undefined;
+  // The files of the cache handlers that are no file of Next, for the scan
+  // of the ssr layer: see `cacheHandlerScan()`.
+  let cacheHandlerEntries: string[] = [];
   // Whether Vitest runs the plugin, which takes a change of a file itself.
   // Vitest turns Vite's HMR off, so `hotUpdate` never runs under it: this
   // flag is a defence, should a version of Vitest turn it on.
@@ -980,11 +1010,32 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           const inputFiles = typeof input === "string" ? [input] : Object.values(input ?? {});
           const hostEntries =
             rsc.optimizeDeps.entries ??
-            (inputFiles.length > 0 ? inputFiles.map(normalizePath) : "**/*.html");
+            (inputFiles.length > 0 ? inputFiles.map(fileEntry) : "**/*.html");
           rsc.optimizeDeps.entries = [
             ...[hostEntries].flat(),
             appEntriesOf(project),
-            ...(project.middlewareFile ? [normalizePath(project.middlewareFile)] : []),
+            ...(project.middlewareFile ? [fileEntry(project.middlewareFile)] : []),
+          ];
+          // The ssr layer loads the Client Components that a payload of the
+          // rsc layer names, by their id: a module of the app, of `app/` or
+          // not, or of a package, which a test file can import too. So its
+          // scan starts where the rsc layer's does, and reads through the
+          // Server Components to them, as the browser layer's does. Not at a
+          // file of a package, like the runtime of Vitest, which is the
+          // page's and which the layer does not run. Nor at a file of the
+          // plugin, like its setup file, which is a file of `node_modules`
+          // for an installed package and a file of this repository for a
+          // linked one. And at the cache handlers of `next.config`, which it
+          // loads itself.
+          const ssr = server.config.environments[environmentOf.ssr]!;
+          const isOwnOrPackageFile = (entry: string) => {
+            const file = normalizePath(entry);
+            return file.includes("/node_modules/") || file.startsWith(ownDir);
+          };
+          ssr.optimizeDeps.entries = [
+            ...[ssr.optimizeDeps.entries ?? []].flat(),
+            ...rsc.optimizeDeps.entries.filter((entry) => !isOwnOrPackageFile(entry)),
+            ...cacheHandlerEntries,
           ];
         },
       },
@@ -1030,7 +1081,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ...appPageEntries.flatMap(({ code }) => findImports(code)),
           ...metadataModules.flatMap(({ code }) => findImports(code)),
           ...findImports((await project.loadMiddlewareEntry()) ?? ""),
+          // `next/root-params`, which the scan finds as an import, but not
+          // what the module the plugin makes of it imports.
+          ...findImports(await project.loadRootParams()),
         ];
+        const cacheHandlers = cacheHandlerScan(project, resolvers.ssr.toSpecifier);
+        cacheHandlerEntries = cacheHandlers.entries;
         // `next/og` renders images with wasm: not something to pre-bundle for
         // every project.
         const apiImports = (layer: NextLayer) =>
@@ -1052,12 +1108,20 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ...entryImports,
           ...apiImports("rsc"),
           ...runtimeImports.rsc,
+          // Fixed before the optimizer starts, by the option: a module found
+          // later would have Vite pre-bundle again, mid-test.
+          ...(build === "production" ? prerenderImports : []),
         ]);
         const clientBoundaries = findClientBoundaries(project.nextDir, project.root, resolvers.rsc);
         const include: Record<NextLayer, string[]> = {
           rsc: [...rscInclude, nextRouting],
           ssr: [
-            ...toInclude("ssr", [...apiImports("ssr"), ...runtimeImports.ssr, ...clientBoundaries]),
+            ...toInclude("ssr", [
+              ...apiImports("ssr"),
+              ...runtimeImports.ssr,
+              ...clientBoundaries,
+              ...cacheHandlers.include,
+            ]),
             nextRouting,
           ],
           browser: toInclude("browser", [
@@ -1068,7 +1132,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         };
 
         // What Next's compiler makes app code import, like `styled-jsx/style`
-        // for a `<style jsx>`: not an import the dependency scan finds.
+        // for a `<style jsx>`: the scan finds it where it compiles the app's
+        // code, and this is for the code it does not reach.
         const dependenciesOfNext = (layer: NextLayer) =>
           Object.entries(project.aliases[layer]).flatMap(([key, target]) =>
             key.endsWith("$") && target && resolvers[layer].isDependencyOfNext(target)
@@ -1091,13 +1156,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               // client-files.ts. Not a copy in what that layer pre-bundles.
               ...(layer === "browser" ? [hostPackagesPlugin] : []),
               resolvers[layer].plugin(),
-              createDependencyCompilePlugin(getProject, layer),
+              createDependencyCompilePlugin(getProject, layer, serverCode.isAppCode),
+              createScanCompilePlugin(getProject, layer, serverCode.isAppCode),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
               nextPatchesPlugin(),
               ...(layer === "browser"
                 ? []
                 : [
+                    instrumentationPlugin(),
                     serverCode.optimizerPlugin(layer),
                     serverCode.asyncFunctionsOptimizerPlugin(layer),
                   ]),
@@ -1243,8 +1310,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               dev: { moduleRunnerTransform: true },
               optimizeDeps: {
                 ...optimizeDeps("ssr"),
-                // The Client Components it renders are the app's.
-                entries: [appEntriesOf(project)],
+                // Its entries: see `vitest-plugin-rsc:next-scan`.
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
@@ -1315,6 +1381,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               `it with \`export const runtime = "edge"\` and run on Node.js here, like the ` +
               `others: ${project.edgeRouteFiles.join(", ")}`,
           );
+        }
+        const newExports = Object.values(project.newExports).flat();
+        const aboutNext =
+          `vitest-plugin-rsc: next@${project.version} has exports that the plugin's stand-ins ` +
+          `for its modules have not. Each throws when it is used: ` +
+          newExports.map(({ name, module }) => `\`${name}\` of ${module}`).join(", ") +
+          `. Use a version of vitest-plugin-rsc that supports next@${project.version}.`;
+        // Of the installed Next, not of the project: once, for every project
+        // of a run that has that Next.
+        if (newExports.length > 0 && !saidOfNext.has(aboutNext)) {
+          saidOfNext.add(aboutNext);
+          config.logger.warn(aboutNext);
         }
         if (project.unmatchedRoutes.length > 0) {
           config.logger.warnOnce(
@@ -1396,6 +1474,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
         if (source === useCacheId || source === cacheHandlersId) return `\0${source}`;
+        if (source === prerenderId) return `\0${source}`;
         if (source === "next/root-params") return `\0${rootParamsId}`;
         if (project.isMetadataRequest(source)) return `\0${metadataPrefix}${source}`;
         // The module of a generated image, for what it says of the image. Next
@@ -1415,23 +1494,20 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
         if (id === `\0${useCacheId}`) return useCacheModule(registry);
         if (id === `\0${rootParamsId}`) return project.loadRootParams();
+        if (id === `\0${prerenderId}`) {
+          return build === "production"
+            ? `export { prerenderVerdictOf } from ${JSON.stringify(ownFile("prerender-verdict"))};\n`
+            : `export function prerenderVerdictOf() {\n` +
+                `  throw new Error('vitest-plugin-rsc: only \`build: "production"\` prerenders');\n` +
+                `}\n`;
+        }
         // The files of the cache handlers that `next.config` names, which
         // Next's server imports: cache.ts.
         if (id === `\0${cacheHandlersId}`) {
-          const { cacheHandler, cacheHandlers = {} } = project.config as {
-            cacheHandler?: string;
-            cacheHandlers?: Record<string, string | undefined>;
-          };
-          // A path, or a `file:` URL, as Next takes one. A relative path is
-          // of the project, as Next's server resolves it.
-          const load = (file: string) => {
-            const resolved = file.startsWith("file:")
-              ? fileURLToPath(file)
-              : path.resolve(project.root, file);
-            return `() => import(${JSON.stringify(normalizePath(resolved))})`;
-          };
-          const kinds = Object.entries(cacheHandlers).flatMap(([kind, file]) =>
-            file ? [`  ${JSON.stringify(kind)}: ${load(file)},`] : [],
+          const { cacheHandler, cacheHandlers } = cacheHandlerFilesOf(project);
+          const load = (file: string) => `() => import(${JSON.stringify(file)})`;
+          const kinds = Object.entries(cacheHandlers).map(
+            ([kind, file]) => `  ${JSON.stringify(kind)}: ${load(file)},`,
           );
           return (
             `export const cacheHandler = ${cacheHandler ? load(cacheHandler) : "undefined"};\n` +
@@ -1549,6 +1625,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
     { ...nextPatchesPlugin(), apply: "build" },
+    { ...instrumentationPlugin(), apply: "build" },
     nextStaticBuild({
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
@@ -1570,7 +1647,7 @@ function dependencyBuildPlugin(
   serverCode: ReturnType<typeof createServerCode>,
   layer: NextLayer,
 ): Plugin {
-  const compile = createDependencyCompilePlugin(getProject, layer);
+  const compile = createDependencyCompilePlugin(getProject, layer, serverCode.isAppCode);
   return {
     name: `vitest-plugin-rsc:next-build-dependency:${layer}`,
     apply: "build",

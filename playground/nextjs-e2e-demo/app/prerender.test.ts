@@ -169,7 +169,7 @@ test("answers a path that `generateStaticParams` does not list with the not-foun
   expect(listed.status).toBe(200);
   expect(listed.text).toContain("listed, rendered as");
   // In development the plugin does not run `generateStaticParams`, where
-  // `next dev` does for each request: see docs/next-routes.md.
+  // `next dev` does for each request: see docs/internals/next-routes.md.
   if (production) {
     expect(unlisted.status).toBe(404);
     expect(unlisted.text).toContain("Nothing here");
@@ -187,5 +187,59 @@ test("renders a kept page again after revalidatePath() of a route handler", asyn
   if (production) {
     expect(third.rendered).toBe(second.rendered);
     expect([first.cache, third.cache]).toEqual(["MISS", "HIT"]);
+  }
+});
+
+// What Next's router sends for a link in view.
+const prefetchHeaders = { rsc: "1", "next-router-prefetch": "1" };
+
+test("prerenders a route at its first page load or navigation, never at a prefetch", async () => {
+  const prefetch = await request("/prerendered/prefetched", { headers: prefetchHeaders });
+  const navigation = await request("/prerendered/prefetched", { headers: { rsc: "1" } });
+  const pageLoad = await request("/prerendered/prefetched");
+  // Also once the page is kept: as a dynamic route.
+  const prefetchAgain = await request("/prerendered/prefetched", { headers: prefetchHeaders });
+
+  expect([prefetch.status, navigation.status, pageLoad.status, prefetchAgain.status]).toEqual([
+    200, 200, 200, 200,
+  ]);
+  if (production) {
+    expect([prefetch.cache, navigation.cache, pageLoad.cache, prefetchAgain.cache]).toEqual([
+      null,
+      "MISS",
+      "HIT",
+      null,
+    ]);
+  }
+});
+
+test("answers a prefetch of a path that `dynamicParams = false` leaves out with the not-found page", async () => {
+  // Before the route is listed, and after.
+  const prefetch = await request("/prerendered/closed/shut", { headers: prefetchHeaders });
+  const pageLoad = await request("/prerendered/closed/shut");
+  const prefetchAgain = await request("/prerendered/closed/shut", { headers: prefetchHeaders });
+  const listed = await request("/prerendered/closed/open", { headers: prefetchHeaders });
+
+  expect(listed.status).toBe(200);
+  // In development the plugin does not run `generateStaticParams`.
+  if (production) {
+    expect([prefetch.status, pageLoad.status, prefetchAgain.status]).toEqual([404, 404, 404]);
+    expect(listed.cache).toBe(null);
+  }
+});
+
+test("keeps a page of a slot as the build does, with 200, where another slot has no page for its path", async () => {
+  // A navigation, which keeps the page of `children` that is there, and then
+  // a page load, which shows the not-found page there.
+  const navigation = await request("/prerendered/slots/duration", { headers: { rsc: "1" } });
+  const again = await request("/prerendered/slots/duration", { headers: { rsc: "1" } });
+  const pageLoad = await request("/prerendered/slots/duration");
+
+  expect(pageLoad.text).toContain("View duration");
+  if (production) {
+    // Next's router takes a navigation that answers 404 for a page load.
+    expect([navigation.status, again.status, pageLoad.status]).toEqual([200, 200, 200]);
+    expect([navigation.cache, again.cache, pageLoad.cache]).toEqual(["MISS", "HIT", "HIT"]);
+    expect(pageLoad.text).toContain("Nothing here");
   }
 });
