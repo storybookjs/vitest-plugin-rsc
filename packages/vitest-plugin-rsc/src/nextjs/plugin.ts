@@ -622,30 +622,55 @@ function replaceableRouterPlugin(): Plugin {
   };
 }
 
-// Fast mode: Next's `<Link>` and `<Form>` prefetch nothing. In production
-// every link that comes into view, and every link the pointer of a click
-// passes, is requested, and the server takes one request at a time: the
-// click of a test waited for them. Read as a link mounts, from the registry.
-function noPrefetchPlugin(): Plugin {
-  const pieces = [
-    [
-      "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {",
-      `\n    if (${registry}?.fast) prefetchEnabled = false;`,
+// Fast mode's patches of Next's client, read from the registry as the code
+// runs, so that the pre-bundled files are the same with it and without:
+// - `<Link>` and `<Form>` prefetch nothing. In production every link that
+//   comes into view, and every link the pointer of a click passes, is
+//   requested, and the server takes one request at a time: the click of a
+//   test waited for them.
+// - A navigation does not scroll to the segment that changed. To find out
+//   whether it is in view, Next reads the layout of the document after every
+//   navigation, which makes the browser lay it out then: in a profile of the
+//   notes app about 2% of the time of fast mode. A test does not see scrolling.
+const fastModePatches: { file: RegExp; what: string; pieces: [at: string, insert: string][] }[] = [
+  {
+    file: /\/next\/dist\/esm\/client\/components\/links\.js$/,
+    what: "prefetches",
+    pieces: [
+      [
+        "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {",
+        `\n    if (${registry}?.fast) prefetchEnabled = false;`,
+      ],
+      [
+        "export function mountFormInstance(element, href, router, fetchStrategy) {",
+        `\n    if (${registry}?.fast) return;`,
+      ],
     ],
-    [
-      "export function mountFormInstance(element, href, router, fetchStrategy) {",
-      `\n    if (${registry}?.fast) return;`,
+  },
+  {
+    file: /\/next\/dist\/esm\/client\/components\/layout-router\.js$/,
+    what: "scrolls after a navigation",
+    pieces: [
+      [
+        "if (scrollRef === null || !scrollRef.current) return;",
+        `\n        if (${registry}?.fast) {\n            scrollRef.current = false;\n            return;\n        }`,
+      ],
     ],
-  ] as const;
+  },
+];
+
+function fastModePlugin(): Plugin {
   return {
-    name: "vitest-plugin-rsc:no-prefetch",
+    name: "vitest-plugin-rsc:fast-mode",
     transform: {
-      filter: { id: /\/next\/dist\/esm\/client\/components\/links\.js$/ },
+      filter: { id: { include: fastModePatches.map(({ file }) => file) } },
       handler(code, id) {
+        const patch = fastModePatches.find(({ file }) => file.test(id));
+        if (!patch) return;
         let patched = code;
-        for (const [at, insert] of pieces) {
+        for (const [at, insert] of patch.pieces) {
           if (!patched.includes(at)) {
-            this.warn(`vitest-plugin-rsc: ${id} has no \`${at}\`: fast mode prefetches.`);
+            this.warn(`vitest-plugin-rsc: ${id} has no \`${at}\`: fast mode ${patch.what}.`);
             continue;
           }
           patched = patched.replace(at, at + insert);
@@ -1080,7 +1105,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
               noSsrPlugin(),
-              noPrefetchPlugin(),
+              fastModePlugin(),
               replaceableRouterPlugin(),
               flightOnlyPlugin(),
               ...(layer === "browser"
@@ -1537,7 +1562,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
     { ...noSsrPlugin(), apply: "build" },
-    { ...noPrefetchPlugin(), apply: "build" },
+    { ...fastModePlugin(), apply: "build" },
     { ...replaceableRouterPlugin(), apply: "build" },
     { ...flightOnlyPlugin(), apply: "build" },
     nextStaticBuild({

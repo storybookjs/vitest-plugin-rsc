@@ -178,6 +178,18 @@ export type HandleOptions = {
   pageLoad?: boolean;
 };
 
+// A body that is there in full, as a stream for the middleware. Most
+// requests have none, and every request needs one: not by a `Blob`, which
+// was the native call that took the longest in a profile of the notes app.
+function streamOf(body: Uint8Array | null | undefined): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      if (body) controller.enqueue(body);
+      controller.close();
+    },
+  });
+}
+
 // What `handle()` makes of a request, and when the server is done with it.
 type Handled = { response?: Response; finished: Promise<void> };
 
@@ -481,7 +493,7 @@ async function handle(
     let { body } = request;
     let middlewareBody: ReadableStream<Uint8Array>;
     if (body instanceof ReadableStream) [middlewareBody, body] = body.tee();
-    else middlewareBody = new Blob(body ? [body as BlobPart] : []).stream();
+    else middlewareBody = streamOf(body);
 
     // What the middleware answers itself, and the headers it sends the
     // request on with.
