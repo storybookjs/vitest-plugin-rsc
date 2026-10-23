@@ -6,7 +6,7 @@ name: Vitest vs Playwright
 # `next start`. playground/vitest-vs-playwright is a todo app with 25 tests,
 # playground/vitest-vs-playwright-notes a notes app with accounts and 500
 # tests: see their README.md. Each job writes what its steps took to the
-# summary of the run.
+# summary of the run, and every test with its time to its log.
 on:
   pull_request:
     paths:
@@ -59,7 +59,7 @@ jobs:
       - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          pnpm exec vitest run --maxWorkers 1 --reporter=tree "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -77,7 +77,7 @@ jobs:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          pnpm exec vitest run --maxWorkers 1 --reporter=tree "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
