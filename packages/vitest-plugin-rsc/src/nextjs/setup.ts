@@ -45,12 +45,16 @@ beforeAll(async ({}, suite) => {
   await linkStylesheetsOf(nodeFiles);
 });
 // The kept app of fast mode (page.ts) is one test file's: the next file
-// starts with its modules evaluated again, as it does its setup files.
+// starts with its modules evaluated again, as it does its setup files. Also
+// after a page that could not be left, which fails this file.
 afterAll(async () => {
-  await leaveKeptAppWithPage("the end of the test file");
-  keptDocument?.();
-  // The next file asks the dev server again: see fast-mode.ts.
-  forgetTestFileAnswers();
+  try {
+    await leaveKeptAppWithPage("the end of the test file");
+  } finally {
+    keptDocument?.();
+    // The next file asks the dev server again: see fast-mode.ts.
+    forgetTestFileAnswers();
+  }
 });
 
 // The ssr layer, which the entry does not wait for: with a dev server, the

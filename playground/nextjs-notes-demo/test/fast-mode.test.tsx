@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { signedInAs } from "#test/auth.ts";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 // What fast mode (`fast` of `vitestPluginNext()`) keeps of what a test sees,
 // where the pages of a test file render in one app: the project
@@ -49,4 +49,23 @@ test("renders the page without HTML of the server after a test with it", async (
     .element(page.getByRole("heading", { level: 1, name: "Errands" }))
     .toBeInTheDocument();
   expect(errors).toEqual([]);
+});
+
+test("opens the page that the request of a page redirects to, from its HTML", async () => {
+  // Signed out: the page sends the browser to sign in.
+  const { errors } = await renderServer({ url: "/notes/new" });
+
+  await expect.element(page.getByLabelText("Email")).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/auth/sign-in");
+  expect(errors).toEqual([]);
+});
+
+test("answers a request of the test with the HTML of its page, while a page without it is open", async () => {
+  await signedInAs();
+  await renderServer({ url: "/notes" });
+
+  const html = await (await handleRequest("/profile")).text();
+
+  expect(html).toContain(">Profile</h1>");
+  expect(html).not.toContain("__next_error__");
 });

@@ -157,11 +157,22 @@ function leaveKeptApp(): void {
 
 /**
  * Leaves the page of the kept app that is open, as `leavePage()` does with
- * `by`, and then the kept app: a test file ends with them.
+ * `by`, and then the kept app: a test file ends with them. The app goes also
+ * after a page that could not be left, and the first error rejects.
  */
 export async function leaveKeptAppWithPage(by: string): Promise<void> {
-  if (current?.inKeptApp) await leavePage(by);
-  leaveKeptApp();
+  let failed: { error: unknown } | undefined;
+  try {
+    if (current?.inKeptApp) await leavePage(by);
+  } catch (error) {
+    failed = { error };
+  }
+  try {
+    leaveKeptApp();
+  } catch (error) {
+    failed ??= { error };
+  }
+  if (failed) throw failed.error;
 }
 
 // Releases in the order of a page's: the last first, also after one that throws.

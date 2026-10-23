@@ -73,7 +73,10 @@ export type Opened = {
    * `runInServerAction()`, which shows no page. Read from `openedByRequest`.
    */
   rendersRedirect?: boolean;
-  /** `false`: Next renders no HTML of the page, see `RenderServerOptions.ssr`. */
+  /**
+   * `false`: Next renders no HTML of the page, see `RenderServerOptions.ssr`.
+   * Read from `openedByRequest`.
+   */
   ssr?: boolean;
   /**
    * For the request of a page of fast mode's kept app alone: Next answers it
@@ -192,10 +195,11 @@ export type NextRegistry = {
   /** What the Server Action of `runInServerAction()` runs, by the number it is called with. */
   serverActions: Map<number, () => Promise<void>>;
   /**
-   * The route of a node that a request brings for itself, like the one of
-   * `runInServerAction()`, for as long as it is handled. The page of the route of
-   * a node reads it, and else `opened`. The server's `fetch` reads its
-   * `rendersRedirect`.
+   * What a request opened, for as long as it is handled: what it brings for
+   * itself, like the route of a node of `runInServerAction()`, or else
+   * `opened` at its URL (`openedAt()`). The page of the route of a node reads
+   * it, and else `opened`. The server's `fetch` reads its `rendersRedirect`,
+   * and Next's renderer its `ssr` and `flightOnly`.
    */
   openedByRequest: SequentialAsyncLocalStorage<Opened | undefined>;
   /**

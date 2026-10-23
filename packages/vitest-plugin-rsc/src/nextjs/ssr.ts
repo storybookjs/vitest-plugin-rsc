@@ -525,10 +525,12 @@ async function handle(
   // once another request waits for it: then for one second at most, and so
   // for a nested one, inside the request that waits for it.
   const scope = enterScope(nested ? () => Promise.resolve() : nextRequest);
-  // A route of its own, for the page of the route of a node that renders in
-  // this request. Not for the requests the server makes to itself meanwhile:
-  // see `loadComponent()` in rsc.ts.
-  if (openedByRequest) registry.openedByRequest.run(openedByRequest, () => {});
+  // What this request opened, for what renders in it: the page of the route
+  // of a node (see `loadComponent()` in rsc.ts), and whether the page has
+  // HTML (`nextPatches` in compat/patches.ts). Its own, also when that is
+  // nothing: not what a request it is part of opened, nor one before it that
+  // is still at work, nor what the test opened at another pathname.
+  registry.openedByRequest.run(opened, () => {});
   const context = { waitUntil: scope.waitUntil };
   const endRequest = scope.end;
 

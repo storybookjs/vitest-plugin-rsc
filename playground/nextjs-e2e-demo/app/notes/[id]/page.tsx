@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { FavoriteButton } from "../../components/favorite-button.tsx";
 import { RenameNote } from "../../components/rename-note.tsx";
+import { StarButton } from "../../components/star-button.tsx";
 import { db } from "../../lib/notes.ts";
 
 type Props = { params: Promise<{ id: string }> };
@@ -19,6 +20,7 @@ export default async function NotePage({ params }: Props) {
       <h1>{note.title}</h1>
       <p>{note.body}</p>
       <FavoriteButton id={note.id} favorite={note.favorite ?? false} />
+      <StarButton id={note.id} />
       <RenameNote id={note.id} />
     </article>
   );

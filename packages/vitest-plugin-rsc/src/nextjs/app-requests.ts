@@ -92,6 +92,10 @@ let page: AbortSignal | undefined;
 // page is left, as a browser stops the requests of a page it unloads. The
 // page says so first, with `pagehide`, as a browser's does: Next's router
 // reports no failure of a request then (see `leave()` of `Page` in page.ts).
+// Not a Server Action: Next rejects the call of the action with its failure,
+// and code that does not wait for the call, like `onClick={() => action()}`,
+// would reject unhandled. It hears nothing, as in the default mode: the queue
+// it waits in is its page's alone, which no page after it uses.
 let routerOutlivesPage = false;
 
 /** Says which page of the app is open, by its signal, which aborts as it is left. */
@@ -104,10 +108,12 @@ export function setRouterOutlivesPage(outlives: boolean): void {
   routerOutlivesPage = outlives;
 }
 
-// What a request of a page that was left gets, from the router that sent it.
+// What a request of a page that was left gets, from the router that sent it:
+// see `routerOutlivesPage`. `action` for a Server Action.
 const pageLeft = () => new DOMException("The page was left.", "AbortError");
-function ofLeftPage(): Promise<never> {
-  return routerOutlivesPage ? Promise.reject(pageLeft()) : never();
+const failsAsPageLeft = (action: boolean) => routerOutlivesPage && !action;
+function ofLeftPage(action: boolean): Promise<never> {
+  return failsAsPageLeft(action) ? Promise.reject(pageLeft()) : never();
 }
 
 // What a browser adds to a request for the app's origin, with the headers and
@@ -387,12 +393,16 @@ const never = () => new Promise<never>(() => {});
 // there, would report that as an error while the next page runs: "Failed to
 // fetch RSC payload". Nobody reads the body of a response that comes after
 // that, so it stops.
-async function heardBy(sender: AbortSignal, response: Promise<Response>): Promise<Response> {
-  if (routerOutlivesPage) return failsAsLeft(sender, response);
+async function heardBy(
+  sender: AbortSignal,
+  response: Promise<Response>,
+  action: boolean,
+): Promise<Response> {
+  if (failsAsPageLeft(action)) return failsAsLeft(sender, response);
   const answered = await response.catch(() => undefined);
   if (!sender.aborted) return response;
   void answered?.body?.cancel().catch(() => {});
-  return ofLeftPage();
+  return ofLeftPage(action);
 }
 
 // For a router that outlives its page: the request fails at once as the page
@@ -433,9 +443,13 @@ export function pageFetch(
   const browserFetch = appFetch(() => store()!, network);
   return async (input, init) => {
     if (!store()) return network()(input, init);
-    if (!sameOriginRequest(input, init)?.marked) return browserFetch(input, init);
+    const sent = sameOriginRequest(input, init);
+    if (!sent?.marked) return browserFetch(input, init);
+    const action = sent.headers.has("next-action");
     const sender = page;
-    return sender && !sender.aborted ? heardBy(sender, browserFetch(input, init)) : ofLeftPage();
+    return sender && !sender.aborted
+      ? heardBy(sender, browserFetch(input, init), action)
+      : ofLeftPage(action);
   };
 }
 // The server's `fetch`. A request to the app itself is one the server makes

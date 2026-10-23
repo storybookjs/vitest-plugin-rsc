@@ -23,6 +23,8 @@ export const nextPatches = (registry: string): NextPatch[] => [
   // the page, only an empty document, as it does for an error page, with the
   // Flight payload in its scripts. Next's client sees the document of an
   // error page and renders the app with `createRoot()` instead of hydrating.
+  // The request's own: not one of another page, nor one the app or the test
+  // sends while the page is open, like the page after a redirect.
   {
     file: appRender,
     lost: "`ssr: false` renders the HTML of the page anyway",
@@ -30,7 +32,7 @@ export const nextPatches = (registry: string): NextPatch[] => [
       [
         "workUnitAsyncStorage.run(requestStore, renderToWebFizzStream, appElement, fizzOptions)",
         `workUnitAsyncStorage.run(requestStore, renderToWebFizzStream, ` +
-          `${registry}?.opened?.ssr === false ` +
+          `${registry}?.openedByRequest?.getStore()?.ssr === false ` +
           `? _jsx("html", { id: "__next_error__", children: _jsx("body", {}) }) ` +
           `: appElement, fizzOptions)`,
       ],
