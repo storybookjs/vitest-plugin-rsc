@@ -1,4 +1,5 @@
 import "./globals.ts";
+import { fast } from "./fast-mode.ts";
 import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
@@ -386,6 +387,25 @@ const appFetch =
 // per request: a pending promise holds on to what awaits it.
 const never = () => new Promise<never>(() => {});
 
+// A prefetch of Next's router, which fast mode's `skipPrefetch` answers
+// itself. Each has `priority: "low"`, and all but the data of a
+// `<Link prefetch>` to a route the router knows a `next-router-prefetch`
+// header too.
+function isPrefetch(sent: AppRequest, init: RequestInit | undefined): boolean {
+  return (
+    sent.headers.has("rsc") &&
+    (sent.headers.has("next-router-prefetch") || init?.priority === "low")
+  );
+}
+
+// What a prefetch gets with `skipPrefetch`: no content, which the router
+// takes for a miss, silently. It marks the prefetch of the route failed for
+// a while, and a navigation to it fetches the page, as without a prefetch.
+// In production every link that comes into view, and every link the pointer
+// of a click passes, is prefetched, and the server takes one request at a
+// time: the click of a test waited for them.
+const noPrefetch = () => new Response(null, { status: 204 });
+
 // What a page hears of a request that Next sent for it, one of its router
 // or a Server Action: nothing once the page is left, as in a browser, where
 // it is gone. Leaving drops the requests that wait for the server
@@ -447,9 +467,9 @@ export function pageFetch(
     if (!sent?.marked) return browserFetch(input, init);
     const action = sent.headers.has("next-action");
     const sender = page;
-    return sender && !sender.aborted
-      ? heardBy(sender, browserFetch(input, init), action)
-      : ofLeftPage(action);
+    if (!sender || sender.aborted) return ofLeftPage(action);
+    if (fast("skipPrefetch") && isPrefetch(sent, init)) return noPrefetch();
+    return heardBy(sender, browserFetch(input, init), action);
   };
 }
 // The server's `fetch`. A request to the app itself is one the server makes

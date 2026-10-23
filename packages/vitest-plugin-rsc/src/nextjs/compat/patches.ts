@@ -51,26 +51,6 @@ export const nextPatches = (registry: string): NextPatch[] => [
       ],
     ],
   },
-  // With fast mode's `skipPrefetch`, `<Link>` and `<Form>` prefetch nothing. In production every
-  // link that comes into view, and every link the pointer of a click passes,
-  // is requested, and the server takes one request at a time: the click of a
-  // test waited for them.
-  {
-    file: /\/next\/dist\/esm\/client\/components\/links\.js$/,
-    lost: "fast mode prefetches",
-    edits: [
-      [
-        "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {",
-        "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {" +
-          `\n    if (${registry}?.fast?.skipPrefetch) prefetchEnabled = false;`,
-      ],
-      [
-        "export function mountFormInstance(element, href, router, fetchStrategy) {",
-        "export function mountFormInstance(element, href, router, fetchStrategy) {" +
-          `\n    if (${registry}?.fast?.skipPrefetch) return;`,
-      ],
-    ],
-  },
   // React DOM, in development, warns once that a `<script>` it renders on the
   // client never runs. A page without HTML of the server, like every page of
   // fast mode, renders on the client what the server would have rendered as
