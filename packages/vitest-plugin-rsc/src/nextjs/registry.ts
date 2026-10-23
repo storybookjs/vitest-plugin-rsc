@@ -78,7 +78,7 @@ export type Opened = {
   /**
    * For the request of a page of fast mode's kept app alone: Next answers it
    * with the Flight payload of the page in place of its document
-   * (`nextPatches` in plugin.ts). Read from `openedByRequest`.
+   * (`nextPatches` in compat/patches.ts). Read from `openedByRequest`.
    */
   flightOnly?: boolean;
 };
@@ -221,7 +221,7 @@ export type NextRegistry = {
   /**
    * Set while the browser layer gives the router of fast mode's kept app the
    * state of its next page, which Next's patched router reads: see
-   * `nextPatches` in plugin.ts.
+   * `nextPatches` in compat/patches.ts.
    */
   replacingRouter?: boolean;
   /**
