@@ -9,13 +9,14 @@ Each Playwright test is the Vitest test of the same name in the file of the same
 
 The workflow `.github/workflows/vitest-vs-playwright.yml` runs Vitest in development and Playwright against `next dev`, and Vitest in production and Playwright against `next build` and `next start`, and writes what each step took to the summary of the run.
 
-`pnpm test:vitest:bun` runs Vitest on [Bun](https://bun.sh), which starts a run sooner: see `../vitest-vs-playwright-notes/README.md`.
+Vitest runs on [Bun](https://bun.sh) here, `bun --bun vitest run --configLoader native`, as `pnpm test:vitest` and the workflow run it: see why in `../vitest-vs-playwright-notes/README.md`. `pnpm test:vitest:node` runs it on Node.js, on a machine without Bun.
 
 ```bash
 # Vitest
 pnpm --dir ../.. --filter vitest-plugin-rsc build
-pnpm exec vitest run --maxWorkers 1
-VITEST_PLUGIN_RSC_BUILD=development pnpm exec vitest run --maxWorkers 1
+# Without Bun: pnpm exec vitest run, in place of bun --bun vitest run --configLoader native
+bun --bun vitest run --configLoader native --maxWorkers 1
+VITEST_PLUGIN_RSC_BUILD=development bun --bun vitest run --configLoader native --maxWorkers 1
 
 # Playwright
 docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
