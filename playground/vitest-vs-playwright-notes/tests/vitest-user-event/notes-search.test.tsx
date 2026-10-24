@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click, fill } from "#test/user-event.ts";
+import { click, expect, fill, screen } from "#test/fast-dom.ts";
 import { createUser, grace, seedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { signedIn } from "#test/vitest.ts";
+import { expectTitles } from "#test/fast-dom-notes.ts";
 
 const notes = [
   { title: "Groceries", content: "Oat milk, bread, cheese" },
@@ -40,7 +40,7 @@ test("says so when no note matches", async () => {
   await seedNotes(user.id, notes);
   await renderServer({ url: "/notes?q=pizza" });
 
-  await expect.element(page.getByText("No notes match “pizza”.")).toBeInTheDocument();
+  await expect.element(screen.getByText("No notes match “pizza”.")).toBeInTheDocument();
 });
 
 test("keeps the query in the search box", async () => {
@@ -48,7 +48,7 @@ test("keeps the query in the search box", async () => {
   await seedNotes(user.id, notes);
   await renderServer({ url: "/notes?q=milk" });
 
-  await expect.element(page.getByLabelText("Search")).toHaveValue("milk");
+  await expect.element(screen.getByLabelText("Search")).toHaveValue("milk");
 });
 
 test("searches with the form", async () => {
@@ -56,8 +56,8 @@ test("searches with the form", async () => {
   await seedNotes(user.id, notes);
   await renderServer({ url: "/notes" });
 
-  await fill(page.getByLabelText("Search"), "bread");
-  await click(page.getByRole("button", { name: "Search" }));
+  await fill(screen.getByLabelText("Search"), "bread");
+  await click(screen.getByRole("button", { name: "Search" }));
 
   await expectTitles(["Groceries"]);
 });
@@ -76,7 +76,7 @@ test("trims the query", async () => {
   await renderServer({ url: "/notes?q=%20%20cheese%20%20" });
 
   await expectTitles(["Groceries"]);
-  await expect.element(page.getByLabelText("Search")).toHaveValue("cheese");
+  await expect.element(screen.getByLabelText("Search")).toHaveValue("cheese");
 });
 
 test("does not find the notes of other users", async () => {
@@ -94,5 +94,5 @@ test("keeps the count of every note while searching", async () => {
   await seedNotes(user.id, notes);
   await renderServer({ url: "/notes?q=reading" });
 
-  await expect.element(page.getByText("3 notes")).toBeInTheDocument();
+  await expect.element(screen.getByText("3 notes")).toBeInTheDocument();
 });

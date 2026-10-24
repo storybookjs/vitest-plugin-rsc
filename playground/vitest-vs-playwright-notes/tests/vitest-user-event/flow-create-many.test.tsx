@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click, fill } from "#test/user-event.ts";
+import { click, expect, fill, screen } from "#test/fast-dom.ts";
 import { storedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { signedIn } from "#test/vitest.ts";
+import { expectTitles } from "#test/fast-dom-notes.ts";
 
 // Writes one to five notes through the form, one after the other, and finds
 // them in the list, newest first.
@@ -14,19 +14,17 @@ for (let i = 0; i < 50; i++) {
     await renderServer({ url: "/notes" });
 
     for (const title of titles) {
-      await click(page.getByRole("link", { name: "New note" }));
-      await fill(page.getByLabelText("Title"), title);
-      await fill(page.getByLabelText("Content"), `Content of ${title}`);
-      await click(page.getByRole("button", { name: "Create note" }));
-      await expect.element(page.getByText("Note created.")).toBeInTheDocument();
-      await click(page.getByRole("link", { name: "All notes" }));
+      await click(screen.getByRole("link", { name: "New note" }));
+      await fill(screen.getByLabelText("Title"), title);
+      await fill(screen.getByLabelText("Content"), `Content of ${title}`);
+      await click(screen.getByRole("button", { name: "Create note" }));
+      await expect.element(screen.getByText("Note created.")).toBeInTheDocument();
+      await click(screen.getByRole("link", { name: "All notes" }));
     }
 
     await expectTitles([...titles].reverse());
     await expect
-      .element(
-        page.getByText(titles.length === 1 ? "1 note" : `${titles.length} notes`, { exact: true }),
-      )
+      .element(screen.getByText(titles.length === 1 ? "1 note" : `${titles.length} notes`))
       .toBeInTheDocument();
     expect((await storedNotes()).map((note) => note.title)).toEqual(titles);
   });

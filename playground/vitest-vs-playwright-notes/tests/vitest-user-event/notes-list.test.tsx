@@ -1,16 +1,16 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click } from "#test/user-event.ts";
+import { click, expect, screen } from "#test/fast-dom.ts";
 import { createUser, grace, seedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { signedIn } from "#test/vitest.ts";
+import { expectTitles } from "#test/fast-dom-notes.ts";
 
 test("shows an empty state", async () => {
   await signedIn();
   await renderServer({ url: "/notes" });
 
-  await expect.element(page.getByText("No notes yet")).toBeInTheDocument();
-  await expect.element(page.getByText("0 notes")).toBeInTheDocument();
+  await expect.element(screen.getByText("No notes yet")).toBeInTheDocument();
+  await expect.element(screen.getByText("0 notes")).toBeInTheDocument();
 });
 
 test("counts one note", async () => {
@@ -18,7 +18,7 @@ test("counts one note", async () => {
   await seedNotes(user.id, [{ title: "Groceries" }]);
   await renderServer({ url: "/notes" });
 
-  await expect.element(page.getByText("1 note", { exact: true })).toBeInTheDocument();
+  await expect.element(screen.getByText("1 note")).toBeInTheDocument();
 });
 
 test("counts the notes", async () => {
@@ -26,7 +26,7 @@ test("counts the notes", async () => {
   await seedNotes(user.id, [{ title: "Groceries" }, { title: "Reading list" }, { title: "Ideas" }]);
   await renderServer({ url: "/notes" });
 
-  await expect.element(page.getByText("3 notes")).toBeInTheDocument();
+  await expect.element(screen.getByText("3 notes")).toBeInTheDocument();
 });
 
 test("lists the newest note first", async () => {
@@ -54,7 +54,7 @@ test("marks the favorites", async () => {
   await seedNotes(user.id, [{ title: "Groceries", favorite: true }, { title: "Ideas" }]);
   await renderServer({ url: "/notes" });
 
-  await expect.element(page.getByText("★ Favorite")).toBeInTheDocument();
+  await expect.element(screen.getByText("★ Favorite")).toBeInTheDocument();
 });
 
 test("opens a note from the list", async () => {
@@ -62,19 +62,19 @@ test("opens a note from the list", async () => {
   await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk, bread" }]);
   await renderServer({ url: "/notes" });
 
-  await click(page.getByRole("link", { name: "Groceries" }));
+  await click(screen.getByRole("link", { name: "Groceries" }));
 
-  await expect.element(page.getByRole("heading", { name: "Groceries" })).toBeInTheDocument();
-  await expect.element(page.getByText("Oat milk, bread")).toBeInTheDocument();
+  await expect.element(screen.getByRole("heading", { name: "Groceries" })).toBeInTheDocument();
+  await expect.element(screen.getByText("Oat milk, bread")).toBeInTheDocument();
 });
 
 test("opens the form of a new note", async () => {
   await signedIn();
   await renderServer({ url: "/notes" });
 
-  await click(page.getByRole("link", { name: "New note" }));
+  await click(screen.getByRole("link", { name: "New note" }));
 
-  await expect.element(page.getByRole("heading", { name: "New note" })).toBeInTheDocument();
+  await expect.element(screen.getByRole("heading", { name: "New note" })).toBeInTheDocument();
 });
 
 test("lists only the notes of the user", async () => {
@@ -85,14 +85,14 @@ test("lists only the notes of the user", async () => {
   await renderServer({ url: "/notes" });
 
   await expectTitles(["Mine"]);
-  await expect.element(page.getByText("1 note", { exact: true })).toBeInTheDocument();
+  await expect.element(screen.getByText("1 note")).toBeInTheDocument();
 });
 
 test("opens the profile from the header", async () => {
   await signedIn();
   await renderServer({ url: "/notes" });
 
-  await click(page.getByRole("link", { name: "Profile" }));
+  await click(screen.getByRole("link", { name: "Profile" }));
 
-  await expect.element(page.getByRole("heading", { name: "Profile" })).toBeInTheDocument();
+  await expect.element(screen.getByRole("heading", { name: "Profile" })).toBeInTheDocument();
 });

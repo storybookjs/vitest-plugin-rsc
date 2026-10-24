@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click } from "#test/user-event.ts";
+import { click, expect, screen } from "#test/fast-dom.ts";
 import { seedNotes, storedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { signedIn } from "#test/vitest.ts";
+import { expectTitles } from "#test/fast-dom-notes.ts";
 
 const titles = ["One", "Two", "Three", "Four", "Five"];
 
@@ -20,16 +20,14 @@ for (let i = 0; i < 50; i++) {
     await renderServer({ url: "/notes" });
 
     for (const title of doomed) {
-      await click(page.getByRole("link", { name: title, exact: true }));
-      await click(page.getByRole("button", { name: "Delete" }));
-      await expect.element(page.getByText("Note deleted.")).toBeInTheDocument();
+      await click(screen.getByRole("link", { name: title }));
+      await click(screen.getByRole("button", { name: "Delete" }));
+      await expect.element(screen.getByText("Note deleted.")).toBeInTheDocument();
     }
 
     await expectTitles([...left].reverse());
     await expect
-      .element(
-        page.getByText(left.length === 1 ? "1 note" : `${left.length} notes`, { exact: true }),
-      )
+      .element(screen.getByText(left.length === 1 ? "1 note" : `${left.length} notes`))
       .toBeInTheDocument();
     expect((await storedNotes()).map((note) => note.title)).toEqual(left);
   });

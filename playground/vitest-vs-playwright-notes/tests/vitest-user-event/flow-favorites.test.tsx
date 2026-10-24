@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click } from "#test/user-event.ts";
+import { click, expect, screen } from "#test/fast-dom.ts";
 import { seedNotes, storedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { signedIn } from "#test/vitest.ts";
+import { expectTitles } from "#test/fast-dom-notes.ts";
 
 const titles = ["Alpha", "Bravo", "Charlie", "Delta"];
 
@@ -21,10 +21,10 @@ for (let i = 0; i < 50; i++) {
     await renderServer({ url: "/notes" });
 
     for (const title of favorites) {
-      await click(page.getByRole("link", { name: title, exact: true }));
-      await click(page.getByRole("button", { name: "Favorite", exact: true }));
-      await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
-      await click(page.getByRole("link", { name: "All notes" }));
+      await click(screen.getByRole("link", { name: title }));
+      await click(screen.getByRole("button", { name: "Favorite" }));
+      await expect.element(screen.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
+      await click(screen.getByRole("link", { name: "All notes" }));
     }
 
     const newestFirst = [...titles].reverse();

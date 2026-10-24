@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click, fill } from "#test/user-event.ts";
+import { click, expect, fill, screen } from "#test/fast-dom.ts";
 import { seedNotes, storedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { signedIn } from "#test/vitest.ts";
+import { expectTitles } from "#test/fast-dom-notes.ts";
 
 // Edits a note two to four times in a row, from its page, and lists the last
 // title.
@@ -18,13 +18,13 @@ for (let i = 0; i < 50; i++) {
     await renderServer({ url: "/notes/1" });
 
     for (const [k, title] of edits.entries()) {
-      await click(page.getByRole("link", { name: "Edit" }));
-      await fill(page.getByLabelText("Title"), title);
-      await fill(page.getByLabelText("Content"), `Version ${k + 2}`);
-      await click(page.getByRole("button", { name: "Save note" }));
-      await expect.element(page.getByRole("heading", { name: title })).toBeInTheDocument();
+      await click(screen.getByRole("link", { name: "Edit" }));
+      await fill(screen.getByLabelText("Title"), title);
+      await fill(screen.getByLabelText("Content"), `Version ${k + 2}`);
+      await click(screen.getByRole("button", { name: "Save note" }));
+      await expect.element(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     }
-    await click(page.getByRole("link", { name: "All notes" }));
+    await click(screen.getByRole("link", { name: "All notes" }));
 
     await expectTitles(["Other", edits.at(-1)!]);
     expect((await storedNotes())[0]).toEqual({

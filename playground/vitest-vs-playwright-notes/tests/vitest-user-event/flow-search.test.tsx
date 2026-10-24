@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click, fill } from "#test/user-event.ts";
+import { click, expect, fill, screen } from "#test/fast-dom.ts";
 import { seedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { signedIn } from "#test/vitest.ts";
+import { expectTitles } from "#test/fast-dom-notes.ts";
 
 const notes = [
   { title: "Groceries", content: "Oat milk, bread, cheese" },
@@ -31,19 +31,19 @@ for (let i = 0; i < 50; i++) {
     await renderServer({ url: "/notes" });
 
     for (const query of queries) {
-      await fill(page.getByLabelText("Search"), query);
-      await click(page.getByRole("button", { name: "Search" }));
+      await fill(screen.getByLabelText("Search"), query);
+      await click(screen.getByRole("button", { name: "Search" }));
       const found = matches(query);
       // The page of this search: the results of two can be the same.
       const count = found.length === 1 ? "1 result" : `${found.length} results`;
-      await expect.element(page.getByText(`${count} for “${query}”`)).toBeInTheDocument();
+      await expect.element(screen.getByText(`${count} for “${query}”`)).toBeInTheDocument();
       if (found.length) await expectTitles(found);
-      else await expect.element(page.getByText(`No notes match “${query}”.`)).toBeInTheDocument();
+      else await expect.element(screen.getByText(`No notes match “${query}”.`)).toBeInTheDocument();
     }
     const last = matches(queries.at(-1)!);
     if (last.length) {
-      await click(page.getByRole("link", { name: last[0], exact: true }));
-      await expect.element(page.getByRole("heading", { name: last[0] })).toBeInTheDocument();
+      await click(screen.getByRole("link", { name: last[0] }));
+      await expect.element(screen.getByRole("heading", { name: last[0] })).toBeInTheDocument();
     }
   });
 }
