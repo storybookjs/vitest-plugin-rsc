@@ -12,8 +12,8 @@ The workflow `.github/workflows/vitest-vs-playwright.yml` runs Vitest in develop
 ```bash
 # Vitest
 pnpm --dir ../.. --filter vitest-plugin-rsc build
-pnpm exec vitest run --maxWorkers 1
-VITEST_PLUGIN_RSC_BUILD=development pnpm exec vitest run --maxWorkers 1
+pnpm exec vitest run --configLoader native --maxWorkers 1
+VITEST_PLUGIN_RSC_BUILD=development pnpm exec vitest run --configLoader native --maxWorkers 1
 
 # Playwright
 docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
