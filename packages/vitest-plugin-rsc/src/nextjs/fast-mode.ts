@@ -1,10 +1,10 @@
-import type { FastOptions } from "./fast-options.ts";
+import type { Feature } from "./fast-options.ts";
 import { registry } from "./registry.ts";
 
-// The fast mode of `vitestPluginNext({ fast: true })`: what it changes in the
-// page, for a quick feedback loop, like an agent's, at the cost of some of
-// what a test sees of a browser. Each feature has a flag of its own: see
-// `VitestPluginNextOptions.fast`.
+// The speed features of `vitestPluginNext({ mode: "fast" })`: what they
+// change in the page, for a quick feedback loop, like an agent's, at the cost
+// of some of what a test sees of a browser. Each is on or off on its own, by
+// an option of its own that overrides the mode: see `SpeedOptions`.
 //
 // What the dev server answers about the files of a test, like the
 // stylesheets of a route or whether a module changed, does not change while
@@ -15,8 +15,8 @@ import { registry } from "./registry.ts";
 
 const caches = () => (registry.testFileCaches ??= new Set());
 
-/** Whether a feature of fast mode is on in the page. */
-export function fast(feature: keyof FastOptions): boolean {
+/** Whether a speed feature is on in the page. */
+export function fast(feature: Feature): boolean {
   return registry.fast?.[feature] === true;
 }
 

@@ -30,8 +30,8 @@ const transforms: number[] = [];
 
 // oxlint-disable-next-line no-process-env
 const env = process.env;
-/** `fast` or `default`, with `-development` for that build of Next and React. */
-export const benchMode = `${env.VITEST_PLUGIN_RSC_FAST === "1" ? "fast" : "default"}${
+/** `fast` or `fidelity`, with `-development` for that build of Next and React. */
+export const benchMode = `${env.VITEST_PLUGIN_RSC_MODE === "fast" ? "fast" : "fidelity"}${
   env.VITEST_PLUGIN_RSC_BUILD === "development" ? "-development" : ""
 }`;
 const label = env.BENCH_LABEL || benchMode;

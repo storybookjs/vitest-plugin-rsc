@@ -104,7 +104,8 @@ The Vite plugin for Next.js. **It must come after `vitestPluginRSC()`** in `plug
 | `browserModules` | Globs, from the project root, of modules that need to know they're in a browser. See [Server code in the browser](nextjs-guide.md#server-code-in-the-browser).                                                                                                          |
 | `build`          | Experimental. `"production"` runs Next and React like `next start`. Defaults to `"development"`, and to `"production"` for `vite build`. See [Development or production](nextjs-guide.md#development-or-production).                                                    |
 | `host`           | For a host other than Vitest: its `files` and `packages`. See [Another Host Than Vitest](internals/next-routes.md#another-host-than-vitest).                                                                                                                            |
-| `fast`           | Experimental. [Fast mode](nextjs-guide.md#fast-mode), for a quick feedback loop: `true` for all of its features, or an object, `FastOptions`, that turns off the ones it sets to `false`, like `{ crypto: false }`. Defaults to `true` when `VITEST_PLUGIN_RSC_FAST=1`. |
+| `mode`           | Experimental. `"fidelity"`, the default, gives up nothing for speed; `"fast"`, [fast mode](nextjs-guide.md#fast-mode), turns on every speed feature, for a quick feedback loop. Defaults to `VITEST_PLUGIN_RSC_MODE`, `fast` or `fidelity`, else `"fidelity"`. |
+| `keepApp`, `skipPrefetch`, `immediates`, `watchDom`, `cacheDevServer`, `fastCrypto` | Experimental. The speed features, one option each: `true` turns one on, `false` off, whatever the mode, like `{ mode: "fast", fastCrypto: false }` or `{ watchDom: true }`. Each defaults to `true` in fast mode and `false` in fidelity mode. See [Fast mode](nextjs-guide.md#fast-mode). |
 
 ## For hosts other than Vitest
 

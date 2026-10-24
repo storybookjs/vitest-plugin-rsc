@@ -134,7 +134,7 @@ let current: Page | undefined;
 
 type Client = typeof import("./client.tsx");
 
-// Fast mode's app (`keepApp`): the one the first page of a test file started,
+// The kept app of `keepApp`: the one the first page of a test file started,
 // which renders the pages after it in its root, from the Flight payload in
 // their document, without a module graph, a root or Next's entry of their
 // own: see `renderAgain()` in client.tsx. A page that the app loads itself
@@ -212,7 +212,7 @@ type Opening = {
   /**
    * Renders the page in the app of the page before, if it is kept, and else
    * keeps the app it starts for the pages after it: see `kept`. A page of
-   * fast mode without HTML of the server.
+   * `keepApp` without HTML of the server.
    */
   inKeptApp?: boolean;
 };
@@ -455,7 +455,7 @@ async function startInKeptApp(page: Page, client: Client): Promise<void> {
 }
 
 // Whether the dev server still has the modules that were fetched: before
-// every page load, with fast mode's `cacheDevServer` once per test file.
+// every page load, with the speed feature `cacheDevServer` once per test file.
 const moduleChecks = new Map<string, Promise<void>>();
 
 // The request of a page load, with the modules of the server and of the

@@ -3,10 +3,10 @@ import { page } from "vitest/browser";
 import { signedInAs } from "#test/auth.ts";
 import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
-// What fast mode (`fast` of `vitestPluginNext()`) keeps of what a test sees,
+// What fast mode (`mode: "fast"` of `vitestPluginNext()`) keeps of what a test sees,
 // where the pages of a test file render in one app: the project
 // nextjs-notes-demo-fast runs the suite in it. These hold with page loads
-// too, as nextjs-notes-demo-browser runs them. In order: each test leans on
+// too, in fidelity mode, as nextjs-notes-demo-browser runs them. In order: each test leans on
 // the page of the one before.
 
 test("types a title into the form", async () => {

@@ -62,21 +62,12 @@ The e2e demo does this, see `playground/nextjs-e2e-demo/stand-ins/`.
 
 ## Fast crypto
 
-A password hash is slow on purpose: PBKDF2 with OWASP's 600,000 iterations, bcrypt at cost 12, or the scrypt that Better Auth hashes with, takes a tenth of a second to a second, more in a browser's JavaScript than in Node.js. A test that signs up or signs in a user pays that every time, for a hash that only an attacker would have to compute. In [fast mode](nextjs-guide.md#fast-mode), with its feature `crypto`, the plugin gives the server layers and the test files stand-ins that cost microseconds:
+A password hash is slow on purpose: PBKDF2 with OWASP's 600,000 iterations, bcrypt at cost 12, or the scrypt that Better Auth hashes with, takes a tenth of a second to a second, more in a browser's JavaScript than in Node.js. A test that signs up or signs in a user pays that every time, for a hash that only an attacker would have to compute. In [fast mode](nextjs-guide.md#fast-mode), or with the option `fastCrypto`, the plugin gives the server layers and the test files stand-ins that cost microseconds:
 
 ```ts
-vitestPluginNext({ fast: true }); // fast mode, with the stand-ins
-vitestPluginNext({ fast: { crypto: false } }); // fast mode, with the real hashes
-// The stand-ins alone, without the other features of fast mode.
-vitestPluginNext({
-  fast: {
-    keepApp: false,
-    skipPrefetch: false,
-    immediates: false,
-    watchDom: false,
-    cacheDevServer: false,
-  },
-});
+vitestPluginNext({ mode: "fast" }); // fast mode, with the stand-ins
+vitestPluginNext({ mode: "fast", fastCrypto: false }); // fast mode, with the real hashes
+vitestPluginNext({ fastCrypto: true }); // fidelity mode, with the stand-ins alone
 ```
 
 | What                                                                       | The stand-in                                                                                    |
@@ -89,14 +80,14 @@ vitestPluginNext({
 
 Your code and its packages run as they are: the server layers resolve their imports of these packages and of `node:crypto` to the stand-ins, and the plugin's setup file makes PBKDF2 of the tab's `crypto.subtle` one. The test files get the same, so a user that a test creates with your app's own hash function signs in through your app's form.
 
-Each stand-in keeps the contract of what it stands in for: the same API, and a result of the same shape, length and encoding. The result is the same for the same password, salt and work factor, and differs when any of them differs, so a wrong password doesn't verify. It is one SHA-256 over all of that, which is no password hash: an attacker would try a billion a second. So the plugin gives it only to a test run of Vitest. A static build, `vite build`, and a dev server hash for real, in fast mode or not.
+Each stand-in keeps the contract of what it stands in for: the same API, and a result of the same shape, length and encoding. The result is the same for the same password, salt and work factor, and differs when any of them differs, so a wrong password doesn't verify. It is one SHA-256 over all of that, which is no password hash: an attacker would try a billion a second. So the plugin gives it only to a test run of Vitest. A static build, `vite build`, and a dev server hash for real, in either mode.
 
 A hash made by the real algorithm doesn't verify under a stand-in, and a stand-in's doesn't verify under the real one. That matters for a fixture with a hash that was computed ahead, or a dump of a real database:
 
 - The stand-ins of bcrypt and Argon2 mark their strings, with `fastHash` at the start of the hash. When one gets a string it didn't make, it throws an error that says so, instead of answering `false`.
 - A key derivation, PBKDF2 or scrypt, returns bytes that your code compares itself. It can't tell, so the comparison fails, as for a wrong password.
 
-Make such a hash in the test, with your app's own function, as the user it's for. Or pass `fast: { crypto: false }` for the project with that fixture.
+Make such a hash in the test, with your app's own function, as the user it's for. Or pass `fastCrypto: false` for the project with that fixture.
 
 ## What can't run in a browser
 

@@ -185,9 +185,9 @@ test("sends no Server Action of a page once it is left", async () => {
   expect(consoleError).not.toHaveBeenCalled();
 });
 
-// Also in fast mode (`VITEST_PLUGIN_RSC_FAST=1`), where the next page renders
+// Also in fast mode (`VITEST_PLUGIN_RSC_MODE=fast`), where the next page renders
 // in the app of this one: its router's requests fail as the page is left,
-// and a Server Action of the page hears nothing, as in the default mode. The
+// and a Server Action of the page hears nothing, as in fidelity mode. The
 // button does not wait for the action, which would reject unhandled.
 test("hears nothing of a Server Action of a page that the test leaves for another page", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });

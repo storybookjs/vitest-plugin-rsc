@@ -228,7 +228,7 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
 }
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
 
-// Immediates of fast mode's `immediates`: a task each, by a message of one
+// Immediates of the speed feature `immediates`: a task each, by a message of one
 // channel, which no browser delays as it does a timeout. Each by a symbol of
 // its own, which is no id of a timer.
 const immediates = new Map<symbol, () => void>();
@@ -276,7 +276,7 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
   // edge with `setTimeout(work, 0)` between its steps, where on Node.js it
   // takes `setImmediate`: a browser waits at least 4 ms for a timeout that a
   // timeout started, five deep, so a render of a page waited longer than it
-  // worked. Fast mode's `immediates` runs a timeout of no delay as an
+  // worked. The speed feature `immediates` runs a timeout of no delay as an
   // immediate, unless the test made the timers fake.
   registry.setTimeout = (callback, delay, ...args) =>
     registry.fast?.immediates &&

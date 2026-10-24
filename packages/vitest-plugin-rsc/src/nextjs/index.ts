@@ -223,10 +223,10 @@ export type RenderServerOptions = RequestOptions & {
    * test no longer sees the HTML of the server, or a mismatch between it and
    * the browser.
    *
-   * Defaults to `true`, and to `false` in fast mode (`fast.keepApp` of
-   * `vitestPluginNext()`), where a page without HTML of the server renders
-   * in the app of the page before it in the test file: see
-   * `VitestPluginNextOptions.fast`. A test that asserts on the HTML of the
+   * Defaults to `true`, and to `false` with the speed feature `keepApp` of
+   * `vitestPluginNext()` (on in mode `"fast"`), where a page without HTML of
+   * the server renders in the app of the page before it in the test file:
+   * see `VitestPluginNextOptions.mode`. A test that asserts on the HTML of the
    * server passes `ssr: true`, and gets a page load of its own.
    */
   ssr?: boolean;
@@ -385,7 +385,7 @@ export async function renderServer(
           "`renderServer(<Page />, { url })`.",
       );
     }
-    // Fast mode renders a page without HTML in the app of the page before.
+    // `keepApp` renders a page without HTML in the app of the page before.
     const ssr = first.ssr ?? !fast("keepApp");
     const opened = { pathname, proxy: first.proxy ?? true, ssr };
     return {

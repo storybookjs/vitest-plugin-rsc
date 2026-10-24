@@ -1,4 +1,4 @@
-// `fast.crypto` of `vitestPluginNext()`: what the server layers import to
+// The speed feature `fastCrypto` of `vitestPluginNext()`: what the server layers import to
 // hash a password or derive a key, as a module of stand-ins that cost
 // microseconds, src/fast-crypto/index.ts. The app's code and its packages run as they are:
 // the layer resolves their import of `bcryptjs` or of `node:crypto` to a

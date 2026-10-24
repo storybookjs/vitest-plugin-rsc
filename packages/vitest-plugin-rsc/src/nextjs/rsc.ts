@@ -185,7 +185,7 @@ if (directory) {
     });
   };
 } else {
-  // Every request of a page asks: with fast mode's `cacheDevServer` once
+  // Every request of a page asks: with the speed feature `cacheDevServer` once
   // per test file.
   const stylesheets = new Map<string, Promise<Stylesheets>>();
   registry.loadStylesheets = (entry, inline, files) =>
