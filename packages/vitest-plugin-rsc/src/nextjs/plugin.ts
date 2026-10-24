@@ -1190,6 +1190,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
 
         return {
           ...jsx,
+          // With the stand-ins of `fastCrypto` the server layers pre-bundle
+          // other files than without (see `optimizeDeps` above), and Vite
+          // keeps one pre-bundle per directory, so those get a directory of
+          // their own: a project that one run has in fast mode and the next
+          // in fidelity mode, by `VITEST_PLUGIN_RSC_MODE`, bundles nothing
+          // again. Vitest puts the cache of a project in
+          // `<cacheDir>/vitest/<project>`, with `node_modules/.vite` as its
+          // default too. Storybook's Vitest addon sets a `cacheDir` of its own
+          // after this one: there the define above tells the two apart.
+          ...(speedFeatures.fastCrypto && {
+            cacheDir: path.join(config.cacheDir || "node_modules/.vite", "fast-crypto"),
+          }),
           // Vite bundles the CSS of the app, with Next's PostCSS plugins and
           // Next's class names of a CSS module.
           css: cssOptions,

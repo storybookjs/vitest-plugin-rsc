@@ -805,21 +805,35 @@ test("takes the mode from `VITEST_PLUGIN_RSC_MODE` in a test run of Vitest, when
 });
 
 test("gives the page the speed features, with `fastCrypto` in a test run of Vitest only, never in a build", async () => {
-  const fastOf = async (command: "serve" | "build") => {
+  const fastOf = async (command: "serve" | "build", cacheDir?: string) => {
     const plugin = vitestPluginNext({ mode: "fast" }).find(
       ({ name }) => name === "vitest-plugin-rsc:next",
     )!;
-    await (plugin.config as ConfigHook<unknown>)({ root }, { command });
+    const config = await (plugin.config as ConfigHook<{ cacheDir?: string }>)(
+      { root, cacheDir },
+      { command },
+    );
     const load = plugin.load as (this: object, id: string) => Promise<string>;
     const manifest = await load.call(
       { environment: { mode: command === "build" ? "build" : "dev" } },
       "\0virtual:vitest-plugin-rsc/next-manifest",
     );
-    return JSON.parse(manifest.match(/^export const speedFeatures = (.*);$/m)![1]!);
+    const features = JSON.parse(manifest.match(/^export const speedFeatures = (.*);$/m)![1]!);
+    return { ...features, cacheDir: config.cacheDir };
   };
-  // Vitest runs this test file: `VITEST` is set.
-  expect(await fastOf("serve")).toMatchObject({ keepApp: true, fastCrypto: true });
-  expect(await fastOf("build")).toMatchObject({ keepApp: true, fastCrypto: false });
+  // Vitest runs this test file: `VITEST` is set. With `fastCrypto` the
+  // pre-bundles have a directory of their own, in the user's.
+  expect(await fastOf("serve")).toMatchObject({
+    keepApp: true,
+    fastCrypto: true,
+    cacheDir: path.join("node_modules/.vite", "fast-crypto"),
+  });
+  expect(await fastOf("serve", "/cache")).toMatchObject({ cacheDir: "/cache/fast-crypto" });
+  expect(await fastOf("build")).toMatchObject({
+    keepApp: true,
+    fastCrypto: false,
+    cacheDir: undefined,
+  });
 });
 
 test("gives the server layers the package's module of Node.js, after Next's aliases and the bridges", async () => {
