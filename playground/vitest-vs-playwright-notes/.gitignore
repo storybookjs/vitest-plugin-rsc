@@ -11,3 +11,5 @@ AGENTS.md
 /profiles/
 /traces/
 /timings/
+# The benchmark of primitives, vitest.bench.config.ts
+/bench-results/
