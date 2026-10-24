@@ -1,4 +1,4 @@
-import { normalizePath, transformWithOxc, type Plugin } from "vite";
+import { normalizePath, transformWithOxc, type Environment, type Plugin } from "vite";
 import { ssrImportMetaKey } from "vite/module-runner";
 import { timerNames, timersKey } from "../timers.ts";
 import { fileOfModule } from "./client-files.ts";
@@ -14,17 +14,26 @@ import { fileOfModule } from "./client-files.ts";
 // of a pre-bundled CommonJS package have none, and the runner evaluates
 // every module of the layer with that name. Not a file of the host, like a
 // test file with `"use client"`, which the layer evaluates too: its timers
-// are the host's, which a spy of the test is on.
+// are the host's, which a spy of the test is on. A pre-bundled dependency
+// gets the rewrite from the layer's optimizer, which has oxc's `define` too
+// (`pageTimersDefine`): once, into the bundle Vite keeps across runs, where
+// the `define` is part of the options Vite keys the bundle on. So the dev
+// server, which would compile every pre-bundled chunk again at every start,
+// leaves those.
 
-const define = Object.fromEntries(
+/** The rewrite, for the `transform.define` of the browser layer's optimizer. */
+export const pageTimersDefine: Record<string, string> = Object.fromEntries(
   timerNames.map((name) => [name, `${ssrImportMetaKey}.${timersKey}.${name}`]),
 );
+
+const isOptimizedDepFile = (environment: Environment, id: string) =>
+  "depsOptimizer" in environment && !!environment.depsOptimizer?.isOptimizedDepFile(id);
 
 const mentionsTimer = new RegExp(`\\b(?:${timerNames.join("|")})\\b`);
 
 /**
  * For the modules of the browser layer, by the name of its environment, but
- * those of a file that `isHostFile()`.
+ * those of a file that `isHostFile()` and those its optimizer bundled.
  */
 export function pageTimersPlugin(
   environment: string,
@@ -32,16 +41,20 @@ export function pageTimersPlugin(
 ): Plugin {
   return {
     name: "vitest-plugin-rsc:next-page-timers",
-    // JavaScript by then, also a pre-bundled dependency.
+    // JavaScript by then.
     enforce: "post",
     applyToEnvironment: ({ name }) => name === environment,
     transform: {
       filter: { code: mentionsTimer },
       async handler(code, id) {
+        if (isOptimizedDepFile(this.environment, id)) return;
         const file = fileOfModule(id);
         if (file !== undefined && isHostFile(file)) return;
         try {
-          return await transformWithOxc(code, normalizePath(id), { lang: "js", define });
+          return await transformWithOxc(code, normalizePath(id), {
+            lang: "js",
+            define: pageTimersDefine,
+          });
         } catch (error) {
           const reason = String(error instanceof Error ? error.message : error);
           this.warn(
