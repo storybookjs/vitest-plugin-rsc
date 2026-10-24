@@ -67,10 +67,13 @@ test("loads the page that the app navigates to without its router, after a page 
 
 test("opens the page that the request of a page redirects to, from its HTML", async () => {
   // Signed out: the page sends the browser to sign in.
-  const { errors } = await renderServer({ url: "/notes/new" });
+  const { errors, response } = await renderServer({ url: "/notes/new" });
 
   await expect.element(page.getByLabelText("Email")).toBeInTheDocument();
   expect(window.location.pathname).toBe("/auth/sign-in");
+  // The response of the document, also in fast mode, where a page that
+  // redirects as it renders loads as a document after all.
+  expect(response.headers.get("content-type")).toMatch(/^text\/html\b/);
   expect(errors).toEqual([]);
 });
 

@@ -251,7 +251,13 @@ export function handleRequest(
 // The timing of a request for `requestTimings` of the registry, as it reaches the server.
 function timingOf(request: ServerRequest): RequestTiming {
   const { headers } = request;
-  const kind = headers.has("next-action") ? "action" : headers.has("rsc") ? "flight" : "page";
+  // A request of Flight without the tree of a router is a page load of the
+  // speed feature `flightLoads`, unless it is a prefetch of the router, which
+  // has none either.
+  const flight =
+    headers.has("rsc") &&
+    (headers.has("next-router-state-tree") || headers.has("next-router-prefetch"));
+  const kind = headers.has("next-action") ? "action" : flight ? "flight" : "page";
   return { method: request.method, url: request.url, kind, queued: performance.now() };
 }
 

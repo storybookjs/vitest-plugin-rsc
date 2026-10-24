@@ -392,7 +392,9 @@ test("rejects a page load that the test leaves before the server has responded",
 test("does not report the render of a page that the test left before it had its data", async () => {
   // Next reports the render that goes on without its request.
   consoleError.mockImplementation(() => {});
-  await renderServer({ url: "/" });
+  // A document's render that outlives its request: a page with HTML is not of
+  // the kept app, so it loads the next page as a document in either mode.
+  await renderServer({ url: "/", ssr: true });
   let resolveNotes = (_: Note[]) => {};
   const listNotes = vi
     .spyOn(db, "listNotes")
