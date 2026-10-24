@@ -195,7 +195,7 @@ jobs:
               values = [float(r[key]) for r in rows if r["ref"] == ref and r[key] != "nan"]
               return statistics.median(values) if values else float("nan")
           import os
-          print(f"### A/B copy ${{ matrix.copy }}: {os.environ['APP']} {os.environ['TESTS']}, {'fast mode' if os.environ.get('VITEST_PLUGIN_RSC_FAST') == '1' else 'default mode'}, {os.environ['VITEST_PLUGIN_RSC_BUILD']}, Vitest on {os.environ['RUNTIME']}, {len(rows) // max(len(refs), 1)} rounds\n")
+          print(f"### A/B copy ${{ matrix.copy }}: {os.environ['APP']} {os.environ['TESTS']}, {'fast mode' if os.environ.get('VITEST_PLUGIN_RSC_FAST') == '1' else 'default mode'}, {os.environ['VITEST_PLUGIN_RSC_BUILD']}, Vitest on {'Bun' if os.environ['RUNTIME'] == 'bun' else 'Node.js'}, {len(rows) // max(len(refs), 1)} rounds\n")
           print("| Ref | Duration, median s | Files' time, median s | vs first | Rounds (Duration s) | Tests |")
           print("| --- | ---: | ---: | ---: | --- | --- |")
           base = med(refs[0], "files_ms")

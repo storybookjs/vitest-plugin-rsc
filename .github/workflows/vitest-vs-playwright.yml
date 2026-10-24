@@ -27,7 +27,7 @@ defaults:
 
 jobs:
   vitest:
-    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}
+    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}${{ matrix.bun && ', on Bun' || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -35,12 +35,15 @@ jobs:
         # tests/vitest/ clicks and fills with Vitest's commands, which
         # Playwright carries out; tests/vitest-user-event/ with Testing
         # Library's user-event, in the page. `fast` runs them in the plugin's
-        # fast mode (`VITEST_PLUGIN_RSC_FAST=1`): see its README.md.
+        # fast mode (`VITEST_PLUGIN_RSC_FAST=1`): see its README.md. `bun`
+        # runs Vitest on Bun, `bun --bun vitest`, in production only: the
+        # start of a run on Bun, next to the same tests on Node.js.
         include:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, fast: true }
+          - { app: vitest-vs-playwright-notes, tests: vitest-user-event, fast: true, bun: true }
     defaults:
       run:
         working-directory: playground/${{ matrix.app }}
@@ -53,19 +56,23 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        if: matrix.bun
+        with:
+          bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm --filter vitest-plugin-rsc build
       - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          ${{ matrix.bun && 'bun --bun vitest' || 'pnpm exec vitest' }} run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
+            echo "### Vitest${{ matrix.bun && ' on Bun' || '' }}, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -74,6 +81,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "VITEST_SECONDS_${{ matrix.fast && 'FAST' || 'DEFAULT' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
       - name: Run the tests, Next and React in development
+        if: ${{ !matrix.bun }}
         env:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
@@ -96,7 +104,7 @@ jobs:
       # same runner: the ratio of the two is what fast mode gains, which the
       # times of two runners, a minute apart and of other machines, hide.
       - name: Run the tests in the default mode, Next and React in production
-        if: matrix.fast
+        if: matrix.fast && !matrix.bun
         env:
           VITEST_PLUGIN_RSC_FAST: ""
         run: |
@@ -116,7 +124,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "VITEST_SECONDS_DEFAULT_PRODUCTION=$duration" >> "$GITHUB_ENV"
       - name: Run the tests in the default mode, Next and React in development
-        if: matrix.fast
+        if: matrix.fast && !matrix.bun
         env:
           VITEST_PLUGIN_RSC_FAST: ""
           VITEST_PLUGIN_RSC_BUILD: development
@@ -137,7 +145,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "VITEST_SECONDS_DEFAULT_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
       - name: Compare the default mode with fast mode
-        if: matrix.fast
+        if: matrix.fast && !matrix.bun
         run: |
           {
             echo "### Vitest, ${{ matrix.app }}, ${{ matrix.tests }}, default mode and fast mode on one runner"
