@@ -35,6 +35,7 @@
     "@vitest/browser-playwright": "5.0.5",
     "bcryptjs": "^3.0.3",
     "better-auth": "1.6.10",
+    "dom-locators": "workspace:*",
     "hash-wasm": "^4.12.0",
     "playwright": "^1.64.0",
     "typescript": "^6.0.3",

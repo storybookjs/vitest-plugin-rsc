@@ -22,10 +22,11 @@ export default defineConfig({
     vitestPluginNext({
       // oxlint-disable-next-line no-process-env
       build: (process.env.VITEST_PLUGIN_RSC_BUILD || "production") as NextBuild,
-      // Testing Library's user-event, of tests/vitest-user-event/, and the
-      // DOM library it drives: the browser's, the page's own modules, as
-      // `vitest` is. Any other package is server code in the page.
-      host: { packages: ["@testing-library/user-event", "@testing-library/dom"] },
+      // Testing Library's user-event, of tests/vitest-user-event/, the DOM
+      // library it drives, and dom-locators, of tests/dom-locators/: the
+      // browser's, the page's own modules, as `vitest` is. Any other
+      // package is server code in the page.
+      host: { packages: ["@testing-library/user-event", "@testing-library/dom", "dom-locators"] },
     }),
   ],
   test: {
@@ -33,10 +34,12 @@ export default defineConfig({
     // Every test with its time, where the default lists only the slow ones.
     reporters: ["tree"],
     // tests/vitest/ acts with Playwright, tests/vitest-user-event/ with Testing
-    // Library in the page: a run picks one with a filter, as the workflow does.
+    // Library in the page, tests/dom-locators/ with dom-locators in the page:
+    // a run picks one with a filter, as the workflow does.
     include: [
       "tests/vitest/*.test.tsx",
       "tests/vitest-user-event/*.test.tsx",
+      "tests/dom-locators/*.test.tsx",
       "tests/zz-*/*.test.tsx",
     ],
     browser: {

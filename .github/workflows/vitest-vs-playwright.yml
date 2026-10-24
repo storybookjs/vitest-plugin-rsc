@@ -34,14 +34,17 @@ jobs:
       matrix:
         # tests/vitest/ clicks and fills with Vitest's commands, which
         # Playwright carries out; tests/vitest-user-event/ with Testing
-        # Library's user-event, in the page. `mode: fast` runs them in the
-        # plugin's fast mode (`VITEST_PLUGIN_RSC_MODE=fast`): see its README.md.
-        # `bun` runs Vitest on Bun, `bun --bun vitest`, in production only:
-        # the start of a run on Bun, next to the same tests on Node.js.
+        # Library's user-event, in the page; tests/dom-locators/ queries, waits
+        # and acts with dom-locators, in the page. `mode: fast` runs them in
+        # the plugin's fast mode (`VITEST_PLUGIN_RSC_MODE=fast`): see its
+        # README.md. `bun` runs Vitest on Bun, `bun --bun vitest`, in
+        # production only: the start of a run on Bun, next to the same tests
+        # on Node.js.
         include:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event }
+          - { app: vitest-vs-playwright-notes, tests: dom-locators }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast, bun: true }
     defaults:
