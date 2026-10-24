@@ -39,6 +39,29 @@ export type SpeedOptions = {
    */
   keepApp?: boolean;
   /**
+   * Experimental. A page of the kept app, one of `renderServer({ url })` or
+   * one that the app loads itself with a `GET`, is requested as Next's
+   * router requests a page, with `RSC: 1`: the server renders no HTML for
+   * it, and the page parses no document. Of the kept app only: without
+   * `keepApp` it changes nothing.
+   *
+   * Gives up: the `response` of `renderServer()` is the one of Flight,
+   * `text/x-component`, not the document's. The head has no
+   * `<meta name="next-size-adjust">` of `next/font`, and no preload of a
+   * font that no page before it preloaded. A route handler on the way, like
+   * one that redirects to the page, sees `RSC: 1` in its request. A page
+   * that the test leaves while it loads stops rendering on the server, where
+   * the render of a document would go on: a test of a render that outlives
+   * its page passes `ssr: true`. A page whose render redirects, calls
+   * `notFound()` or throws loads as a document after all, with the status
+   * and the response of that document: the server handles it twice, its
+   * proxy, its render and its data, and the request of the document has the
+   * cookies that the response of Flight set.
+   *
+   * Default: `true` in fast mode, `false` in fidelity mode.
+   */
+  flightLoads?: boolean;
+  /**
    * Experimental. Next's `<Link>` and `<Form>` prefetch nothing.
    *
    * Gives up: a test sees no prefetch: no request of one, and no route
@@ -108,6 +131,7 @@ export type SpeedFeatures = Required<SpeedOptions>;
 // Every speed feature: the type has the compiler list each one here.
 const featureSet: Record<SpeedFeature, true> = {
   keepApp: true,
+  flightLoads: true,
   skipPrefetch: true,
   immediates: true,
   watchDom: true,

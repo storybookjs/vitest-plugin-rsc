@@ -13,7 +13,7 @@ import {
   type HistoryEntry,
 } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
-import { oncePerTestFile } from "./speed-features.ts";
+import { oncePerTestFile, speedFeature } from "./speed-features.ts";
 import { noRouter } from "./host-document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
@@ -230,7 +230,14 @@ type Opening = {
 // The document of a page, which a navigation has before it loads the page:
 // see `navigate()`. `after` is the entry of the history that the page load
 // adds its own after, for a navigation that adds one.
-type PageDocument = { response: Response; html: string; after?: HistoryEntry };
+// `payload` is the Flight payload of a page that loaded without a document:
+// see `requestFlight()`.
+type PageDocument = {
+  response: Response;
+  html: string;
+  after?: HistoryEntry;
+  payload?: Uint8Array;
+};
 
 export async function loadPage(
   url: URL,
@@ -321,8 +328,17 @@ async function openPage(
     }
   };
 
+  // A page of the kept app that the test opens, with the speed feature
+  // `flightLoads`: the request of its Flight payload alone, which Next's
+  // server renders without HTML. See `requestFlight()`.
+  const flight =
+    page.inKeptApp && kept !== undefined && !("html" in request) && speedFeature("flightLoads")
+      ? await requestFlight(url, request, { from, navigation: "test" }, signal)
+      : undefined;
+  superseded();
   // The test's request, or the document that a navigation has: see `navigate()`.
-  const { response, html, after } = "html" in request ? request : await requestDocument(request);
+  const { response, html, after, payload } =
+    flight ?? ("html" in request ? request : await requestDocument(request));
   superseded();
   // The response is the node's when it comes from the node's route and is not
   // a document. A node that redirects gets the page it redirects to, and one
@@ -347,7 +363,7 @@ async function openPage(
   // A page of the kept app renders in it, from the Flight payload of its
   // document: the empty one of `ssr: false`.
   if (inKeptApp && kept) {
-    await startInKeptApp(page, kept.client);
+    await startInKeptApp(page, kept.client, payload);
     superseded();
     return response;
   }
@@ -452,11 +468,11 @@ function dispatchPageTransition(type: "pagehide" | "pageshow"): void {
 
 // Renders the page in the kept app, from the Flight payload in its document:
 // see `renderAgain()` in client.tsx.
-async function startInKeptApp(page: Page, client: Client): Promise<void> {
+async function startInKeptApp(page: Page, client: Client, payload?: Uint8Array): Promise<void> {
   const { signal } = page;
   dispatchPageTransition("pageshow");
   const started = client
-    .renderAgain(signal, page.errors)
+    .renderAgain(signal, page.errors, payload)
     .then(({ unmount }) => page.defer(unmount));
   page.starts(started, () => {});
   setOpenPage(signal);
@@ -485,6 +501,69 @@ async function sendPageLoad(
   // Not the browser's Request, which drops headers of the test's, like
   // `referer` and `origin`.
   return sendRequest(new registry.Request(url, { ...init, signal }), sending);
+}
+
+// The document of a page of the kept app that loads by its Flight payload:
+// what Next's renderer renders for a page without HTML (compat/patches.ts),
+// without its scripts, which carry the payload that came on its own.
+const flightDocument = '<!DOCTYPE html><html id="__next_error__"><head></head><body></body></html>';
+
+// The speed feature `flightLoads`: a page of the kept app, which renders from
+// its Flight payload alone, loads with the request Next's router sends for one,
+// `RSC: 1`, without the tree of a router, so Next renders the whole tree, from
+// the root layout. Next's server renders no HTML for it, so there is no
+// document to stream, parse and run, and no payload in it to read back. The
+// proxy gets the request as for a document: Next takes the headers of Flight
+// off a request to the middleware. The payload is there in full before the app
+// renders it, as the payload of a document is. A response that is not Flight,
+// like a route handler's, or an error page of HTML, is read as a document is.
+// Undefined for a page whose render threw: see `hasErrorRow()`.
+async function requestFlight(
+  url: URL,
+  init: RequestInit,
+  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation">,
+  signal: AbortSignal,
+): Promise<PageDocument | undefined> {
+  const headers = new Headers(init.headers);
+  headers.set("rsc", "1");
+  try {
+    const response = await sendPageLoad(url, { ...init, headers }, sending, signal);
+    signal.throwIfAborted();
+    if (!isFlight(response)) {
+      return await readDocument(
+        response,
+        (what) =>
+          `${what}, which is not a page to open. ` +
+          `Use handleRequest() to assert on the response itself.`,
+      );
+    }
+    return await flightOf(response);
+  } catch (error) {
+    signal.throwIfAborted();
+    throw error;
+  }
+}
+
+const isFlight = (response: Response) =>
+  /^text\/x-component\b/i.test(response.headers.get("content-type") ?? "");
+
+// The page of a response of Flight, read in full, unless its render threw:
+// a `redirect()` or a `notFound()` loads as a document after all. Next
+// answers the document of such a page with the status of the error, a
+// redirect with its `Location`, where the request of Flight gets 200 and the
+// error in the payload.
+async function flightOf(response: Response): Promise<PageDocument | undefined> {
+  const payload = new Uint8Array(await response.arrayBuffer());
+  if (hasErrorRow(payload)) return undefined;
+  return { response, html: flightDocument, payload };
+}
+
+// Whether a Flight payload has an error in it: a row of React's for one,
+// `<id>:E{...}`, on a line of its own. Text of the page in a row of text,
+// which is not escaped, can look like one too: that page loads as a document.
+const errorRow = /(?:^|\n)[0-9a-f]+:E\{/;
+function hasErrorRow(payload: Uint8Array): boolean {
+  return errorRow.test(new TextDecoder().decode(payload));
 }
 
 // The whole document, then the app: what a browser has once the page has
@@ -540,11 +619,22 @@ export async function navigate(
     signals.push(navigating.signal);
   }
   const signal = AbortSignal.any(signals);
-  let loaded: PageDocument;
-  try {
-    const response = await sendPageLoad(
+  // A page of the kept app loads the next one of it by its Flight payload, with
+  // the speed feature `flightLoads`: see `requestFlight()`. A `GET` only, which
+  // loads as a document after all if its render threw. A `<form>` that posts
+  // sends its body once.
+  const byFlight =
+    downloadRequest === null &&
+    page?.inKeptApp === true &&
+    kept !== undefined &&
+    speedFeature("flightLoads") &&
+    (init.method ?? "GET").toUpperCase() === "GET";
+  const send = (flight: boolean) => {
+    const headers = new Headers(init.headers);
+    if (flight) headers.set("rsc", "1");
+    return sendPageLoad(
       url,
-      init,
+      { ...init, headers },
       {
         from,
         navigation: "app",
@@ -558,31 +648,48 @@ export async function navigate(
       },
       signal,
     );
+  };
+  let loaded: PageDocument | undefined;
+  try {
+    let response = await send(byFlight);
     signal.throwIfAborted();
-    const name = downloadName(response, downloadRequest);
-    if (name !== undefined) return await download(response, name, signal);
-    if (!page) {
-      await response.body?.cancel();
-      throw noRouter(url);
+    if (byFlight && isFlight(response)) {
+      loaded = await flightOf(response);
+      signal.throwIfAborted();
+      if (!loaded) {
+        response = await send(false);
+        signal.throwIfAborted();
+      }
     }
-    loaded = await readDocument(
-      response,
-      (what) =>
-        `the app navigated to a URL that is not a page: ${what}. A browser would show it in ` +
-        `place of the app, which a test cannot do. A route handler that answers with a file ` +
-        `to save says so with Content-Disposition: attachment, or a link with download.`,
-    );
-    signal.throwIfAborted();
+    if (!loaded) {
+      const name = downloadName(response, downloadRequest);
+      if (name !== undefined) return await download(response, name, signal);
+      if (!page) {
+        await response.body?.cancel();
+        throw noRouter(url);
+      }
+      loaded = await readDocument(
+        response,
+        (what) =>
+          `the app navigated to a URL that is not a page: ${what}. A browser would show it in ` +
+          `place of the app, which a test cannot do. A route handler that answers with a file ` +
+          `to save says so with Content-Disposition: attachment, or a link with download.`,
+      );
+      signal.throwIfAborted();
+    }
   } catch (error) {
     // Leaving the page cuts off the answer.
     signal.throwIfAborted();
     throw error;
   }
-  // The entry of the page that is left, as its app leaves it: leaving the
-  // page puts the URL of the document in it.
-  const after = push ? { url: window.location.href, state: window.history.state } : undefined;
-  await loadPage(url, { ...loaded, after }, from);
+  await loadPage(url, { ...loaded, after: entryOf(push) }, from);
 }
+
+// The entry of the page that is left, as its app leaves it: leaving the
+// page puts the URL of the document in it. None for a page load that takes
+// the entry of the page.
+const entryOf = (push: boolean): HistoryEntry | undefined =>
+  push ? { url: window.location.href, state: window.history.state } : undefined;
 
 // One at a time: a page that is being left is left before the next one is.
 // Also with no page: what a page load leaves in the document, the server

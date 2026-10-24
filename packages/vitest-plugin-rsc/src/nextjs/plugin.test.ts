@@ -755,6 +755,7 @@ test("takes no other build", () => {
 test("turns every speed feature off in fidelity mode, the default, and on in fast mode", () => {
   const fast = {
     keepApp: true,
+    flightLoads: true,
     skipPrefetch: true,
     immediates: true,
     watchDom: true,
