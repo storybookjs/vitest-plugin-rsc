@@ -142,7 +142,7 @@ jobs:
           if [ "$PROFILE" = timings ]; then export VITEST_PROFILE=timings; fi
           # A warm-up of each ref: the dependency optimizer and the caches.
           for i in $(seq 1 "$count"); do
-            (cd "../wt$i/playground/$APP" && pnpm exec vitest run --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
+            (cd "../wt$i/playground/$APP" && pnpm exec vitest run --configLoader native --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
           done
           echo -e "round\tref\tduration_s\tfiles_ms\ttests" > .bench-ab/results.tsv
           for r in $(seq 1 "$REPS"); do
@@ -150,7 +150,7 @@ jobs:
               dir="../wt$i/playground/$APP"
               rm -rf "$dir/timings" "$dir/profiles"
               log="$GITHUB_WORKSPACE/.bench-ab/logs/r$r-ref$i.log"
-              (cd "$dir" && pnpm exec vitest run $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
+              (cd "$dir" && pnpm exec vitest run --configLoader native $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
               duration=$(grep -oP 'Duration\s+\K[0-9.]+' "$log" | tail -1)
               tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' "$log" | tail -1)
               # The sum of the files' own times, from the tree reporter's lines.
