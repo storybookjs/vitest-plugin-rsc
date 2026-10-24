@@ -1227,6 +1227,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
 
         return {
           ...jsx,
+          // With the stand-ins of `fast.crypto` the server layers pre-bundle
+          // other files than without (see `optimizeDeps` above), and Vite
+          // keeps one pre-bundle per directory: in one directory for both, a
+          // run of one mode after the other bundled every dependency again,
+          // 4 to 7 s. Vitest names its own directory in this one by the
+          // project's name, `<cacheDir>/vitest/<hash>`.
+          ...(fast.crypto && {
+            cacheDir: path.join(config.cacheDir ?? "node_modules/.vite", "fast-crypto"),
+          }),
           // Vite bundles the CSS of the app, with Next's PostCSS plugins and
           // Next's class names of a CSS module.
           css: cssOptions,
