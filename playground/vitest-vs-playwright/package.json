@@ -9,8 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:vitest": "bun --bun vitest run",
-    "test:vitest:node": "vitest run",
+    "test:vitest": "vitest run",
+    "test:vitest:bun": "bun --bun vitest run",
     "test:playwright": "playwright test"
   },
   "dependencies": {
