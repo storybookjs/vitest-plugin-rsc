@@ -1,7 +1,8 @@
 // The cost of a query and of an action, in microseconds, on a page of the
-// notes app with 20 notes: the package's, and Vitest's own for scale. The
-// budgets: a link by its name in 60 µs, a click in 100 µs, with the whole
-// accessible name and the mouse's way to the element.
+// notes app with 20 notes: the package's, and Vitest's own in the same run.
+// A runner's speed is its own, so the test holds the package's to a share of
+// Vitest's, and prints both; the budgets of the README, a link by its name
+// in 60 µs and a click in 100 µs, are for a developer's machine.
 
 import { expect, test } from "vitest";
 import { page as vitestPage } from "vitest/browser";
@@ -27,10 +28,9 @@ function render() {
 
 /**
  * The median of `batches` timings of `run`, in microseconds a run: a batch
- * is 50 runs, as the page's clock has a grain of 100 µs.
+ * is `size` runs, as the page's clock has a grain of 100 µs.
  */
-async function median(batches: number, run: () => unknown): Promise<number> {
-  const size = 50;
+async function median(batches: number, run: () => unknown, size = 50): Promise<number> {
   for (let i = 0; i < size; i++) await run();
   const times: number[] = [];
   for (let b = 0; b < batches; b++) {
@@ -42,23 +42,27 @@ async function median(batches: number, run: () => unknown): Promise<number> {
   return Math.round(times[Math.floor(times.length / 2)]!);
 }
 
-test("a link by its name, and a click, within their budgets", async () => {
-  render();
-  const link = (p: typeof page | typeof vitestPage) =>
-    p.getByRole("link", { name: "Note 07", exact: true });
-  const ours = {
-    linkByName: await median(20, () => link(page).elements()),
-    labelText: await median(20, () => page.getByLabelText("Search").elements()),
-    text: await median(20, () => page.getByText("20 notes").elements()),
-    click: await median(20, () => page.getByRole("button", { name: /^Clicked/ }).click()),
-    fill: await median(20, () => page.getByLabelText("Search").fill("note")),
-  };
-  const vitest = {
-    linkByName: await median(20, () => link(vitestPage).elements()),
-    click: await median(3, () => vitestPage.getByRole("button", { name: /^Clicked/ }).click()),
-  };
-  console.log(JSON.stringify({ ours, vitest }));
-  // Ten times the budgets: a regression, not the noise of a shared runner.
-  expect(ours.linkByName).toBeLessThan(600);
-  expect(ours.click).toBeLessThan(1000);
-});
+// Vitest's clicks take milliseconds each.
+test(
+  "a link by its name, and a click, at half of Vitest's or less",
+  { timeout: 60_000 },
+  async () => {
+    render();
+    const link = (p: typeof page | typeof vitestPage) =>
+      p.getByRole("link", { name: "Note 07", exact: true });
+    const ours = {
+      linkByName: await median(20, () => link(page).elements()),
+      labelText: await median(20, () => page.getByLabelText("Search").elements()),
+      text: await median(20, () => page.getByText("20 notes").elements()),
+      click: await median(20, () => page.getByRole("button", { name: /^Clicked/ }).click()),
+      fill: await median(20, () => page.getByLabelText("Search").fill("note")),
+    };
+    const vitest = {
+      linkByName: await median(20, () => link(vitestPage).elements()),
+      click: await median(3, () => vitestPage.getByRole("button", { name: /^Clicked/ }).click(), 3),
+    };
+    console.log(JSON.stringify({ ours, vitest }));
+    expect(ours.linkByName).toBeLessThanOrEqual(vitest.linkByName * 0.5);
+    expect(ours.click).toBeLessThanOrEqual(vitest.click * 0.5);
+  },
+);
