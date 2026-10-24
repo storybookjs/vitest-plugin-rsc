@@ -1,0 +1,9 @@
+{
+  "refs": ["HEAD", "HEAD"],
+  "runtime": ["node", "bun"],
+  "tests": "tests/vitest-user-event/",
+  "reps": 3,
+  "copies": [1, 2],
+  "profile": "none",
+  "mode": "fast"
+}
