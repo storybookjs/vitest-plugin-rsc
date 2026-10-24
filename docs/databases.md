@@ -70,6 +70,10 @@ Copy three things from the playground:
 
 The [recipes README](../playground/nextjs-db-recipes/README.md) goes into each recipe and its limits.
 
+## A faster PGlite, until upstream has it
+
+PGlite's `parseResults()` copies its map of about 300 type parsers into a new object for every `query()` and `exec()`, which costs more than parsing the rows of a small result: 113–124 µs per query on a 2.8 GHz Xeon, about 1.4 s of the 500-test notes benchmark. This repository patches that line with [`pnpm patch`](https://pnpm.io/cli/patch) (`patches/@electric-sql__pglite@0.5.10.patch`, applied through `patchedDependencies` in `pnpm-workspace.yaml`): the query's parsers sit on top of the defaults by prototype instead of a copy. Lookups resolve the same way, so nothing else changes. To use it in your app, apply the same one-line change with your package manager's patch command, or wait for the change to land in PGlite.
+
 ## A whole app: the notes demo
 
 `playground/nextjs-notes-demo` does the same for a full app with Better Auth. It uses Drizzle's PGlite driver in place of `pg`. Since Drizzle Kit runs in Node.js, the demo's Vitest config prepares the tables before the tests start.
