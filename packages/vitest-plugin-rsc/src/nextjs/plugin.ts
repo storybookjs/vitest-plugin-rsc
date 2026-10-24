@@ -975,6 +975,41 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         },
       },
     },
+    // Vitest's browser mode wraps every `import()` of a module of the page
+    // for its mocks, by a parse and a walk of the module and a source map of
+    // the change: also of a pre-bundled dependency, like the 1.8 MB of
+    // PGlite, where it costs about 0.5 s of the dev server at every start
+    // (`vitest:browser:esm-injector` of @vitest/mocker). Not for a module of
+    // the dependency cache: a `vi.mock()` of a module that only a dependency
+    // imports with `import()` is not seen there.
+    {
+      name: "vitest-plugin-rsc:next-dependency-imports",
+      configureServer(server) {
+        const cacheDir = `${normalizePath(server.config.cacheDir)}/`;
+        for (const environment of Object.values(server.environments)) {
+          for (const plugin of environment.plugins as Plugin[]) {
+            if (plugin.name !== "vitest:browser:esm-injector" || !plugin.transform) continue;
+            const hook = plugin.transform;
+            const handler = (typeof hook === "function" ? hook : hook.handler) as (
+              this: unknown,
+              ...args: unknown[]
+            ) => unknown;
+            const transform = function (
+              this: unknown,
+              code: unknown,
+              id: unknown,
+              ...rest: unknown[]
+            ) {
+              return String(id).startsWith(cacheDir)
+                ? undefined
+                : handler.call(this, code, id, ...rest);
+            };
+            (plugin as { transform: unknown }).transform =
+              typeof hook === "function" ? transform : { ...hook, handler: transform };
+          }
+        }
+      },
+    },
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
     createPathsPlugin(getProject),
     {
