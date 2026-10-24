@@ -39,6 +39,7 @@ import {
   getAriaRoleCandidates,
   getAriaSelected,
   getElementAccessibleName,
+  getPlainTextAccessibleName,
   isElementHiddenForAria,
   kAriaCheckedRoles,
   kAriaExpandedRoles,
@@ -107,20 +108,16 @@ function checkOptions(method: string, options: object | undefined, known: Set<st
   }
 }
 
-// Every element under `root`, without it, as Playwright's `_queryCSS(*)`,
-// which also walks into open shadow roots: those throw here.
-function elementsUnder(root: Element, css: string): Element[] {
-  const elements = [...root.querySelectorAll(css)];
-  if (css !== "*") checkNoShadowRoots(root);
-  else for (const element of elements) if (element.shadowRoot) shadowRootFound(element);
+// Every element under `root`, without it, that `keep` keeps, as Playwright's
+// `_queryCSS()`, which also walks into open shadow roots: those throw here.
+function elementsUnder(root: Element, keep?: (element: Element) => boolean): Element[] {
   if (root.shadowRoot) shadowRootFound(root);
-  return elements;
-}
-
-function checkNoShadowRoots(root: Element): void {
+  const elements: Element[] = [];
   for (const element of root.querySelectorAll("*")) {
     if (element.shadowRoot) shadowRootFound(element);
+    if (!keep || keep(element)) elements.push(element);
   }
+  return elements;
 }
 
 function shadowRootFound(host: Element): never {
@@ -244,14 +241,18 @@ export function byRole(role: string, options: ByRoleOptions = {}, exactDefault: 
           if (options.disabled !== undefined && getAriaDisabled(element) !== options.disabled) {
             continue;
           }
-          if (!options.includeHidden && isElementHiddenForAria(element)) continue;
+          // The name before what is hidden, where Playwright asks the other
+          // way round: the same elements, as neither has an effect, and
+          // most candidates fail on their name.
           if (name !== undefined) {
             // Always normalize whitespace in the accessible name.
             const accessibleName = normalizeWhiteSpace(
-              getElementAccessibleName(element, !!options.includeHidden),
+              getPlainTextAccessibleName(element) ??
+                getElementAccessibleName(element, !!options.includeHidden),
             );
             if (!matchesAccessibleName(accessibleName, name, exact)) continue;
           }
+          if (!options.includeHidden && isElementHiddenForAria(element)) continue;
           result.push(element);
         }
         return result;
@@ -287,7 +288,7 @@ export function byText(
         if (matches === "self") result.push(element);
       };
       appendElement(root);
-      for (const element of elementsUnder(root, "*")) appendElement(element);
+      for (const element of elementsUnder(root)) appendElement(element);
       return result;
     },
   };
@@ -306,7 +307,7 @@ export function byLabelText(
     locator: callWithExact("getByLabel", text, exact, exactDefault),
     query(root, cache) {
       const { matcher } = createTextMatcher(text, exact);
-      return elementsUnder(root, "*").filter((element) =>
+      return elementsUnder(root).filter((element) =>
         getElementLabels(cache, element).some((label) => matcher(label)),
       );
     },
@@ -327,9 +328,10 @@ function byAttribute(
     locator: callWithExact(method, text, exact, exactDefault),
     query(root) {
       const matches = createAttributeMatcher(text, exact);
-      return elementsUnder(root, `[${attribute}]`).filter((element) =>
-        matches(element.getAttribute(attribute)!),
-      );
+      return elementsUnder(root, (element) => {
+        const value = element.getAttribute(attribute);
+        return value !== null && matches(value);
+      });
     },
   };
 }
@@ -353,9 +355,10 @@ export function byTestId(attribute: string, testId: string | RegExp): Part {
     locator: `getByTestId(${testId instanceof RegExp ? regexToSourceString(testId) : quote(testId)})`,
     query(root) {
       const matches = createAttributeMatcher(testId, true);
-      return elementsUnder(root, `[${attribute}]`).filter((element) =>
-        matches(element.getAttribute(attribute)!),
-      );
+      return elementsUnder(root, (element) => {
+        const value = element.getAttribute(attribute);
+        return value !== null && matches(value);
+      });
     },
   };
 }
@@ -366,7 +369,7 @@ export function byTestId(attribute: string, testId: string | RegExp): Part {
 function escapeRegexForSelector(re: RegExp): string {
   // Unicode mode does not allow "identity character escapes", so we do not escape and
   // hope that it does not contain quotes and/or >> signs.
-  if (re.unicode || re.unicodeSets) return String(re);
+  if (re.unicode || (re as RegExp & { unicodeSets?: boolean }).unicodeSets) return String(re);
   // Even number of backslashes followed by the quote -> insert a backslash.
   return String(re)
     .replace(/(^|[^\\])(\\\\)*(["'`])/g, "$1$2\\$3")

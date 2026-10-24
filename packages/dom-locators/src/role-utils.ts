@@ -18,9 +18,9 @@
 // at 4554372e456154d7365b6902ef9f3e1e7de76e94, as ivya 1.8.2 has it
 // (https://github.com/vitest-dev/ivya/blob/v1.8.2/src/roleUtils.ts), the
 // code that Vitest 5's locators run: roles, ARIA states, the accessible
-// name and what is hidden from ARIA. Changed: the imports, and the role
-// candidates of `getAriaRoleCandidates()`, which ivya does not have. See
-// NOTICE.
+// name and what is hidden from ARIA. Changed: the imports; added, which
+// ivya does not have: the role candidates of `getAriaRoleCandidates()` and
+// the name of text alone of `getPlainTextAccessibleName()`. See NOTICE.
 
 import {
   closestCrossShadow,
@@ -1489,72 +1489,105 @@ export function endAriaCaches() {
   }
 }
 
+// The elements whose name can come of their text alone: none of them has a
+// text alternative of its own in step 2e, but a button by its labels.
+const kPlainNameTagNames = new Set(["A", "BUTTON", "H1", "H2", "H3", "H4", "H5", "H6", "LI"]);
+
+/**
+ * The accessible name of an element of text alone, as
+ * `getElementAccessibleName()` computes it for one that is not hidden, or
+ * `undefined` for any other element: an `<a>`, a `<button>` without a label,
+ * a heading or a list item whose role takes its name from its content, with
+ * no `aria-label`, `aria-labelledby` or `aria-owns`, no element in it, no
+ * shadow root, and some text. Not in Playwright: the same name, sooner. A
+ * hidden element's name is "", which a query of its role leaves out anyway.
+ */
+export function getPlainTextAccessibleName(element: Element): string | undefined {
+  if (
+    !kPlainNameTagNames.has(element.tagName) ||
+    element.firstElementChild ||
+    element.shadowRoot ||
+    element.hasAttribute("aria-label") ||
+    element.hasAttribute("aria-labelledby") ||
+    element.hasAttribute("aria-owns") ||
+    (element.tagName === "BUTTON" && (element as HTMLButtonElement).labels.length)
+  )
+    return undefined;
+  const role = getAriaRole(element) || "";
+  if (!allowsNameFromContent(role, false)) return undefined;
+  const text =
+    getPseudoContent(element, "::before") +
+    (element.textContent || "") +
+    getPseudoContent(element, "::after");
+  return trimFlatString(text) ? asFlatString(text) : undefined;
+}
+
 // The tags of `kImplicitRoleByTagName` that can map to a role.
-const kImplicitRoleTagNames = new Map<string, string>([
-  ["article", "article"],
-  ["banner", "header"],
-  ["blockquote", "blockquote"],
-  ["button", "button,input"],
-  ["caption", "caption"],
-  ["cell", "td,th"],
-  ["checkbox", "input"],
-  ["code", "code"],
-  ["columnheader", "th"],
-  ["combobox", "input,select"],
-  ["complementary", "aside"],
-  ["contentinfo", "footer"],
-  ["definition", "dd"],
-  ["deletion", "del"],
-  ["dialog", "dialog"],
-  ["document", "html"],
-  ["emphasis", "em"],
-  ["figure", "figure"],
-  ["form", "form"],
-  ["gridcell", "td,th"],
-  ["group", "details,fieldset,optgroup"],
-  ["heading", "h1,h2,h3,h4,h5,h6"],
-  ["img", "img,svg"],
-  ["insertion", "ins"],
-  ["link", "a,area"],
-  ["list", "menu,ol,ul"],
-  ["listbox", "datalist,select"],
-  ["listitem", "li"],
-  ["main", "main"],
-  ["mark", "mark"],
-  ["math", "math"],
-  ["meter", "meter"],
-  ["navigation", "nav"],
-  ["option", "option"],
-  ["paragraph", "p"],
-  ["progressbar", "progress"],
-  ["radio", "input"],
-  ["region", "section"],
-  ["row", "tr"],
-  ["rowgroup", "tbody,tfoot,thead"],
-  ["rowheader", "th"],
-  ["searchbox", "input"],
-  ["separator", "hr"],
-  ["slider", "input"],
-  ["spinbutton", "input"],
-  ["status", "output"],
-  ["strong", "strong"],
-  ["subscript", "sub"],
-  ["superscript", "sup"],
-  ["table", "table"],
-  ["term", "dfn,dt"],
-  ["textbox", "input,textarea"],
-  ["time", "time"],
+const kImplicitRoleTagNames = new Map<string, Set<string>>([
+  ["article", new Set(["ARTICLE"])],
+  ["banner", new Set(["HEADER"])],
+  ["blockquote", new Set(["BLOCKQUOTE"])],
+  ["button", new Set(["BUTTON", "INPUT"])],
+  ["caption", new Set(["CAPTION"])],
+  ["cell", new Set(["TD", "TH"])],
+  ["checkbox", new Set(["INPUT"])],
+  ["code", new Set(["CODE"])],
+  ["columnheader", new Set(["TH"])],
+  ["combobox", new Set(["INPUT", "SELECT"])],
+  ["complementary", new Set(["ASIDE"])],
+  ["contentinfo", new Set(["FOOTER"])],
+  ["definition", new Set(["DD"])],
+  ["deletion", new Set(["DEL"])],
+  ["dialog", new Set(["DIALOG"])],
+  ["document", new Set(["HTML"])],
+  ["emphasis", new Set(["EM"])],
+  ["figure", new Set(["FIGURE"])],
+  ["form", new Set(["FORM"])],
+  ["gridcell", new Set(["TD", "TH"])],
+  ["group", new Set(["DETAILS", "FIELDSET", "OPTGROUP"])],
+  ["heading", new Set(["H1", "H2", "H3", "H4", "H5", "H6"])],
+  ["img", new Set(["IMG", "SVG"])],
+  ["insertion", new Set(["INS"])],
+  ["link", new Set(["A", "AREA"])],
+  ["list", new Set(["MENU", "OL", "UL"])],
+  ["listbox", new Set(["DATALIST", "SELECT"])],
+  ["listitem", new Set(["LI"])],
+  ["main", new Set(["MAIN"])],
+  ["mark", new Set(["MARK"])],
+  ["math", new Set(["MATH"])],
+  ["meter", new Set(["METER"])],
+  ["navigation", new Set(["NAV"])],
+  ["option", new Set(["OPTION"])],
+  ["paragraph", new Set(["P"])],
+  ["progressbar", new Set(["PROGRESS"])],
+  ["radio", new Set(["INPUT"])],
+  ["region", new Set(["SECTION"])],
+  ["row", new Set(["TR"])],
+  ["rowgroup", new Set(["TBODY", "TFOOT", "THEAD"])],
+  ["rowheader", new Set(["TH"])],
+  ["searchbox", new Set(["INPUT"])],
+  ["separator", new Set(["HR"])],
+  ["slider", new Set(["INPUT"])],
+  ["spinbutton", new Set(["INPUT"])],
+  ["status", new Set(["OUTPUT"])],
+  ["strong", new Set(["STRONG"])],
+  ["subscript", new Set(["SUB"])],
+  ["superscript", new Set(["SUP"])],
+  ["table", new Set(["TABLE"])],
+  ["term", new Set(["DFN", "DT"])],
+  ["textbox", new Set(["INPUT", "TEXTAREA"])],
+  ["time", new Set(["TIME"])],
 ]);
 
 /**
- * The elements that can have `role`, as a CSS selector, so that a query of
- * it looks at those alone: the tags that can map to it, and any element with
- * a `role`. Every element for `none` and `presentation`, which an element
- * inherits. Not in Playwright, which asks `getAriaRole()` of every element:
- * the same elements, sooner.
+ * Whether an element can have `role`, so that a query of it asks
+ * `getAriaRole()` of those alone: a tag that can map to it, or a `role`.
+ * Every element for `none` and `presentation`, which an element inherits.
+ * Not in Playwright, which asks of every element: the same elements, sooner.
  */
-export function getAriaRoleCandidates(role: string): string {
-  if (role === "none" || role === "presentation") return "*";
+export function getAriaRoleCandidates(role: string): (element: Element) => boolean {
+  if (role === "none" || role === "presentation") return () => true;
   const tags = kImplicitRoleTagNames.get(role);
-  return tags ? `${tags},[role]` : "[role]";
+  if (!tags) return (element) => element.hasAttribute("role");
+  return (element) => tags.has(elementSafeTagName(element)) || element.hasAttribute("role");
 }
