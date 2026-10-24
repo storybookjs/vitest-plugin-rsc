@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createRequire, isBuiltin } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   createLogger,
   createServer,
@@ -744,6 +744,42 @@ test("gives Next's module that loads instrumentation.ts a `require` in the serve
   expect(pluginsOf(browser)).not.toContain(name);
   // And for a static build, which has no optimizer.
   expect(vitestPluginNext().find((plugin) => plugin.name === name)?.apply).toBe("build");
+});
+
+test("has a pre-bundled dependency's `require()` of an ES module return the same object each time, as Node.js does", async () => {
+  const name = "vitest-plugin-rsc:commonjs-once";
+  const { rsc, ssr, browser } = await optimizeDeps;
+  const pluginOf = (layer: typeof rsc) =>
+    (layer as unknown as { rolldownOptions: { plugins: Plugin[] } }).rolldownOptions.plugins.find(
+      (plugin) => plugin.name === name,
+    );
+  expect(pluginOf(ssr)).toBeDefined();
+  expect(pluginOf(browser)).toBeDefined();
+  // With the Rolldown of the Vite that runs the optimizer: its runtime is
+  // what the plugin finds its copy in.
+  const vite = createRequire(import.meta.url).resolve("vite/package.json");
+  const { rolldown } = (await import(
+    pathToFileURL(createRequire(vite).resolve("rolldown")).href
+  )) as typeof import("rolldown");
+  const files: Record<string, string> = {
+    "entry.js": "export const get = () => require('./esm.js');",
+    "esm.js": "export let count = 0; export const add = () => count++;",
+  };
+  const bundle = await rolldown({
+    input: "entry.js",
+    plugins: [
+      { name: "files", resolveId: (id) => id.replace("./", ""), load: (id) => files[id] },
+      pluginOf(rsc) as never,
+    ],
+  });
+  const { output } = await bundle.generate({ format: "esm" });
+  const { get } = (await import(`data:text/javascript,${encodeURIComponent(output[0].code)}`)) as {
+    get(): { count: number; add(): void };
+  };
+  expect(get()).toBe(get());
+  // Its getters read the module's live bindings.
+  get().add();
+  expect(get().count).toBe(1);
 });
 
 test("takes no other build", () => {

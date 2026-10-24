@@ -569,6 +569,32 @@ function flightConsolePlugin(): Plugin {
   };
 }
 
+// Rolldown's runtime in a pre-bundled dependency makes a new copy of an ES
+// module's exports for every `require()` of it that runs, where Node.js
+// returns the same object each time. Next's server requires its modules
+// lazily, inside the functions of a request, so that was a copy with a getter
+// for each export several times per request. A copy per module is the same
+// thing: its getters read the live exports, and an ES module's names never
+// change. A runtime that reads otherwise is left as it is.
+const toCommonJs =
+  'var __toCommonJS = (mod) => __hasOwnProp.call(mod, "module.exports") ? mod["module.exports"] : ' +
+  '__copyProps(__defProp({}, "__esModule", { value: true }), mod);';
+const toCommonJsOnce =
+  "var __toCommonJSCopies = new WeakMap();\n" +
+  'var __toCommonJS = (mod) => { if (__hasOwnProp.call(mod, "module.exports")) return mod["module.exports"]; ' +
+  "var copy = __toCommonJSCopies.get(mod); " +
+  'if (!copy) __toCommonJSCopies.set(mod, copy = __copyProps(__defProp({}, "__esModule", { value: true }), mod)); ' +
+  "return copy; };";
+function commonJsOncePlugin(): Plugin {
+  return {
+    name: "vitest-plugin-rsc:commonjs-once",
+    renderChunk(code) {
+      if (!code.includes(toCommonJs)) return null;
+      return { code: code.replace(toCommonJs, toCommonJsOnce), map: null };
+    },
+  };
+}
+
 function nextPatchesPlugin(): Plugin {
   const patches = nextPatches(registry);
   return {
@@ -1106,6 +1132,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
               nextPatchesPlugin(),
+              commonJsOncePlugin(),
               ...(layer === "browser"
                 ? []
                 : [
