@@ -29,6 +29,7 @@ import {
   countBailouts,
   handleRequest as handleWith,
   isPrerenderBailout,
+  writingOf,
   type RoutedRequestMeta,
 } from "./node-server.ts";
 import {
@@ -813,7 +814,17 @@ function finishWithBody(
 ): Handled {
   let finished: Promise<void>;
   let body: ReadableStream<Uint8Array> | null = null;
-  if (response.body) {
+  // A response of Next's handler says itself when its body is written, and
+  // how to stop it: see node-server.ts.
+  const writing = writingOf(response);
+  if (writing) {
+    rendering.add(writing.stop);
+    body = response.body;
+    finished = writing.written.finally(() => {
+      rendering.delete(writing.stop);
+      return onFinish();
+    });
+  } else if (response.body) {
     // Without a limit on what waits to be read: the server writes on, read or not.
     const pipe = new TransformStream<Uint8Array, Uint8Array>(undefined, undefined, {
       highWaterMark: Infinity,
@@ -846,6 +857,9 @@ function finishWithBody(
   // The headers the server in front of the route has for the response, under
   // the ones of the route itself. A cookie of either is set. A route of the
   // app gets the others before it runs, see `handleWith()`: it adds to some.
+  // A response of Next's handler without any to add goes as it is.
+  const adds = routedHeaders !== undefined && !routedHeaders.keys().next().done;
+  if (writing && !adds && request.method !== "HEAD") return { response, finished };
   let { headers } = response;
   if (routedHeaders) {
     headers = new Headers(routedHeaders);
