@@ -180,16 +180,17 @@ async function logOf(step: Step, driver: Driver): Promise<string[]> {
 
 /**
  * What the package does otherwise than Playwright, by step: the entries of
- * Playwright's log it has not (`- entry`), the ones it has that Playwright's
- * has not (`+ entry`), and the ones it has elsewhere in the order
- * (`unordered`). The README's table of events says why.
+ * Playwright's log it has not (`- entry`) and the ones it has that
+ * Playwright's has not (`+ entry`). The README's table of events says why.
  */
-const expectedDifferences: Record<string, { differences?: string[]; unordered?: string[] }> = {
-  // `select()` queues its `select` event as a task: Playwright's typing
-  // comes a round trip later, the package's at once.
-  "fill it again, focused": { unordered: ["select@text"] },
-  "clear a textarea": { unordered: ["select@notes"] },
-};
+const expectedDifferences: Record<string, string[]> = {};
+
+// Entries whose place in the log is the browser's: `select()` queues its
+// `select` event as a task, which runs before Playwright's typing or after
+// it, as the round trip of CDP takes, and after the package's, which types
+// at once. React's `onSelect` follows the selection. They are in both logs,
+// anywhere.
+const unordered = (entry: string) => /^(select|react:onSelect)@/.test(entry);
 
 test.each(steps)("$name: the log of the package's action is Playwright's", async (step) => {
   const theirs = await logOf(step, vitest);
@@ -197,13 +198,12 @@ test.each(steps)("$name: the log of the package's action is Playwright's", async
   const missing = theirs.filter((entry) => !our.includes(entry)).map((entry) => `- ${entry}`);
   const extra = our.filter((entry) => !theirs.includes(entry)).map((entry) => `+ ${entry}`);
   const differences = [...missing, ...extra];
-  const expected = expectedDifferences[step.name] ?? {};
   const ordered = (entries: string[], other: string[]) =>
-    entries.filter((entry) => other.includes(entry) && !expected.unordered?.includes(entry));
+    entries.filter((entry) => other.includes(entry) && !unordered(entry));
   const sameOrder = JSON.stringify(ordered(theirs, our)) === JSON.stringify(ordered(our, theirs));
   expect(theirs.length).toBeGreaterThan(0);
   expect(
     { differences, sameOrder },
     `Playwright:\n${theirs.join("\n")}\n\ndom-locators:\n${our.join("\n")}`,
-  ).toEqual({ differences: expected.differences ?? [], sameOrder: true });
+  ).toEqual({ differences: expectedDifferences[step.name] ?? [], sameOrder: true });
 });
