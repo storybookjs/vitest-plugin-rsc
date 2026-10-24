@@ -1,0 +1,10 @@
+{
+  "refs": ["HEAD"],
+  "app": "vitest-vs-playwright-notes",
+  "tests": "-c vitest.bench.config.ts",
+  "reps": 2,
+  "copies": [1],
+  "fast": "1",
+  "build": "production",
+  "profile": "none"
+}
