@@ -102,14 +102,17 @@ test("an action's option other than timeout throws", async () => {
   await expect(cancel.fill("x", { force: true })).rejects.toThrow(/fill\(\) has no option "force"/);
 });
 
-test("a shadow root, which Vitest's locators look into, throws", () => {
-  const host = document.createElement("div");
-  host.attachShadow({ mode: "open" }).innerHTML = "<button>Inside</button>";
-  document.body.append(host);
-  expect(() => page.getByRole("button").elements()).toThrow(UnsupportedError);
-  expect(() => page.getByText("Inside").elements()).toThrow(/has a shadow root/);
-  // Vitest's finds the button in it.
-  expect(vitestPage.getByRole("button", { name: "Inside" }).elements()).toHaveLength(1);
+test("an open shadow root is looked into, as Vitest's locators do, a closed one by neither", () => {
+  const open = document.createElement("div");
+  open.attachShadow({ mode: "open" }).innerHTML = "<button>Inside</button>";
+  const closed = document.createElement("div");
+  closed.attachShadow({ mode: "closed" }).innerHTML = "<button>Closed</button>";
+  document.body.append(open, closed);
+  const inside = open.shadowRoot!.querySelector("button");
+  expect(page.getByRole("button", { name: "Inside" }).elements()).toEqual([inside]);
+  expect(vitestPage.getByRole("button", { name: "Inside" }).elements()).toEqual([inside]);
+  expect(page.getByText("Closed").elements()).toEqual([]);
+  expect(vitestPage.getByText("Closed").elements()).toEqual([]);
 });
 
 test("a locator of vitest/browser in filter, and or, throws", () => {

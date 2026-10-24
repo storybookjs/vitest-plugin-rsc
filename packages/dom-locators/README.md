@@ -21,6 +21,8 @@ For every locator it accepts, `dom-locators` returns the elements that Vitest's 
 
 The roles, the ARIA states, the accessible names and the text matching are Playwright's, ported from the engine Vitest 5's locators run (ivya 1.8.2, Playwright at 4554372e, see [NOTICE](NOTICE)). The package's own suite holds every locator of a table, on an ARIA page and on the routes of the notes app, to `vitest/browser`'s `page`: the same elements, the same `selector`, the same `asLocator()`.
 
+Open shadow roots are looked into, as Vitest's locators do and in their order: a tree's elements, then the trees of its shadow roots, each host's in the order of the document. A closed shadow root is nobody's: neither finds what is in it. Next's `<next-route-announcer>`, on every page of the App Router, is one.
+
 Vitest's defaults apply: `exact` is Vitest's `browser.locators.exact` (`true` unless your config says otherwise) and `getByTestId()` reads `browser.locators.testIdAttribute`.
 
 ## What there is
@@ -32,7 +34,7 @@ Vitest's defaults apply: `exact` is Vitest's `browser.locators.exact` (`true` un
 
 `expect.element(locator)` takes a locator of the package, with `.not`, `toHaveLength` and `{ timeout }`: it carries Vitest's locator symbol and has the methods `expect.element` calls. A locator is assignable to `Locator` of `vitest/browser`.
 
-Not yet, on the type and throwing with the way out, `vitestPage.elementLocator(await locator.findElement())`: `tripleClick`, `wheel`, `upload`, `dropTo`, `screenshot`, `mark`, `page.viewport`, `page.screenshot`, `page.mark`, `page.frameLocator`. Nor shadow DOM, which Vitest's locators look into: a query that meets an open shadow root throws. A locator of `vitest/browser` in `filter({ has })`, `and` or `or` throws too.
+Not yet, on the type and throwing with the way out, `vitestPage.elementLocator(await locator.findElement())`: `tripleClick`, `wheel`, `upload`, `dropTo`, `screenshot`, `mark`, `page.viewport`, `page.screenshot`, `page.mark`, `page.frameLocator`. A locator of `vitest/browser` in `filter({ has })`, `and` or `or` throws too.
 
 ## Waiting
 

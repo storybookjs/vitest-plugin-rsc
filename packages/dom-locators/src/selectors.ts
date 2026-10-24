@@ -23,10 +23,9 @@
 // src/locatorUtils.ts with the escapes of src/stringUtils.ts, and the
 // printing of src/locatorGenerators.ts. Changed: an engine takes a
 // locator's arguments, where Playwright's parse a selector string, and the
-// role engine looks only at the candidates of a role. A shadow root, which
-// Playwright pierces, throws instead. See NOTICE.
+// role engine looks only at the candidates of a role. See NOTICE.
 
-import { UnsupportedError, escapeHatch } from "./errors.ts";
+import { UnsupportedError } from "./errors.ts";
 import {
   beginAriaCaches,
   endAriaCaches,
@@ -108,22 +107,25 @@ function checkOptions(method: string, options: object | undefined, known: Set<st
   }
 }
 
-// Every element under `root`, without it, that `keep` keeps, as Playwright's
-// `_queryCSS()`, which also walks into open shadow roots: those throw here.
+// Every element under `root`, without it, that `keep` keeps, in Playwright's
+// order of `_queryCSS()` with `pierceShadow`, which the role engine's
+// `queryRole()` has too: the elements of a tree, then the trees of its open
+// shadow roots in turn, `root`'s own first, then those of its elements in
+// the order of the document, each the same way. A closed shadow root is
+// nobody's.
 function elementsUnder(root: Element, keep?: (element: Element) => boolean): Element[] {
-  if (root.shadowRoot) shadowRootFound(root);
   const elements: Element[] = [];
-  for (const element of root.querySelectorAll("*")) {
-    if (element.shadowRoot) shadowRootFound(element);
-    if (!keep || keep(element)) elements.push(element);
-  }
+  const query = (scope: Element | ShadowRoot) => {
+    const shadows: ShadowRoot[] = [];
+    if (scope instanceof Element && scope.shadowRoot) shadows.push(scope.shadowRoot);
+    for (const element of scope.querySelectorAll("*")) {
+      if (!keep || keep(element)) elements.push(element);
+      if (element.shadowRoot) shadows.push(element.shadowRoot);
+    }
+    for (const shadow of shadows) query(shadow);
+  };
+  query(root);
   return elements;
-}
-
-function shadowRootFound(host: Element): never {
-  throw new UnsupportedError(
-    `<${host.localName}> has a shadow root, which Vitest's locators look into and dom-locators does not: ${escapeHatch}.`,
-  );
 }
 
 // ---------------------------------------------------------------------------

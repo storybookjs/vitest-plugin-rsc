@@ -207,6 +207,25 @@ export const ariaFixture = /* HTML */ `
     <script>
       /* Script text */
     </script>
+    <div id="shadow-host" role="group" aria-label="Shadow group">
+      <template shadowrootmode="open">
+        <button id="b-shadow">Shadow button</button>
+        <p id="p-shadow">Shadow text <slot></slot></p>
+        <a id="a-shadow" href="/shadow">Shadow link</a>
+        <div id="nested-host">
+          <template shadowrootmode="open"
+            ><button id="b-nested">Nested shadow button</button></template
+          >
+        </div>
+        <label for="in-shadow">Shadow field</label
+        ><input id="in-shadow" placeholder="In the shadow" />
+      </template>
+      <span id="span-slotted">Slotted text</span>
+    </div>
+    <div id="after-shadow"><button id="b-after-shadow">After the shadow</button></div>
+    <div id="closed-host">
+      <template shadowrootmode="closed"><button id="b-closed">Closed button</button></template>
+    </div>
     <div id="shadow-free">The end</div>
   </main>
   <footer id="page-footer">Page footer <a href="/c" id="a-contact">Contact</a></footer>
