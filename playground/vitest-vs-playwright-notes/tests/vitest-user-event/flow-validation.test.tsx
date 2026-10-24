@@ -1,7 +1,6 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click, fill } from "#test/user-event.ts";
+import { click, expect, fill, screen } from "#test/fast-dom.ts";
 import { storedNotes } from "#test/db.ts";
 import { signedIn } from "#test/vitest.ts";
 
@@ -23,24 +22,24 @@ for (let i = 0; i < 50; i++) {
     await signedIn();
     await renderServer({ url: "/notes/new" });
 
-    await fill(page.getByLabelText("Title"), first.title);
-    await fill(page.getByLabelText("Content"), first.content);
-    await click(page.getByRole("button", { name: "Create note" }));
-    await expect.element(page.getByText(first.error)).toBeInTheDocument();
-    await fill(page.getByLabelText("Title"), title);
-    await fill(page.getByLabelText("Content"), "Fixed");
-    await click(page.getByRole("button", { name: "Create note" }));
-    await expect.element(page.getByText("Note created.")).toBeInTheDocument();
-    await click(page.getByRole("link", { name: "Edit" }));
-    await fill(page.getByLabelText("Title"), second.title);
-    await fill(page.getByLabelText("Content"), second.content);
-    await click(page.getByRole("button", { name: "Save note" }));
-    await expect.element(page.getByText(second.error)).toBeInTheDocument();
-    await fill(page.getByLabelText("Title"), `${title}, edited`);
-    await fill(page.getByLabelText("Content"), "Fixed again");
-    await click(page.getByRole("button", { name: "Save note" }));
+    await fill(screen.getByLabelText("Title"), first.title);
+    await fill(screen.getByLabelText("Content"), first.content);
+    await click(screen.getByRole("button", { name: "Create note" }));
+    await expect.element(screen.getByText(first.error)).toBeInTheDocument();
+    await fill(screen.getByLabelText("Title"), title);
+    await fill(screen.getByLabelText("Content"), "Fixed");
+    await click(screen.getByRole("button", { name: "Create note" }));
+    await expect.element(screen.getByText("Note created.")).toBeInTheDocument();
+    await click(screen.getByRole("link", { name: "Edit" }));
+    await fill(screen.getByLabelText("Title"), second.title);
+    await fill(screen.getByLabelText("Content"), second.content);
+    await click(screen.getByRole("button", { name: "Save note" }));
+    await expect.element(screen.getByText(second.error)).toBeInTheDocument();
+    await fill(screen.getByLabelText("Title"), `${title}, edited`);
+    await fill(screen.getByLabelText("Content"), "Fixed again");
+    await click(screen.getByRole("button", { name: "Save note" }));
 
-    await expect.element(page.getByText("Note saved.")).toBeInTheDocument();
+    await expect.element(screen.getByText("Note saved.")).toBeInTheDocument();
     expect(await storedNotes()).toEqual([
       { title: `${title}, edited`, content: "Fixed again", favorite: false },
     ]);

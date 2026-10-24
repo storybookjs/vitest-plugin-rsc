@@ -1,19 +1,19 @@
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
+import { test } from "vitest";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { click } from "#test/user-event.ts";
+import { click, expect, screen } from "#test/fast-dom.ts";
 import { seedNotes, storedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { signedIn } from "#test/vitest.ts";
+import { expectTitles } from "#test/fast-dom-notes.ts";
 
 test("favorites a note", async () => {
   const user = await signedIn();
   await seedNotes(user.id, [{ title: "Groceries" }]);
   await renderServer({ url: "/notes/1" });
 
-  await click(page.getByRole("button", { name: "Favorite", exact: true }));
+  await click(screen.getByRole("button", { name: "Favorite" }));
 
   await expect
-    .element(page.getByRole("button", { name: "Unfavorite" }))
+    .element(screen.getByRole("button", { name: "Unfavorite" }))
     .toHaveAttribute("aria-pressed", "true");
 });
 
@@ -22,9 +22,9 @@ test("stores the favorite", async () => {
   await seedNotes(user.id, [{ title: "Groceries" }]);
   await renderServer({ url: "/notes/1" });
 
-  await click(page.getByRole("button", { name: "Favorite", exact: true }));
+  await click(screen.getByRole("button", { name: "Favorite" }));
 
-  await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
   expect((await storedNotes())[0]?.favorite).toBe(true);
 });
 
@@ -33,10 +33,10 @@ test("unfavorites a note", async () => {
   await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
   await renderServer({ url: "/notes/1" });
 
-  await click(page.getByRole("button", { name: "Unfavorite" }));
+  await click(screen.getByRole("button", { name: "Unfavorite" }));
 
   await expect
-    .element(page.getByRole("button", { name: "Favorite", exact: true }))
+    .element(screen.getByRole("button", { name: "Favorite" }))
     .toHaveAttribute("aria-pressed", "false");
 });
 
@@ -45,9 +45,9 @@ test("moves a favorite to the top of the list", async () => {
   await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
   await renderServer({ url: "/notes/1" });
 
-  await click(page.getByRole("button", { name: "Favorite", exact: true }));
-  await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
-  await click(page.getByRole("link", { name: "All notes" }));
+  await click(screen.getByRole("button", { name: "Favorite" }));
+  await expect.element(screen.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
+  await click(screen.getByRole("link", { name: "All notes" }));
 
   await expectTitles(["Groceries", "Ideas"]);
 });
@@ -57,11 +57,11 @@ test("marks the favorite in the list", async () => {
   await seedNotes(user.id, [{ title: "Groceries" }]);
   await renderServer({ url: "/notes/1" });
 
-  await click(page.getByRole("button", { name: "Favorite", exact: true }));
-  await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
-  await click(page.getByRole("link", { name: "All notes" }));
+  await click(screen.getByRole("button", { name: "Favorite" }));
+  await expect.element(screen.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
+  await click(screen.getByRole("link", { name: "All notes" }));
 
-  await expect.element(page.getByText("★ Favorite")).toBeInTheDocument();
+  await expect.element(screen.getByText("★ Favorite")).toBeInTheDocument();
 });
 
 test("toggles back after two clicks", async () => {
@@ -69,12 +69,10 @@ test("toggles back after two clicks", async () => {
   await seedNotes(user.id, [{ title: "Groceries" }]);
   await renderServer({ url: "/notes/1" });
 
-  await click(page.getByRole("button", { name: "Favorite", exact: true }));
-  await click(page.getByRole("button", { name: "Unfavorite" }));
+  await click(screen.getByRole("button", { name: "Favorite" }));
+  await click(screen.getByRole("button", { name: "Unfavorite" }));
 
-  await expect
-    .element(page.getByRole("button", { name: "Favorite", exact: true }))
-    .toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Favorite" })).toBeInTheDocument();
   await expect.poll(async () => (await storedNotes())[0]?.favorite).toBe(false);
 });
 
@@ -83,9 +81,9 @@ test("leaves the other notes as they are", async () => {
   await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
   await renderServer({ url: "/notes/2" });
 
-  await click(page.getByRole("button", { name: "Favorite", exact: true }));
+  await click(screen.getByRole("button", { name: "Favorite" }));
 
-  await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
   expect((await storedNotes()).map((note) => note.favorite)).toEqual([false, true]);
 });
 
@@ -94,10 +92,10 @@ test("keeps the content when favoriting", async () => {
   await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
   await renderServer({ url: "/notes/1" });
 
-  await click(page.getByRole("button", { name: "Favorite", exact: true }));
+  await click(screen.getByRole("button", { name: "Favorite" }));
 
-  await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
-  await expect.element(page.getByText("Oat milk")).toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
+  await expect.element(screen.getByText("Oat milk")).toBeInTheDocument();
 });
 
 test("keeps the favorite on the next visit", async () => {
@@ -105,12 +103,12 @@ test("keeps the favorite on the next visit", async () => {
   await seedNotes(user.id, [{ title: "Groceries" }]);
   await renderServer({ url: "/notes/1" });
 
-  await click(page.getByRole("button", { name: "Favorite", exact: true }));
-  await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
+  await click(screen.getByRole("button", { name: "Favorite" }));
+  await expect.element(screen.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
   await renderServer({ url: "/notes/1" });
 
   await expect
-    .element(page.getByRole("button", { name: "Unfavorite" }))
+    .element(screen.getByRole("button", { name: "Unfavorite" }))
     .toHaveAttribute("aria-pressed", "true");
 });
 
