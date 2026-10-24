@@ -2,6 +2,7 @@
 // Chrome dispatches them for Playwright's `click()`, `dblclick()` and
 // `hover()`, at the middle of the element, on what is there.
 
+import { isInsideScope, parentElementOrShadowHost } from "./dom-utils.ts";
 import { focusOnPress } from "./focus.ts";
 
 // The element the mouse is on, and the ones it is in, for the events of its
@@ -37,16 +38,25 @@ function pointFor(element: Element): Point {
   }
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
-  const hit = element.ownerDocument.elementFromPoint?.(x, y);
-  return { x, y, target: hit && element.contains(hit) ? hit : element };
+  let hit = element.ownerDocument.elementFromPoint?.(x, y);
+  // The document gives the host for what is in a shadow root: its own element.
+  while (hit?.shadowRoot) {
+    const inner = hit.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === hit) break;
+    hit = inner;
+  }
+  return { x, y, target: hit && isInsideScope(element, hit) ? hit : element };
 }
 
 const pointerEventOf = (type: string, init: PointerEventInit) =>
   typeof PointerEvent === "function" ? new PointerEvent(type, init) : new MouseEvent(type, init);
 
+// The element and what it is in, through the hosts of shadow roots.
 function pathOf(element: Element): (Element | Document)[] {
   const path: (Element | Document)[] = [];
-  for (let node: Element | null = element; node; node = node.parentElement) path.push(node);
+  for (let node: Element | undefined = element; node; node = parentElementOrShadowHost(node)) {
+    path.push(node);
+  }
   path.push(element.ownerDocument);
   return path;
 }

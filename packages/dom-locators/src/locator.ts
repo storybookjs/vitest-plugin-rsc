@@ -18,7 +18,7 @@ import {
   escapeHatch,
   strictModeViolation,
 } from "./errors.ts";
-import { sortInDOMOrder } from "./dom-utils.ts";
+import { isInsideScope, sortInDOMOrder } from "./dom-utils.ts";
 import { fill, selectOptions, type SelectValue } from "./form-controls.ts";
 import { focusForPress, press, type Key } from "./keyboard.ts";
 import { click, dblClick, hover } from "./pointer.ts";
@@ -80,23 +80,21 @@ const findOptions = new Set(["timeout", "strict", "interval", "message"]);
 /** Vitest's CSS path of an element, which its `elementLocator()` sends to the provider. */
 function cssPathOf(element: Element): string {
   const parts: string[] = [];
-  for (
-    let node = element, parent = node.parentElement;
-    ;
-    node = parent, parent = node.parentElement
-  ) {
-    const siblings = parent ? parent.children : node.ownerDocument.children;
+  // The parent, or the host of a shadow root, as Vitest's.
+  const parentOf = (node: Node) =>
+    node.parentNode instanceof ShadowRoot ? node.parentNode.host : node.parentNode;
+  for (let node = element, parent = parentOf(node); parent; ) {
+    const tag = node.localName;
     if (node.id) parts.push(`#${CSS.escape(node.id)}`);
-    else if (siblings.length === 1) parts.push(node.localName);
+    else if (!node.nextElementSibling && !node.previousElementSibling) parts.push(tag);
     else {
-      const sameTag = [...siblings].filter((sibling) => sibling.tagName === node.tagName);
-      parts.push(
-        sameTag.length > 1
-          ? `${node.localName}:nth-child(${[...siblings].indexOf(node) + 1})`
-          : node.localName,
-      );
+      const siblings = [...(parent as ParentNode).children];
+      const sameTag = siblings.filter((sibling) => sibling.localName === tag).length;
+      parts.push(sameTag > 1 ? `${tag}:nth-child(${siblings.indexOf(node) + 1})` : tag);
     }
-    if (!parent) break;
+    if (!(parent instanceof Element)) break;
+    node = parent;
+    parent = parentOf(node);
   }
   return parts.reverse().join(" > ");
 }
@@ -192,7 +190,7 @@ export class DomLocator {
       case "or":
         return sortInDOMOrder(new Set([...roots, ...step.other.#resolve(root, cache)]));
       case "element":
-        return step.element !== root && root.contains(step.element) ? [step.element] : [];
+        return step.element !== root && isInsideScope(root, step.element) ? [step.element] : [];
     }
   }
 
