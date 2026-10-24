@@ -937,6 +937,9 @@ importers:
       better-auth:
         specifier: 1.6.10
         version: 1.6.10(67c8b4d42e22f250f4d23fe30da2bd50)
+      dom-locators:
+        specifier: workspace:*
+        version: link:../../packages/dom-locators
       hash-wasm:
         specifier: ^4.12.0
         version: 4.12.0
