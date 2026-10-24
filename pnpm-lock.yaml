@@ -169,6 +169,36 @@ importers:
         specifier: workspace:*
         version: link:../packages/vitest-plugin-rsc
 
+  packages/dom-locators:
+    devDependencies:
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.14)
+      '@vitest/browser':
+        specifier: 5.0.5
+        version: 5.0.5(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(sass@1.106.0)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(vitest@5.0.5)
+      '@vitest/browser-playwright':
+        specifier: 5.0.5
+        version: 5.0.5(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(playwright@1.64.1)(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(sass@1.106.0)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(vitest@5.0.5)
+      playwright:
+        specifier: ^1.64.0
+        version: 1.64.1
+      react:
+        specifier: ^19.2.6
+        version: 19.2.6
+      react-dom:
+        specifier: ^19.2.6
+        version: 19.2.6(react@19.2.6)
+      tsdown:
+        specifier: ^0.22.0
+        version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260512.1)(oxc-resolver@11.21.2)(tsx@4.21.0)(typescript@6.0.3)
+      vitest:
+        specifier: 5.0.5
+        version: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(sass@1.106.0)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))
+
   packages/storybook-nextjs-vite-rsc:
     dependencies:
       '@storybook/builder-vite':

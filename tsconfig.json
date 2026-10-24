@@ -8,6 +8,9 @@
       "path": "./packages/storybook-nextjs-vite-rsc"
     },
     {
+      "path": "./packages/dom-locators"
+    },
+    {
       "path": "./conformance"
     },
     {
