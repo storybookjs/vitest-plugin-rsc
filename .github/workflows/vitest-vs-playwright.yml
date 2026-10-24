@@ -62,7 +62,7 @@ jobs:
       - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          pnpm exec vitest run --configLoader native --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -81,7 +81,7 @@ jobs:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          pnpm exec vitest run --configLoader native --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -104,7 +104,7 @@ jobs:
           VITEST_PLUGIN_RSC_MODE: fidelity
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          pnpm exec vitest run --configLoader native --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -125,7 +125,7 @@ jobs:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          pnpm exec vitest run --configLoader native --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -178,7 +178,7 @@ jobs:
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm --filter vitest-plugin-rsc build
       - name: Run the tests with a CPU profile of the page
-        run: pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1 tests/vitest-user-event/
+        run: pnpm exec vitest run --configLoader native -c vitest.profile.config.ts --maxWorkers 1 tests/vitest-user-event/
       - name: Sum up the profiles
         run: python3 test/profile-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Sum up the timings of the requests
@@ -187,7 +187,7 @@ jobs:
         env:
           VITEST_PROFILE: trace
         run: >-
-          pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1
+          pnpm exec vitest run --configLoader native -c vitest.profile.config.ts --maxWorkers 1
           tests/vitest-user-event/note-create.test.tsx
           tests/vitest-user-event/flow-edit-chain.test.tsx
       - name: Sum up the traces
@@ -226,13 +226,13 @@ jobs:
         env:
           VITEST_PLUGIN_RSC_MODE: fast
         run: |
-          BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run -c vitest.bench.config.ts --maxWorkers 1
+          BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run --configLoader native -c vitest.bench.config.ts --maxWorkers 1
           cat bench-results/fast.md >> "$GITHUB_STEP_SUMMARY"
       - name: Time the primitives in fidelity mode
         env:
           VITEST_PLUGIN_RSC_MODE: fidelity
         run: |
-          BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run -c vitest.bench.config.ts --maxWorkers 1
+          BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run --configLoader native -c vitest.bench.config.ts --maxWorkers 1
           cat bench-results/fidelity.md >> "$GITHUB_STEP_SUMMARY"
       - name: Compare fidelity mode with fast mode
         run: |
