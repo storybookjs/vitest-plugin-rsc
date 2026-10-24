@@ -837,6 +837,22 @@ To run one feature alone, set every other one to `false`.
 
 A suite that passes in fast mode should pass in the default mode too. CI tells you when it doesn't.
 
+## Start sooner on Bun
+
+A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On the notes app of `playground/vitest-vs-playwright-notes`, a run of one file took 10.4 s with `pnpm exec vitest run` and 7.6 s with `bun --bun vitest run`; once the tests run, they take the same time. About 1.1 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too.
+
+```bash
+bun --bun vitest run
+```
+
+Give Bun a dependency cache of its own in your Vitest config. Vite's hash of the config includes its functions as text, which Bun prints differently from Node.js, so each runtime would find the other's cache stale and optimize the dependencies again:
+
+```ts
+cacheDir: process.versions.bun ? "node_modules/.vite-bun" : undefined,
+```
+
+Vitest is made for Node.js, not Bun, so keep a run on Node.js in CI.
+
 ## Watch mode
 
 In watch mode, saving any file of your app reruns every test file that opens a route, plus any test file that imports the saved file.
