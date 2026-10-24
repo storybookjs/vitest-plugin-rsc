@@ -52,11 +52,13 @@ export type SpeedOptions = {
    * one that redirects to the page, sees `RSC: 1` in its request. A page
    * that the test leaves while it loads stops rendering on the server, where
    * the render of a document would go on: a test of a render that outlives
-   * its page passes `ssr: true`. A page whose render redirects, calls
-   * `notFound()` or throws loads as a document after all, with the status
-   * and the response of that document: the server handles it twice, its
-   * proxy, its render and its data, and the request of the document has the
-   * cookies that the response of Flight set.
+   * its page passes `ssr: true`. A page whose render calls `redirect()` is
+   * followed as a browser follows the 307 of its document, with a request of
+   * Flight of the page it redirects to: the `response` is that page's, with
+   * `redirected`, and the 307 itself is not in it. A page that calls
+   * `notFound()` or throws renders its boundary from the payload, with the
+   * status 200 of the response of Flight, as the document of `ssr: false`
+   * has it, where a document with HTML could have a 404 or a 500.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */

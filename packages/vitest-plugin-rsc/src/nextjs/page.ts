@@ -3,7 +3,13 @@
 // leaving it takes those back, the last part first, one page at a time.
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
-import { setOpenPage, setRouterOutlivesPage, sendRequest, unlessAborted } from "./app-requests.ts";
+import {
+  leftTheApp,
+  setOpenPage,
+  setRouterOutlivesPage,
+  sendRequest,
+  unlessAborted,
+} from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import {
   keepProperties,
@@ -333,7 +339,13 @@ async function openPage(
   // server renders without HTML. See `requestFlight()`.
   const flight =
     page.inKeptApp && kept !== undefined && !("html" in request) && speedFeature("flightLoads")
-      ? await requestFlight(url, request, { from, navigation: "test" }, signal)
+      ? await requestFlight(
+          url,
+          (target, headers) =>
+            sendPageLoad(target, { ...request, headers }, { from, navigation: "test" }, signal),
+          new Headers(request.headers),
+          signal,
+        )
       : undefined;
   superseded();
   // The test's request, or the document that a navigation has: see `navigate()`.
@@ -517,27 +529,23 @@ const flightDocument = '<!DOCTYPE html><html id="__next_error__"><head></head><b
 // off a request to the middleware. The payload is there in full before the app
 // renders it, as the payload of a document is. A response that is not Flight,
 // like a route handler's, or an error page of HTML, is read as a document is.
-// Undefined for a page whose render threw: see `hasErrorRow()`.
 async function requestFlight(
   url: URL,
-  init: RequestInit,
-  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation">,
+  send: (url: URL, headers: Headers) => Promise<Response>,
+  headers: Headers,
   signal: AbortSignal,
-): Promise<PageDocument | undefined> {
-  const headers = new Headers(init.headers);
+): Promise<PageDocument> {
   headers.set("rsc", "1");
   try {
-    const response = await sendPageLoad(url, { ...init, headers }, sending, signal);
+    const loaded = await followFlight(await send(url, headers), (target) => send(target, headers));
     signal.throwIfAborted();
-    if (!isFlight(response)) {
-      return await readDocument(
-        response,
-        (what) =>
-          `${what}, which is not a page to open. ` +
-          `Use handleRequest() to assert on the response itself.`,
-      );
-    }
-    return await flightOf(response);
+    if ("payload" in loaded) return loaded;
+    return await readDocument(
+      loaded.response,
+      (what) =>
+        `${what}, which is not a page to open. ` +
+        `Use handleRequest() to assert on the response itself.`,
+    );
   } catch (error) {
     signal.throwIfAborted();
     throw error;
@@ -547,23 +555,74 @@ async function requestFlight(
 const isFlight = (response: Response) =>
   /^text\/x-component\b/i.test(response.headers.get("content-type") ?? "");
 
-// The page of a response of Flight, read in full, unless its render threw:
-// a `redirect()` or a `notFound()` loads as a document after all. Next
-// answers the document of such a page with the status of the error, a
-// redirect with its `Location`, where the request of Flight gets 200 and the
-// error in the payload.
-async function flightOf(response: Response): Promise<PageDocument | undefined> {
-  const payload = new Uint8Array(await response.arrayBuffer());
-  if (hasErrorRow(payload)) return undefined;
-  return { response, html: flightDocument, payload };
+// The page of a response of Flight, read in full, or a response that is not
+// Flight. A page whose render called `redirect()` has the redirect in its
+// payload, where the request of its document gets a 307 with a `Location`:
+// the page load follows it, as a browser follows the 307, with one request
+// of Flight of the page it redirects to, and the page that redirected does
+// not render. The request of a page is sent once: a `notFound()` or an error
+// renders from the payload, as Next's router renders it, with its boundary.
+// The status is the one of the response of Flight, 200, as with the document
+// of `ssr: false`, which renders no HTML that could fail.
+async function followFlight(
+  response: Response,
+  send: (url: URL) => Promise<Response>,
+): Promise<PageDocument | { response: Response }> {
+  let redirected = response.redirected;
+  for (let redirects = 0; isFlight(response); ) {
+    const payload = new Uint8Array(await response.arrayBuffer());
+    const location = redirectOf(payload);
+    if (location === undefined) {
+      if (redirected) response = redirectedResponse(response, payload);
+      return { response, html: flightDocument, payload };
+    }
+    const target = new URL(location, response.url);
+    if (target.origin !== window.location.origin) throw leftTheApp(target);
+    if (++redirects > 20) {
+      throw new Error(
+        `vitest-plugin-rsc: too many redirects for ${response.url}. ` +
+          `The last one was to ${target.href}.`,
+      );
+    }
+    redirected = true;
+    response = await send(target);
+  }
+  return { response: redirected ? redirectedResponse(response, response.body) : response };
 }
 
-// Whether a Flight payload has an error in it: a row of React's for one,
-// `<id>:E{...}`, on a line of its own. Text of the page in a row of text,
-// which is not escaped, can look like one too: that page loads as a document.
-const errorRow = /(?:^|\n)[0-9a-f]+:E\{/;
-function hasErrorRow(payload: Uint8Array): boolean {
-  return errorRow.test(new TextDecoder().decode(payload));
+// The response of the page that a page load ended at, after a redirect of a
+// payload, as `fetch` has it after a redirect: `sendRequest()` gives each of
+// its responses its own `url` and `redirected`, which stay as they are.
+function redirectedResponse(response: Response, body: BodyInit | null): Response {
+  if (response.redirected) return response;
+  const { status, statusText, headers, url } = response;
+  return Object.defineProperties(new registry.Response(body, { status, statusText, headers }), {
+    url: { value: url },
+    redirected: { value: true },
+  });
+}
+
+// Where a `redirect()` in the render of a page sends it: the digest of its
+// error row, `<id>:E{"digest":"NEXT_REDIRECT;<type>;<url>;<status>;",...}`,
+// read as Next's `getURLFromRedirectError()` reads it. Next's router
+// redirects for such a row wherever it is in the tree (its RedirectBoundary),
+// and Next's server answers the document with a 307 for one in the shell.
+// Text of the page in a row of text, which is not escaped, can look like a
+// row too: its digest has to parse.
+const errorRows = /(?:^|\n)[0-9a-f]+:E(\{.*)/g;
+function redirectOf(payload: Uint8Array): string | undefined {
+  for (const [, row] of new TextDecoder().decode(payload).matchAll(errorRows)) {
+    let digest: unknown;
+    try {
+      digest = (JSON.parse(row!) as { digest?: unknown }).digest;
+    } catch {
+      continue;
+    }
+    if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT;")) {
+      return digest.split(";").slice(2, -2).join(";");
+    }
+  }
+  return undefined;
 }
 
 // The whole document, then the app: what a browser has once the page has
@@ -620,20 +679,19 @@ export async function navigate(
   }
   const signal = AbortSignal.any(signals);
   // A page of the kept app loads the next one of it by its Flight payload, with
-  // the speed feature `flightLoads`: see `requestFlight()`. A `GET` only, which
-  // loads as a document after all if its render threw. A `<form>` that posts
-  // sends its body once.
+  // the speed feature `flightLoads`: see `requestFlight()`. A `GET` only: a
+  // `<form>` that posts loads a document.
   const byFlight =
     downloadRequest === null &&
     page?.inKeptApp === true &&
     kept !== undefined &&
     speedFeature("flightLoads") &&
     (init.method ?? "GET").toUpperCase() === "GET";
-  const send = (flight: boolean) => {
+  const send = (target: URL, flight: boolean) => {
     const headers = new Headers(init.headers);
     if (flight) headers.set("rsc", "1");
     return sendPageLoad(
-      url,
+      target,
       { ...init, headers },
       {
         from,
@@ -641,7 +699,9 @@ export async function navigate(
         // A page that the app loads from a page of the kept app renders in
         // it from its Flight payload, as a page of `renderServer()` does:
         // without HTML of the server, which React would only take down.
-        opened: page?.inKeptApp ? { pathname: url.pathname, proxy: true, ssr: false } : undefined,
+        opened: page?.inKeptApp
+          ? { pathname: target.pathname, proxy: true, ssr: false }
+          : undefined,
         // A file of `public/`, which the network has: a download needs no page.
         network:
           downloadRequest === null ? undefined : () => registry.network(url, { ...init, signal }),
@@ -651,15 +711,13 @@ export async function navigate(
   };
   let loaded: PageDocument | undefined;
   try {
-    let response = await send(byFlight);
+    let response = await send(url, byFlight);
     signal.throwIfAborted();
-    if (byFlight && isFlight(response)) {
-      loaded = await flightOf(response);
+    if (byFlight) {
+      const followed = await followFlight(response, (target) => send(target, true));
       signal.throwIfAborted();
-      if (!loaded) {
-        response = await send(false);
-        signal.throwIfAborted();
-      }
+      if ("payload" in followed) loaded = followed;
+      else response = followed.response;
     }
     if (!loaded) {
       const name = downloadName(response, downloadRequest);
