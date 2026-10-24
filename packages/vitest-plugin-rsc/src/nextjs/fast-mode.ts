@@ -72,11 +72,14 @@ export function findOnEveryChange(locator: object): void {
   // A test's own timers may be fake.
   const setTimeout = globalThis.setTimeout;
   const clearTimeout = globalThis.clearTimeout;
+  // Without a timeout of the caller's, Vitest's own: until just before the
+  // test times out, so a test fails with the locator in its error.
+  type Runner = { runner?: { _deadline?: { derive(): number } } };
+  const vitest = () =>
+    (globalThis as { __vitest_browser_runner__?: Runner }).__vitest_browser_runner__;
   async function find(this: Locator, options: FindOptions = {}): Promise<Element> {
     const strict = options.strict ?? true;
-    // Without a timeout of the caller's, the assertion that waits gives up
-    // long before this stops looking.
-    const timeout = options.timeout ?? 60_000;
+    const timeout = options.timeout ?? vitest()?.runner?._deadline?.derive() ?? 60_000;
     const start = performance.now();
     for (;;) {
       const elements = this.elements();
