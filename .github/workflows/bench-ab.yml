@@ -176,7 +176,7 @@ jobs:
             if [ "${runtimes[$(($1 - 1))]}" = bun ]; then
               bun --bun vitest run --configLoader native "${@:2}"
             else
-              pnpm exec vitest run "${@:2}"
+              pnpm exec vitest run --configLoader native "${@:2}"
             fi
           }
           # A warm-up of each ref: the dependency optimizer and the caches.
