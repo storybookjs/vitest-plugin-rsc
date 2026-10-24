@@ -808,7 +808,7 @@ See [Development or production](internals/next-routes.md#development-or-producti
 
 ## Fast mode
 
-The plugin runs in one of two modes. Fidelity mode, the default, gives up nothing for speed: a test sees what a browser shows of your app, as CI should run it. Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run takes about half the time on the same machine (2× in production, 1.7× in development), and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in fidelity mode:
+The plugin runs in one of two modes. Fidelity mode, the default, gives up nothing for speed: a test sees what a browser shows of your app, as CI should run it. Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run takes well under half the time on the same machine (2.6× faster in production, 2.2× in development, on one CI runner), and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in fidelity mode:
 
 ```ts
 vitestPluginNext({ mode: "fast" });
