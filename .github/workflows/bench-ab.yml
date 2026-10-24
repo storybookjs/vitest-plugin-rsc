@@ -10,11 +10,12 @@ name: Benchmark A/B
 # `.github/bench-ab.json` on that branch (every key optional):
 #
 #   { "refs": ["kasper/some-branch", "HEAD"], "tests": "tests/vitest-user-event/",
-#     "reps": 3, "copies": [1, 2], "mode": "fast", "runtime": "node",
+#     "reps": 3, "copies": [1, 2], "mode": "fast", "runtime": "bun",
 #     "build": "production", "profile": "timings", "app": "vitest-vs-playwright-notes" }
 #
-# "runtime" "bun" runs Vitest on Bun, `bun --bun vitest run`, for every ref;
-# the default, "node", on Node.js, with `pnpm exec vitest run`.
+# "runtime", the default, "bun", runs Vitest on Bun, `bun --bun vitest run
+# --configLoader native`, for every ref; "node" on Node.js, with
+# `pnpm exec vitest run`.
 #
 # "HEAD" is the pushed commit. Or on demand, with the same settings as
 # inputs, once the workflow is on the default branch.
@@ -36,7 +37,7 @@ on:
         description: "The mode (VITEST_PLUGIN_RSC_MODE): fast or fidelity"
         type: string
       runtime:
-        description: "The runtime of Vitest, for every ref: node (the default) or bun"
+        description: "The runtime of Vitest, for every ref: bun (the default) or node"
         type: string
       build:
         description: "Next and React build: production or development"
@@ -89,7 +90,7 @@ jobs:
           refs=${IN_REFS:-$(get refs "HEAD")}
           refs=${refs//HEAD/${{ github.sha }}}
           copies=${IN_COPIES:-$(jq -c '.copies // [1]' "$file" 2>/dev/null || echo "[1]")}
-          runtime=${IN_RUNTIME:-$(get runtime node)}
+          runtime=${IN_RUNTIME:-$(get runtime bun)}
           case "$runtime" in node | bun) ;; *) echo "::error::runtime is node or bun, not $runtime"; exit 1 ;; esac
           {
             echo "refs=$refs"
@@ -156,11 +157,11 @@ jobs:
           config=""
           if [ "$PROFILE" != none ]; then config="-c vitest.profile.config.ts"; fi
           if [ "$PROFILE" = timings ]; then export VITEST_PROFILE=timings; fi
-          vitest=(pnpm exec vitest)
-          if [ "$RUNTIME" = bun ]; then vitest=(bun --bun vitest); fi
+          vitest=(pnpm exec vitest run)
+          if [ "$RUNTIME" = bun ]; then vitest=(bun --bun vitest run --configLoader native); fi
           # A warm-up of each ref: the dependency optimizer and the caches.
           for i in $(seq 1 "$count"); do
-            (cd "../wt$i/playground/$APP" && "${vitest[@]}" run --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
+            (cd "../wt$i/playground/$APP" && "${vitest[@]}" --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
           done
           echo -e "round\tref\tduration_s\tfiles_ms\ttests" > .bench-ab/results.tsv
           for r in $(seq 1 "$REPS"); do
@@ -168,7 +169,7 @@ jobs:
               dir="../wt$i/playground/$APP"
               rm -rf "$dir/timings" "$dir/profiles"
               log="$GITHUB_WORKSPACE/.bench-ab/logs/r$r-ref$i.log"
-              (cd "$dir" && "${vitest[@]}" run $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
+              (cd "$dir" && "${vitest[@]}" $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
               duration=$(grep -oP 'Duration\s+\K[0-9.]+' "$log" | tail -1)
               tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' "$log" | tail -1)
               # The sum of the files' own times, from the tree reporter's lines.
