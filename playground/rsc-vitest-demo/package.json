@@ -6,11 +6,11 @@
     "dev": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite --configLoader native",
     "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native",
     "check": "tsc -b",
-    "preview": "vite preview",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest watch"
+    "preview": "vite preview --configLoader native",
+    "test": "vitest --configLoader native",
+    "test:run": "vitest run --configLoader native",
+    "test:coverage": "vitest run --configLoader native --coverage",
+    "test:watch": "vitest watch --configLoader native"
   },
   "dependencies": {
     "react": "19.2.6",

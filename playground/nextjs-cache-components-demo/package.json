@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "test": "vitest",
-    "test:run": "vitest run",
+    "test": "vitest --configLoader native",
+    "test:run": "vitest run --configLoader native",
     "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native"
   },
   "dependencies": {
