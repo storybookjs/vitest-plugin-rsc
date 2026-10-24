@@ -1,8 +1,8 @@
 {
   "refs": ["HEAD", "HEAD"],
   "runtime": ["node", "bun"],
-  "tests": "tests/vitest-user-event/",
-  "reps": 3,
+  "tests": "tests/vitest-user-event/notes-list.test.tsx",
+  "reps": 8,
   "copies": [1, 2],
   "profile": "none",
   "mode": "fast"
