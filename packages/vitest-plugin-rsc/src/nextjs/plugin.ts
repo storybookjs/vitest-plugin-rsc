@@ -54,7 +54,7 @@ import { optimizerCacheKey } from "./optimizer-cache-key.ts";
 import { createCommonJsPlugin } from "./commonjs.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
-import { pageTimersPlugin } from "./page-timers.ts";
+import { pageTimersDefine, pageTimersPlugin } from "./page-timers.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
@@ -1125,6 +1125,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ...definesOf(project, layer),
                 ...(layer === "browser" ? serverCode.browserCacheKey : serverCode.cacheKey),
                 ...optimizerCacheKey(project, layer),
+                // The page's own timers in the browser layer: see page-timers.ts.
+                ...(layer === "browser" ? pageTimersDefine : {}),
                 // A pre-bundle has the stand-ins of `fast.crypto` in it, or not.
                 __vitest_plugin_rsc_fast_crypto__: JSON.stringify(fast.crypto),
               },
