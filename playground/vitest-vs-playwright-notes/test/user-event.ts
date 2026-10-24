@@ -1,5 +1,4 @@
 import { userEvent as testingLibraryUserEvent } from "@testing-library/user-event";
-import { expect } from "vitest";
 import type { Locator } from "vitest/browser";
 
 // Clicks and fills of tests/vitest-user-event/: events that Testing Library
@@ -8,10 +7,12 @@ import type { Locator } from "vitest/browser";
 // delays between the events.
 const user = testingLibraryUserEvent.setup({ delay: null });
 
-/** The element, once the page has it: as a locator's action waits for it. */
+/**
+ * The element, once the page has it: as a locator's action waits for it, one
+ * element only, until the test is about to time out.
+ */
 async function find(locator: Locator): Promise<HTMLElement> {
-  await expect.element(locator).toBeInTheDocument();
-  return locator.element() as HTMLElement;
+  return (await locator.findElement()) as HTMLElement;
 }
 
 export async function click(locator: Locator): Promise<void> {
