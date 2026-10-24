@@ -1,3 +1,4 @@
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import { pageFetch } from "./app-requests.ts";
 import { followNavigation } from "./document-loads.ts";
 import { streamedContentQueue } from "./document.ts";
@@ -148,7 +149,7 @@ const isDocuments = (binding: Binding, descriptor: PropertyDescriptor | undefine
   (saved.has(binding) && same(descriptor, saved.get(binding))) ||
   same(descriptor, original.get(binding));
 
-const navigation = (window as { navigation?: EventTarget }).navigation;
+const { navigation } = pageHost;
 
 // The navigations of the app that would load the document: see document-loads.ts.
 const followed = (event: Event) => {

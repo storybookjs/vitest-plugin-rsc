@@ -1,5 +1,8 @@
 import { afterAll, expect, test, vi } from "vitest";
 
+vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
+  default: { serverWebApis: globalThis, fromPage: (init: unknown) => init },
+}));
 vi.mock("virtual:vitest-plugin-rsc/next-env", () => ({
   default: { ASSIGNED_FIRST: "of-the-env", NOT_ASSIGNED: "of-the-env" },
 }));

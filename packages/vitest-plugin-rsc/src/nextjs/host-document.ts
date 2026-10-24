@@ -1,3 +1,5 @@
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
+
 // What a link or a form of a component does outside a browser context of the
 // app, where the document is the host's own: one that would load another
 // document leaves the host's as it is, and says so. Without its router, as
@@ -48,7 +50,7 @@ export function noRouter(url: URL): Error {
  * called.
  */
 export function keepHostDocument(report: (url: URL) => void = reportLoad): () => void {
-  const { navigation } = window as { navigation?: EventTarget };
+  const { navigation } = pageHost;
   const keep = (event: Event) => {
     // In a context the app has the navigations. Another keeper, as for two
     // components at once, may have stopped this one already.

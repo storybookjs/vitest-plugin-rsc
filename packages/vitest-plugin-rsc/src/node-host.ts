@@ -1,4 +1,5 @@
 import type { Agent, IncomingMessage } from "node:http";
+import { createNavigation } from "./navigation-shim.ts";
 import type { PageHost, WebApis } from "./page-host.ts";
 
 // The host of a page in a worker of Node.js, with a DOM of happy-dom or
@@ -109,6 +110,9 @@ function bodyOf(body: FormData | Blob, headers: Headers): RequestInit & { duplex
   return { body: form, headers, duplex: "half" };
 }
 
+// The DOM has no Navigation API: see navigation-shim.ts.
+const navigation = createNavigation(window);
+
 /** The host of the page, whose dev server listens at `url`. */
 export function nodeHost(url: string): PageHost {
   // A page asks for hundreds of modules at once: over a few connections, each
@@ -116,7 +120,7 @@ export function nodeHost(url: string): PageHost {
   const agent: Agent = new http.Agent({ keepAlive: true });
   return {
     request: (event, data) => post(agent, url, JSON.stringify({ event, data })),
-    navigation: undefined,
+    navigation,
     loadsStylesheets: false,
     serverWebApis: webApis,
     fromPage,
