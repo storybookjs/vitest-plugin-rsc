@@ -1,0 +1,159 @@
+name: Benchmark A/B
+
+# On demand: the same tests on two or more refs, interleaved on one runner
+# (A, B, A, B, ...), so the refs compare on the same machine; several copies
+# of the job give more samples. Each copy writes a table of medians and the
+# ratio of each ref to the first to the summary of the run, and uploads the
+# logs and, with a profile, the timings or CPU profiles of every run.
+#
+#   gh workflow run bench-ab.yml -f refs=main,my-branch -f reps=3
+on:
+  workflow_dispatch:
+    inputs:
+      refs:
+        description: "Refs to compare, comma-separated; the first is the baseline"
+        required: true
+        type: string
+      app:
+        description: "Playground"
+        default: vitest-vs-playwright-notes
+        type: string
+      tests:
+        description: "Test files or directory, passed to vitest"
+        default: tests/vitest-user-event/
+        type: string
+      fast:
+        description: "Fast mode (VITEST_PLUGIN_RSC_FAST)"
+        default: "1"
+        type: choice
+        options: ["1", "0"]
+      build:
+        description: "Next and React build"
+        default: production
+        type: choice
+        options: [production, development]
+      reps:
+        description: "Rounds per copy of the job, each ref once per round"
+        default: "3"
+        type: string
+      copies:
+        description: "Parallel copies of the job, as a JSON list"
+        default: "[1]"
+        type: string
+      profile:
+        description: "Per-test, per-request timings or a CPU profile of the page (vitest.profile.config.ts)"
+        default: none
+        type: choice
+        options: [none, timings, profile]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ab:
+    name: A/B ${{ inputs.refs }} (${{ matrix.copy }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        copy: ${{ fromJSON(inputs.copies) }}
+    env:
+      VITEST_PLUGIN_RSC_FAST: ${{ inputs.fast == '1' && '1' || '' }}
+      VITEST_PLUGIN_RSC_BUILD: ${{ inputs.build }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - name: Check out and build every ref
+        run: |
+          i=0
+          IFS=, read -ra refs <<< "${{ inputs.refs }}"
+          for ref in "${refs[@]}"; do
+            i=$((i + 1))
+            git fetch --quiet origin "$ref" || true
+            git worktree add --quiet "../wt$i" "$(git rev-parse --verify "$ref^{commit}" 2>/dev/null || git rev-parse --verify "origin/$ref^{commit}")"
+            echo "ref $i: $ref = $(git -C "../wt$i" rev-parse --short HEAD)"
+            (cd "../wt$i" && pnpm install --frozen-lockfile --silent && pnpm --filter vitest-plugin-rsc build > /dev/null)
+          done
+          echo "$i" > ../count
+      - name: Run the rounds, interleaved
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ env.PLAYWRIGHT_BROWSERS_PATH }}
+        run: |
+          IFS=, read -ra refs <<< "${{ inputs.refs }}"
+          count=$(cat ../count)
+          mkdir -p ../logs
+          config=""
+          if [ "${{ inputs.profile }}" != none ]; then config="-c vitest.profile.config.ts"; fi
+          if [ "${{ inputs.profile }}" = timings ]; then export VITEST_PROFILE=timings; fi
+          # A warm-up of each ref: the dependency optimizer and the caches.
+          for i in $(seq 1 "$count"); do
+            (cd "../wt$i/playground/${{ inputs.app }}" && pnpm exec vitest run --maxWorkers 1 ${{ inputs.tests }} > /dev/null 2>&1 || true)
+          done
+          echo -e "round\tref\tduration_s\tfiles_ms\ttests" > ../results.tsv
+          for r in $(seq 1 "${{ inputs.reps }}"); do
+            for i in $(seq 1 "$count"); do
+              dir="../wt$i/playground/${{ inputs.app }}"
+              rm -rf "$dir/timings" "$dir/profiles"
+              log="../logs/r$r-ref$i.log"
+              (cd "$dir" && pnpm exec vitest run $config --maxWorkers 1 ${{ inputs.tests }} 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$OLDPWD/$log") || true
+              duration=$(grep -oP 'Duration\s+\K[0-9.]+' "$log" | tail -1)
+              tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' "$log" | tail -1)
+              # The sum of the files' own times, from the tree reporter's lines.
+              files=$(grep -oP '\(\d+ tests?\) \K[0-9]+(?=ms)' "$log" | paste -sd+ | bc)
+              echo -e "$r\t${refs[$((i - 1))]}\t${duration:-nan}\t${files:-nan}\t${tests:-failed}" >> ../results.tsv
+              if [ "${{ inputs.profile }}" != none ]; then
+                mkdir -p "../prof/r$r-ref$i"
+                cp -r "$dir/timings" "../prof/r$r-ref$i/" 2>/dev/null || true
+                cp -r "$dir/profiles" "../prof/r$r-ref$i/" 2>/dev/null || true
+              fi
+            done
+          done
+          cat ../results.tsv
+      - name: Sum up
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import csv, statistics
+          rows = list(csv.DictReader(open("../results.tsv"), delimiter="\t"))
+          refs = []
+          for row in rows:
+              if row["ref"] not in refs:
+                  refs.append(row["ref"])
+          def med(ref, key):
+              values = [float(r[key]) for r in rows if r["ref"] == ref and r[key] != "nan"]
+              return statistics.median(values) if values else float("nan")
+          print(f"### A/B copy ${{ matrix.copy }}: {'${{ inputs.app }}'} {'${{ inputs.tests }}'}, {'fast mode' if '${{ inputs.fast }}' == '1' else 'default mode'}, {'${{ inputs.build }}'}, {len(rows) // max(len(refs), 1)} rounds\n")
+          print("| Ref | Duration, median s | Files' time, median s | vs first | Rounds (Duration s) | Tests |")
+          print("| --- | ---: | ---: | ---: | --- | --- |")
+          base = med(refs[0], "files_ms")
+          for ref in refs:
+              d, f = med(ref, "duration_s"), med(ref, "files_ms")
+              rounds = ", ".join(r["duration_s"] for r in rows if r["ref"] == ref)
+              tests = ", ".join(sorted({r["tests"] for r in rows if r["ref"] == ref}))
+              print(f"| `{ref}` | {d:.1f} | {f / 1000:.1f} | {100 * (f - base) / base:+.1f}% | {rounds} | {tests} |")
+          EOF
+          if [ "${{ inputs.profile }}" = timings ]; then
+            for d in ../prof/r1-ref*; do
+              [ -d "$d/timings" ] || continue
+              echo "### Timings of $(basename "$d")" >> "$GITHUB_STEP_SUMMARY"
+              (cd "../wt1/playground/${{ inputs.app }}" && python3 test/timings-summary.py "$OLDPWD/$d/timings") >> "$GITHUB_STEP_SUMMARY" || true
+            done
+          fi
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: bench-ab-${{ matrix.copy }}
+          path: |
+            ../logs
+            ../results.tsv
+            ../prof
+          if-no-files-found: ignore
