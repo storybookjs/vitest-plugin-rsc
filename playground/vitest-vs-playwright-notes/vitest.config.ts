@@ -10,6 +10,11 @@ await writePgliteFiles();
 
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
+  // A dependency cache of its own on Bun (`bun --bun vitest`, see README.md):
+  // Vite's hash of the config stringifies its functions, which Bun prints
+  // differently from Node, so the cache of one runtime is stale for the
+  // other, and every switch would optimize the dependencies again.
+  cacheDir: process.versions.bun ? "node_modules/.vite-bun" : undefined,
   // What lib/__mocks__/db.ts imports, which no file that Vite scans imports.
   optimizeDeps: { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
   plugins: [

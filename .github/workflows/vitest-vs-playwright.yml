@@ -53,13 +53,19 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # Bun runs Vitest's own process, which starts 2 to 3 s sooner than on
+      # Node.js; the tests then take the same time. See the playgrounds'
+      # README.md.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm --filter vitest-plugin-rsc build
       - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -78,7 +84,7 @@ jobs:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -101,7 +107,7 @@ jobs:
           VITEST_PLUGIN_RSC_FAST: ""
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -122,7 +128,7 @@ jobs:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
@@ -156,6 +162,9 @@ jobs:
   # test file, summed up by package in the summary of the run, a trace of
   # Chrome for two files, summed up by what the browser did, and both as an
   # artifact, to open in Chrome's DevTools.
+  # Vitest on Node.js, here and in the primitives below, unlike the vitest
+  # job: their numbers, the startup of the primitives too, compare with
+  # earlier runs.
   profile:
     name: Vitest, vitest-vs-playwright-notes, vitest-user-event, fast mode, CPU profile
     runs-on: ubuntu-latest
