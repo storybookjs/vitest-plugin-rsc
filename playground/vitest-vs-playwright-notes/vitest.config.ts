@@ -39,7 +39,10 @@ export default defineConfig({
     browser: {
       enabled: true,
       headless: true,
-      provider: playwright(),
+      // A young generation of up to 64 MB a semi-space in Chromium's V8, so
+      // that it collects the many short-lived objects of the page loads less
+      // often: an A/B decides whether it is faster, see .github/bench-ab.json.
+      provider: playwright({ launchOptions: { args: ["--js-flags=--max-semi-space-size=64"] } }),
       instances: [{ browser: "chromium" }],
     },
     isolate: false,
