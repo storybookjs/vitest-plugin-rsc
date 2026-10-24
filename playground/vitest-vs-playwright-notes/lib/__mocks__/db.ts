@@ -18,12 +18,15 @@ async function fetchFile(url: string): Promise<Response> {
   return response;
 }
 
+const zzm = (n: string) => performance.mark("pg:" + n);
+zzm("start");
 const [loadDataDir, pgliteWasmModule, initdbWasmModule, fsBundle] = await Promise.all([
-  fetchFile(dataDirUrl).then((response) => response.blob()),
-  WebAssembly.compileStreaming(fetchFile(pgliteWasmUrl)),
-  WebAssembly.compileStreaming(fetchFile(initdbWasmUrl)),
-  fetchFile(fsBundleUrl).then((response) => response.blob()),
+  fetchFile(dataDirUrl).then((response) => response.blob()).finally(() => zzm("tgz blob")),
+  WebAssembly.compileStreaming(fetchFile(pgliteWasmUrl)).finally(() => zzm("pglite.wasm compiled")),
+  WebAssembly.compileStreaming(fetchFile(initdbWasmUrl)).finally(() => zzm("initdb.wasm compiled")),
+  fetchFile(fsBundleUrl).then((response) => response.blob()).finally(() => zzm("data blob")),
 ]);
+zzm("fetched+compiled");
 
 const client = await PGlite.create({
   loadDataDir,
@@ -33,5 +36,6 @@ const client = await PGlite.create({
   startParams: [...PGlite.defaultStartParams, "-c", "shared_buffers=16MB"],
 });
 
+zzm("created");
 // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- The two drivers differ in their client and raw results only.
 export const db = drizzle(client, { schema }) as unknown as typeof appDb;

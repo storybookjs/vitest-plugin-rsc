@@ -65,7 +65,11 @@ afterAll(async () => {
 // first time it loads compiles Next's server, which takes longer than a test
 // may. In a setup file it does not count towards a test's timeout. A layer
 // that fails to load fails the test file here.
-await ssrLayer();
+// ZZ-EXPERIMENT: not awaited here, so the next setup files (an app's database)
+// start while the ssr layer loads; awaited before the first test instead.
+const ssrLayerLoaded = ssrLayer();
+ssrLayerLoaded.catch(() => {});
+beforeAll(() => ssrLayerLoaded, 120_000);
 
 // Without arguments: a hook gets the test's context, which is no options.
 afterEach(() => cleanup());

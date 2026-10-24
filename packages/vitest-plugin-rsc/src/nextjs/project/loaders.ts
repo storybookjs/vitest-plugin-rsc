@@ -265,7 +265,8 @@ export function createLoaders(
   } catch (error) {
     fail("it no longer depends on `postcss`", error);
   }
-  const fontLoaders = (["google", "local"] as const).map((name) => {
+  // ZZ-EXPERIMENT: made on the first `next/font` call.
+  const makeFontLoaders = () => (["google", "local"] as const).map((name) => {
     const target = resolve(`next/font/${name}/target.css`);
     const loaders = getNextFontLoader(
       {
@@ -295,9 +296,10 @@ export function createLoaders(
       fontOptions: fontLoader!.options,
     };
   });
+  let fontLoaders: ReturnType<typeof makeFontLoaders> | undefined;
   const fonts = new Map<string, ReturnType<NextProject["loadFont"]>>();
   const loadFont = async (request: string) => {
-    const font = fontLoaders.find((candidate) => request.startsWith(candidate.prefix))!;
+    const font = (fontLoaders ??= makeFontLoaders()).find((candidate) => request.startsWith(candidate.prefix))!;
     const resource = font.target + request.slice(font.prefix.length - 1);
     // The font files of the call, as Next's build lists them for its
     // manifest of fonts (`NextFontManifestPlugin`).

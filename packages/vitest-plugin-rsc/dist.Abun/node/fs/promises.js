@@ -1,0 +1,40 @@
+import fs from "vitest-plugin-rsc/node/fs";
+//#region src/node/fs/promises.ts
+const missing = (name) => function() {
+	throw new Error(`vitest-plugin-rsc: ${name} of Node.js is not there in the browser`);
+};
+const promises = fs.promises;
+const constants = promises.constants ?? missing("fs/promises.constants");
+const access = promises.access ?? missing("fs/promises.access");
+const copyFile = promises.copyFile ?? missing("fs/promises.copyFile");
+const cp = promises.cp ?? missing("fs/promises.cp");
+const open = promises.open ?? missing("fs/promises.open");
+const opendir = promises.opendir ?? missing("fs/promises.opendir");
+const rename = promises.rename ?? missing("fs/promises.rename");
+const truncate = promises.truncate ?? missing("fs/promises.truncate");
+const rm = promises.rm ?? missing("fs/promises.rm");
+const rmdir = promises.rmdir ?? missing("fs/promises.rmdir");
+const mkdir = promises.mkdir ?? missing("fs/promises.mkdir");
+const readdir = promises.readdir ?? missing("fs/promises.readdir");
+const readlink = promises.readlink ?? missing("fs/promises.readlink");
+const symlink = promises.symlink ?? missing("fs/promises.symlink");
+const lstat = promises.lstat ?? missing("fs/promises.lstat");
+const stat = promises.stat ?? missing("fs/promises.stat");
+const link = promises.link ?? missing("fs/promises.link");
+const unlink = promises.unlink ?? missing("fs/promises.unlink");
+const chmod = promises.chmod ?? missing("fs/promises.chmod");
+const lchmod = promises.lchmod ?? missing("fs/promises.lchmod");
+const lchown = promises.lchown ?? missing("fs/promises.lchown");
+const chown = promises.chown ?? missing("fs/promises.chown");
+const utimes = promises.utimes ?? missing("fs/promises.utimes");
+const lutimes = promises.lutimes ?? missing("fs/promises.lutimes");
+const realpath = promises.realpath ?? missing("fs/promises.realpath");
+const mkdtemp = promises.mkdtemp ?? missing("fs/promises.mkdtemp");
+const writeFile = promises.writeFile ?? missing("fs/promises.writeFile");
+const appendFile = promises.appendFile ?? missing("fs/promises.appendFile");
+const readFile = promises.readFile ?? missing("fs/promises.readFile");
+const watch = promises.watch ?? missing("fs/promises.watch");
+const statfs = promises.statfs ?? missing("fs/promises.statfs");
+const glob = promises.glob ?? missing("fs/promises.glob");
+//#endregion
+export { access, appendFile, chmod, chown, constants, copyFile, cp, promises as default, glob, lchmod, lchown, link, lstat, lutimes, mkdir, mkdtemp, open, opendir, readFile, readdir, readlink, realpath, rename, rm, rmdir, stat, statfs, symlink, truncate, unlink, utimes, watch, writeFile };
