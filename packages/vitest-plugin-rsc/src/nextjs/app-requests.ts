@@ -203,6 +203,8 @@ type Sending = {
    * page before it is still open (see `navigate()` in page.ts). That one
    * opens nothing of what the test opened, also after a redirect, and
    * starts no files of its route, which leaving that page would take back.
+   * What it opens is its `opened`, after a redirect too: from a page of fast
+   * mode's kept app, a page without HTML.
    */
   navigation?: "test" | "app";
   /** Who answers a request that the server has nothing for: see `HandleOptions.unrouted`. */
@@ -237,13 +239,15 @@ export async function sendRequest(
     const headers = from
       ? browserHeaders(new Headers(sent), url, method, from, credentials)
       : new Headers(sent);
+    // What a page load of the app opens, at the URL it is at by now.
+    const appOpened = opened ? { ...opened, pathname: url.pathname } : null;
     const response = await unlessAborted(
       handledByServer(
         { url: url.href, method, headers, body, signal: request.signal },
         {
           nested: !from,
           unrouted: network ? "pass" : "not-found",
-          opened: navigation === "app" ? null : redirected ? undefined : opened,
+          opened: navigation === "app" ? appOpened : redirected ? undefined : opened,
           pageLoad: navigation === "test",
         },
       ),

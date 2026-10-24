@@ -811,9 +811,10 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    *   of a component carries over from one test to the next. What does is
    *   the state of the modules of the app, of a package and of Next and
    *   React, as in a single-page app that never reloads. The server renders
-   *   no HTML (`ssr: false`): a test that asserts on it passes `ssr: true`,
-   *   and gets a page load of its own. In development the page has no dev
-   *   overlay.
+   *   no HTML (`ssr: false`), also not of a page that the app loads itself
+   *   from one of these, like after a `<form>` without a Server Action: a
+   *   test that asserts on it passes `ssr: true`, and gets a page load of its
+   *   own. In development the page has no dev overlay.
    * - `skipPrefetch`: Next's `<Link>` and `<Form>` prefetch nothing.
    * - `immediates`: the server runs the steps of a render, which React
    *   separates with `setTimeout(work, 0)`, without the delay a browser adds

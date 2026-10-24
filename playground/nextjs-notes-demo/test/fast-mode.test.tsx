@@ -51,6 +51,20 @@ test("renders the page without HTML of the server after a test with it", async (
   expect(errors).toEqual([]);
 });
 
+test("loads the page that the app navigates to without its router, after a page without HTML", async () => {
+  await signedInAs();
+  const { errors } = await renderServer({ url: "/notes" });
+
+  // As a `<form>` without a Server Action or an `<a>` without Next's router would.
+  window.location.assign("/profile");
+
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "Profile" }))
+    .toBeInTheDocument();
+  expect(window.location.pathname).toBe("/profile");
+  expect(errors).toEqual([]);
+});
+
 test("opens the page that the request of a page redirects to, from its HTML", async () => {
   // Signed out: the page sends the browser to sign in.
   const { errors } = await renderServer({ url: "/notes/new" });

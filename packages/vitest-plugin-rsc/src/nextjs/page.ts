@@ -332,8 +332,8 @@ async function openPage(
   await loadDocument(html, response.url, container, after);
   superseded();
   const { inKeptApp } = page;
-  // A page of the kept app renders in it, from its document: the empty one
-  // of `ssr: false`, or the HTML of a page that the app loads itself.
+  // A page of the kept app renders in it, from the Flight payload of its
+  // document: the empty one of `ssr: false`.
   if (inKeptApp && kept) {
     await startInKeptApp(page, kept.client);
     superseded();
@@ -463,7 +463,7 @@ const moduleChecks = new Map<string, Promise<void>>();
 async function sendPageLoad(
   url: URL,
   init: RequestInit,
-  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network">,
+  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
   await oncePerTestFile(moduleChecks, "", checkFetchedModules);
@@ -534,6 +534,10 @@ export async function navigate(
       {
         from,
         navigation: "app",
+        // A page that the app loads from a page of the kept app renders in
+        // it from its Flight payload, as a page of `renderServer()` does:
+        // without HTML of the server, which React would only take down.
+        opened: page?.inKeptApp ? { pathname: url.pathname, proxy: true, ssr: false } : undefined,
         // A file of `public/`, which the network has: a download needs no page.
         network:
           downloadRequest === null ? undefined : () => registry.network(url, { ...init, signal }),
