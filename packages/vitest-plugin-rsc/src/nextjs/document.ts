@@ -34,6 +34,16 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // A page load starts the files of its route before the server has rendered
 // it, with a preload of each (`preloadPage()`). Those links are the page's
 // too, and go with it, and with a load that is left before its page is there.
+//
+// Leaving a page takes back what loading it put in the document. A page load
+// replaces the document, so that is all of it but the host's. A page of the
+// kept app, from its first, is a navigation of an app that goes on
+// (`renderAgain()` in client.tsx): leaving it takes back what its document
+// brought, its `<head>` and its body, and leaves what the code of the app
+// added to the `<head>` while it was open, like a stylesheet that React
+// hoisted there. The app removes that itself, or it goes as the kept app is
+// left. So the stylesheets of the pages before stay, as after a navigation of
+// the app.
 
 /** An entry of the history: its URL and its state. */
 export type HistoryEntry = { url: string; state: unknown };
@@ -58,6 +68,9 @@ export function keepProperties(target: object, keys?: Iterable<PropertyKey>): vo
   if (keys) keptProperties.set(target, new Set(keys));
   else keptProperties.delete(target);
 }
+// What the code of a kept app added to the `<head>`, which stays as its
+// pages are left, until the app is: see `unloadKeptApp()`.
+const keptNodes = new Set<ChildNode>();
 // The preloads of the page that loads next, until it is there.
 let preloads: HTMLLinkElement[] = [];
 // The URL that leaving the page puts back, while a page is open.
@@ -204,13 +217,15 @@ export function preloadPage({
  * scripts it renders, and after it the scripts of Next and React.
  *
  * The page takes the entry of the history that the document is at, or with
- * `after` gets one of its own, after that entry.
+ * `after` gets one of its own, after that entry. With `inKeptApp`, leaving
+ * the page leaves what the app added to the `<head>`: see `unloadKeptApp()`.
  */
 export async function loadDocument(
   html: string,
   url: string,
   container?: Element,
   after?: HistoryEntry,
+  inKeptApp = false,
 ): Promise<void> {
   leaveDocument();
   // The preloads of its route are this page's.
@@ -219,6 +234,8 @@ export async function loadDocument(
 
   // What was here before the page. Everything else is the page's to lose.
   // The URL too: a host may move it between pages, to say what it shows next.
+  // Not what a kept app added, which is not the host's to park: it stays in
+  // place for the app, whose React takes its stylesheets up again.
   const runnerUrl = window.location.href;
   runnerHref = runnerUrl;
   const runnerBody = document.body;
@@ -233,9 +250,11 @@ export async function loadDocument(
   const runnerScripts = new Set(document.querySelectorAll("script"));
   const before = new Set<Node>(
     [...document.head.childNodes, ...runnerBody.childNodes].filter(
-      (node) => !ownPreloads.has(node as HTMLLinkElement),
+      (node) => !ownPreloads.has(node as HTMLLinkElement) && !keptNodes.has(node),
     ),
   );
+  // What the page's load put in the `<head>`: its preloads, and its document's.
+  const brought = new Set<Node>(ownPreloads);
   const parked: Node[] = [];
   // The graph's stylesheets among them.
   const graphParked = new Set<Node>();
@@ -257,7 +276,9 @@ export async function loadDocument(
       container?.replaceChildren();
       for (const parent of [document.head, pageBody]) {
         for (const node of Array.from(parent.childNodes)) {
-          if (!before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node)) node.remove();
+          if (before.has(node) || isViteStyle(node) || isGraphStylesheet(node)) continue;
+          if (inKeptApp && parent === document.head && !brought.has(node)) keptNodes.add(node);
+          else node.remove();
         }
       }
     } finally {
@@ -346,7 +367,9 @@ export async function loadDocument(
   }
   deactivate = activate();
 
-  document.head.append(...page.head.childNodes);
+  const head = Array.from(page.head.childNodes);
+  for (const node of head) brought.add(node);
+  document.head.append(...head);
   await loaded(stylesheetsOfHead);
   if (unload !== leave) return;
 
@@ -436,8 +459,18 @@ function leaveDocument(): void {
 }
 
 /**
+ * Takes back what the code of the kept app added to the `<head>` as its pages
+ * were open, once the app is left: see `loadDocument()`.
+ */
+export function unloadKeptApp(): void {
+  // Not one that the app removed, or moved elsewhere.
+  for (const node of keptNodes) if (node.parentNode === document.head) node.remove();
+  keptNodes.clear();
+}
+
+/**
  * Leaves the page, and the one that was loading: the document is as it was
- * before the page.
+ * before the page, but for what a kept app keeps (`unloadKeptApp()`).
  */
 export function unloadDocument(): void {
   try {
