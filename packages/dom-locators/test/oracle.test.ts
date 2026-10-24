@@ -99,6 +99,13 @@ const names: [role: string, name: string | RegExp][] = [
   ["button", "Div button"],
   ["button", "Button with role none"],
   ["button", "In legend"],
+  ["button", "Shadow button"],
+  ["button", "Nested shadow button"],
+  ["button", "After the shadow"],
+  ["button", "Closed button"],
+  ["link", "Shadow link"],
+  ["group", "Shadow group"],
+  ["textbox", "Shadow field"],
   ["button", /^save/i],
   ["button", /Save$/],
   ["button", ""],
@@ -178,6 +185,10 @@ const texts: (string | RegExp)[] = [
   "Details text",
   "Closed text",
   "Page footer",
+  "Shadow text",
+  "Slotted text",
+  "Shadow",
+  "Closed button",
   "Contact",
   "",
   "nothing like this",
@@ -285,6 +296,7 @@ for (const text of [
   "Count",
   "Hidden input",
   "Result",
+  "Shadow field",
   /pass/i,
   "nothing",
 ]) {
@@ -301,7 +313,10 @@ for (const text of [
   }
 }
 for (const [method, values] of [
-  ["getByPlaceholder", ["you@example.com", "YOU@", "Type here", /type/i, "nothing"]],
+  [
+    "getByPlaceholder",
+    ["you@example.com", "YOU@", "Type here", /type/i, "In the shadow", "nothing"],
+  ],
   ["getByAltText", ["Settings", "settings", "A chart", "Image submit", /chart/, ""]],
   ["getByTitle", ["Tooltip text", "tooltip", "Titled input", "Chart title", /title/i]],
 ] as const) {
@@ -391,7 +406,8 @@ function answer(build: Build, of: unknown): Answer {
 }
 
 function compare(fixture: string, extraRows: Row[]): { compared: number; mismatches: string[] } {
-  document.body.innerHTML = fixture;
+  // Parsed with its shadow roots, of `<template shadowrootmode>`.
+  document.body.setHTMLUnsafe(fixture);
   const mismatches: string[] = [];
   for (const [name, build] of [...rows, ...extraRows]) {
     const ours = answer(build, page);
@@ -500,7 +516,7 @@ test("every locator of the benchmark finds what Vitest's page finds, on each rou
 });
 
 test("a locator of an element finds what Vitest's finds, and the getBy* in it", () => {
-  document.body.innerHTML = ariaFixture;
+  document.body.setHTMLUnsafe(ariaFixture);
   const nav = document.getElementById("nav-primary")!;
   const pairs: Row[] = [
     ["elementLocator", (p) => p.elementLocator(nav)],

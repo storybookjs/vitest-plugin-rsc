@@ -5,7 +5,7 @@
 
 import { isVisible } from "./actionability.ts";
 import { UnsupportedError, escapeHatch } from "./errors.ts";
-import { commitChange, focus, focusNext } from "./focus.ts";
+import { activeElement, commitChange, focus, focusNext } from "./focus.ts";
 import { deleteBackward, deleteForward, insertText, isTextControl } from "./form-controls.ts";
 
 /** A key of `press()`: a named key, or one printable character. */
@@ -215,14 +215,14 @@ export function press(element: HTMLElement, key: Key): void {
         }
     }
   }
-  const target = (document.activeElement as HTMLElement | null) ?? document.body;
+  const target = (activeElement() as HTMLElement | null) ?? document.body;
   target.dispatchEvent(new KeyboardEvent("keyup", init));
   if (clickAfterKeyup) keyClick(element);
 }
 
 /** Focuses `element` for `press()`, as Playwright does: the caret at the start of a text control the focus comes to. */
 export function focusForPress(element: HTMLElement): void {
-  if (document.activeElement === element) return;
+  if (activeElement() === element) return;
   focus(element);
   if (isTextControl(element) && element.selectionStart !== null) element.setSelectionRange(0, 0);
 }

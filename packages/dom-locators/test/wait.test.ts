@@ -2,7 +2,7 @@
 // until the caller's timeout, else the running test's deadline.
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { page } from "../src/index.ts";
+import { page, UnsupportedError } from "../src/index.ts";
 
 beforeEach(() => {
   document.body.innerHTML = "<main></main>";
@@ -126,4 +126,19 @@ test("an action waits for its element to be visible", async () => {
   await expect(
     page.getByRole("button", { name: "Save", includeHidden: true }).click({ timeout: 50 }),
   ).rejects.toThrow("is not visible");
+});
+
+test("an error of a look rejects at once, not after the timeout", async () => {
+  main().innerHTML =
+    '<a href="/">Home</a><div contenteditable="true" aria-label="Editor">Text</div>';
+  const start = performance.now();
+  // Playwright's error for a state that the role has not.
+  await expect(
+    page.getByRole("link", { pressed: true }).findElement({ timeout: 5000 }),
+  ).rejects.toThrow('"pressed" attribute is only supported for roles: "button"');
+  // What the package does not model.
+  await expect(page.getByLabelText("Editor").fill("x", { timeout: 5000 })).rejects.toThrow(
+    UnsupportedError,
+  );
+  expect(performance.now() - start).toBeLessThan(500);
 });

@@ -2,6 +2,8 @@
 // and for Tab, and the `change` that an edit owes once its control loses the
 // focus.
 
+import { closestCrossShadow } from "./dom-utils.ts";
+
 // What the browser focuses for a press of the mouse on an element in it.
 const focusable =
   "input:not([type=hidden]),select,textarea,button,a[href],area[href],iframe,summary,[tabindex],[contenteditable]:not([contenteditable=false]),audio[controls],video[controls]";
@@ -32,9 +34,16 @@ export function commitChange(element: Element | null): void {
   }
 }
 
+/** The element with the focus, in a shadow root too, where the document's is its host. */
+export function activeElement(): Element | null {
+  let active = document.activeElement;
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  return active;
+}
+
 /** Focuses `element`, with the `change` of the control the focus leaves first. */
 export function focus(element: HTMLElement | SVGElement): void {
-  const active = document.activeElement;
+  const active = activeElement();
   if (active === element) return;
   commitChange(active);
   element.focus({ preventScroll: true });
@@ -42,12 +51,12 @@ export function focus(element: HTMLElement | SVGElement): void {
 
 /** What a press of the mouse on `element` does to the focus: the focusable element it is in, else none. */
 export function focusOnPress(element: Element): void {
-  const target = element.closest(focusable) as HTMLElement | null;
+  const target = (closestCrossShadow(element, focusable) as HTMLElement | undefined) ?? null;
   if (target && !(target as HTMLButtonElement).disabled) {
     focus(target);
     return;
   }
-  const active = document.activeElement as HTMLElement | null;
+  const active = activeElement() as HTMLElement | null;
   if (active && active !== document.body) {
     commitChange(active);
     active.blur();
