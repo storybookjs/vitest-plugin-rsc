@@ -306,7 +306,7 @@ function fastByText(
 // Testing Library's alone, for the measurements of tests/zz-fastdom/.
 
 export type Engine = "fast" | "testing-library";
-export let engine: Engine = "fast";
+export let engine: Engine = "testing-library";
 export function useEngine(next: Engine): void {
   engine = next;
 }

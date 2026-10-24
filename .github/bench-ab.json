@@ -1,5 +1,5 @@
 {
-  "refs": ["kasper/laughing-hamilton-16fyge", "HEAD"],
+  "refs": ["kasper/laughing-hamilton-16fyge", "cb284651468eb7fa34da6f2d8b3fc6f94d611833", "HEAD"],
   "tests": "tests/vitest-user-event/",
   "reps": 3,
   "copies": [1, 2]
