@@ -10,8 +10,11 @@ name: Benchmark A/B
 # `.github/bench-ab.json` on that branch (every key optional):
 #
 #   { "refs": ["kasper/some-branch", "HEAD"], "tests": "tests/vitest-user-event/",
-#     "reps": 3, "copies": [1, 2], "mode": "fast", "build": "production",
-#     "profile": "timings", "app": "vitest-vs-playwright-notes" }
+#     "reps": 3, "copies": [1, 2], "mode": "fast", "runtime": "node",
+#     "build": "production", "profile": "timings", "app": "vitest-vs-playwright-notes" }
+#
+# "runtime" "bun" runs Vitest on Bun, `bun --bun vitest run`, for every ref;
+# the default, "node", on Node.js, with `pnpm exec vitest run`.
 #
 # "HEAD" is the pushed commit. Or on demand, with the same settings as
 # inputs, once the workflow is on the default branch.
@@ -31,6 +34,9 @@ on:
         type: string
       mode:
         description: "The mode (VITEST_PLUGIN_RSC_MODE): fast or fidelity"
+        type: string
+      runtime:
+        description: "The runtime of Vitest, for every ref: node (the default) or bun"
         type: string
       build:
         description: "Next and React build: production or development"
@@ -58,6 +64,7 @@ jobs:
       app: ${{ steps.merge.outputs.app }}
       tests: ${{ steps.merge.outputs.tests }}
       mode: ${{ steps.merge.outputs.mode }}
+      runtime: ${{ steps.merge.outputs.runtime }}
       build: ${{ steps.merge.outputs.build }}
       reps: ${{ steps.merge.outputs.reps }}
       copies: ${{ steps.merge.outputs.copies }}
@@ -70,6 +77,7 @@ jobs:
           IN_APP: ${{ inputs.app }}
           IN_TESTS: ${{ inputs.tests }}
           IN_MODE: ${{ inputs.mode }}
+          IN_RUNTIME: ${{ inputs.runtime }}
           IN_BUILD: ${{ inputs.build }}
           IN_REPS: ${{ inputs.reps }}
           IN_COPIES: ${{ inputs.copies }}
@@ -81,11 +89,14 @@ jobs:
           refs=${IN_REFS:-$(get refs "HEAD")}
           refs=${refs//HEAD/${{ github.sha }}}
           copies=${IN_COPIES:-$(jq -c '.copies // [1]' "$file" 2>/dev/null || echo "[1]")}
+          runtime=${IN_RUNTIME:-$(get runtime node)}
+          case "$runtime" in node | bun) ;; *) echo "::error::runtime is node or bun, not $runtime"; exit 1 ;; esac
           {
             echo "refs=$refs"
             echo "app=${IN_APP:-$(get app vitest-vs-playwright-notes)}"
             echo "tests=${IN_TESTS:-$(get tests tests/vitest-user-event/)}"
             echo "mode=${IN_MODE:-$(get mode fast)}"
+            echo "runtime=$runtime"
             echo "build=${IN_BUILD:-$(get build production)}"
             echo "reps=${IN_REPS:-$(get reps 3)}"
             echo "copies=$copies"
@@ -102,6 +113,7 @@ jobs:
         copy: ${{ fromJSON(needs.settings.outputs.copies) }}
     env:
       VITEST_PLUGIN_RSC_MODE: ${{ needs.settings.outputs.mode }}
+      RUNTIME: ${{ needs.settings.outputs.runtime }}
       VITEST_PLUGIN_RSC_BUILD: ${{ needs.settings.outputs.build }}
       REFS: ${{ needs.settings.outputs.refs }}
       APP: ${{ needs.settings.outputs.app }}
@@ -117,6 +129,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        if: needs.settings.outputs.runtime == 'bun'
+        with:
+          bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - name: Check out and build every ref
@@ -140,9 +156,11 @@ jobs:
           config=""
           if [ "$PROFILE" != none ]; then config="-c vitest.profile.config.ts"; fi
           if [ "$PROFILE" = timings ]; then export VITEST_PROFILE=timings; fi
+          vitest=(pnpm exec vitest)
+          if [ "$RUNTIME" = bun ]; then vitest=(bun --bun vitest); fi
           # A warm-up of each ref: the dependency optimizer and the caches.
           for i in $(seq 1 "$count"); do
-            (cd "../wt$i/playground/$APP" && pnpm exec vitest run --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
+            (cd "../wt$i/playground/$APP" && "${vitest[@]}" run --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
           done
           echo -e "round\tref\tduration_s\tfiles_ms\ttests" > .bench-ab/results.tsv
           for r in $(seq 1 "$REPS"); do
@@ -150,7 +168,7 @@ jobs:
               dir="../wt$i/playground/$APP"
               rm -rf "$dir/timings" "$dir/profiles"
               log="$GITHUB_WORKSPACE/.bench-ab/logs/r$r-ref$i.log"
-              (cd "$dir" && pnpm exec vitest run $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
+              (cd "$dir" && "${vitest[@]}" run $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
               duration=$(grep -oP 'Duration\s+\K[0-9.]+' "$log" | tail -1)
               tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' "$log" | tail -1)
               # The sum of the files' own times, from the tree reporter's lines.
@@ -177,7 +195,7 @@ jobs:
               values = [float(r[key]) for r in rows if r["ref"] == ref and r[key] != "nan"]
               return statistics.median(values) if values else float("nan")
           import os
-          print(f"### A/B copy ${{ matrix.copy }}: {os.environ['APP']} {os.environ['TESTS']}, {os.environ['VITEST_PLUGIN_RSC_MODE']} mode, {os.environ['VITEST_PLUGIN_RSC_BUILD']}, {len(rows) // max(len(refs), 1)} rounds\n")
+          print(f"### A/B copy ${{ matrix.copy }}: {os.environ['APP']} {os.environ['TESTS']}, {os.environ['VITEST_PLUGIN_RSC_MODE']} mode, {os.environ['VITEST_PLUGIN_RSC_BUILD']}, Vitest on {'Bun' if os.environ['RUNTIME'] == 'bun' else 'Node.js'}, {len(rows) // max(len(refs), 1)} rounds\n")
           print("| Ref | Duration, median s | Files' time, median s | vs first | Rounds (Duration s) | Tests |")
           print("| --- | ---: | ---: | ---: | --- | --- |")
           base = med(refs[0], "files_ms")
