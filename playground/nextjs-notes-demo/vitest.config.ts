@@ -7,6 +7,7 @@ import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 import { setup as buildStorybookFramework } from "../test-helpers/storybook-framework.ts";
+import { cacheDir } from "../test-helpers/vite-cache.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
@@ -49,6 +50,8 @@ const browserMode = () => ({
 export const nextjsNotesProjects = [
   defineProject({
     root,
+    // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
+    cacheDir,
     // MSW's worker lives in the repo-root public/ (package.json#msw). Vitest 5
     // serves browser tests from the project's own Vite server and publicDir.
     publicDir: fileURLToPath(new URL("../../public", import.meta.url)),
@@ -98,6 +101,8 @@ export const nextjsNotesProjects = [
   // what the addon runs from Storybook's own UI.
   defineProject({
     root,
+    // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
+    cacheDir,
     resolve: { conditions: vitestPluginRscSourceConditions },
     optimizeDeps: { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
     plugins: [storybookTest({ configDir: fileURLToPath(new URL(".storybook", import.meta.url)) })],

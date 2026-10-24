@@ -4,6 +4,7 @@ import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { cacheDir } from "../test-helpers/vite-cache.ts";
 import { ioredisMockBrowser } from "./test/ioredis-mock.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
@@ -12,6 +13,8 @@ await writePgliteFiles();
 
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
+  // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
+  cacheDir,
   resolve: {
     conditions: vitestPluginRscSourceConditions,
     // The drivers of the app's database servers, which need Node.js, and which

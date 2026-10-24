@@ -7,6 +7,7 @@ import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { cacheDir } from "../test-helpers/vite-cache.ts";
 
 // Stands in for a service the app's server calls: it answers with the number
 // of requests it has had for a key.
@@ -169,6 +170,8 @@ const nextReact = (
 
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
+  // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
+  cacheDir,
   plugins: [
     transformsService(),
     vitestPluginRSC(),

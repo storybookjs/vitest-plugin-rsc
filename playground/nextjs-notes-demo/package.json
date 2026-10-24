@@ -13,6 +13,7 @@
     "start": "next start",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:run:bun": "bun --bun vitest run",
     "test:update": "vitest run --project=nextjs-notes-demo-browser --update",
     "test:report": "vitest run --reporter=html",
     "test:coverage": "vitest run --coverage",

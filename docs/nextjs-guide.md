@@ -804,6 +804,22 @@ Why might you want it? In development, React sends a Server Component's error me
 
 See [Development or production](internals/next-routes.md#development-or-production) for everything that changes.
 
+## Start sooner on Bun
+
+A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On a notes app with accounts, a run of one test file took 10.4 s with `pnpm exec vitest run` and 7.6 s with `bun --bun vitest run`; once the tests run, they take the same time. About 1.1 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too.
+
+```bash
+bun --bun vitest run
+```
+
+Give Bun a dependency cache of its own in your Vitest config. Vite's hash of the config includes its functions as text, which Bun prints differently from Node.js, so each runtime would find the other's cache stale and optimize the dependencies again:
+
+```ts
+cacheDir: process.versions.bun ? "node_modules/.vite-bun" : undefined,
+```
+
+Vitest is made for Node.js, not Bun, so keep a run on Node.js in CI.
+
 ## Watch mode
 
 In watch mode, saving any file of your app reruns every test file that opens a route, plus any test file that imports the saved file.
