@@ -57,3 +57,7 @@ The actions dispatch what Chrome dispatches for Playwright's own (`vitest/browse
 | `press`            | the focus (the caret at the start of a text input it comes to), `keydown`, `keypress` for Enter, Space and a character, what the key does, `keyup` on what has the focus then. Enter: a button's or a link's `click` (a link's on `keydown`), a textarea's line break, a text input's `change` and the form's implicit submission. Space: a button's or a checkbox's `click` after `keyup`. Tab: the focus to the next element in the tab order. Backspace, Delete and characters edit a text input | the `code` and `keyCode` of punctuation are empty, as they depend on the layout of the keyboard; no modifiers, no arrows, no IME                                        |
 
 Every event is the page's own, so `isTrusted` is `false`, where Playwright's are the browser's: a page that checks it sees the difference. The coordinates are the middle of the element in the window; `screenX` and `screenY` are 0.
+
+## Speed
+
+The budgets, on a developer's machine, on a page of the notes app with 20 notes: a link by its name, `getByRole("link", { name })`, in 60 µs, with the whole accessible name; a click in 100 µs, with the mouse's way to the element. On a Mac with Chromium: about 64 µs and 86 µs, where Vitest's own take about 166 µs and 50 ms. `test/micro.test.ts` measures them, prints them, and holds the package's to half of Vitest's in the same run, as a CI runner's speed is its own.
