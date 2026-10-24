@@ -45,7 +45,7 @@ jobs:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event }
-          - { app: vitest-vs-playwright-notes, tests: dom-locators }
+          - { app: vitest-vs-playwright-notes, tests: dom-locators, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast, node: true }
     defaults:
