@@ -30,9 +30,13 @@ const mode = import.meta.env.VITEST_PROFILE as string;
 const registry = (globalThis as { __vitest_plugin_rsc_next__?: Registry })
   .__vitest_plugin_rsc_next__!;
 let name = "";
-const tests: Span[] = [];
-const flight: Render[] = [];
-const queries: Span[] = [];
+// The timings of the current test file, on globalThis: the setup file runs
+// again for every test file, but wraps once, and the wrappers of the first
+// file push to the timings of each file after it.
+const current = Symbol.for("test/profile.ts timings");
+type Timings = { tests: Span[]; flight: Render[]; queries: Span[] };
+const store = globalThis as { [current]?: Timings };
+const timings = () => store[current]!;
 
 // Wrapped once: the setup file runs again for every test file.
 const wrapped = Symbol.for("test/profile.ts");
@@ -86,14 +90,14 @@ function __profileSync(): number {
 // oxlint-disable-next-line no-empty-pattern
 beforeAll(async ({}, suite) => {
   name = suite.file.name.replace(/\W+/g, "-");
+  store[current] = { tests: [], flight: [], queries: [] };
   // The timings go with a CPU profile too, which they hardly slow down.
   if (mode !== "trace") {
     registry.requestTimings = [];
-    tests.length = flight.length = queries.length = 0;
-    timed(registry.flightServer, "renderToReadableStream", (span) => flight.push(span));
+    timed(registry.flightServer, "renderToReadableStream", (span) => timings().flight.push(span));
     const client = (db as unknown as { $client: Record<string, unknown> }).$client;
-    timed(client, "query" as never, ([start, end]) => queries.push([start, end]));
-    timed(client, "exec" as never, ([start, end]) => queries.push([start, end]));
+    timed(client, "query" as never, ([start, end]) => timings().queries.push([start, end]));
+    timed(client, "exec" as never, ([start, end]) => timings().queries.push([start, end]));
   }
   if (mode === "trace") await commands.startTrace();
   else if (mode !== "timings") {
@@ -103,11 +107,12 @@ beforeAll(async ({}, suite) => {
 });
 let testStart = 0;
 beforeEach(() => void (testStart = performance.now()));
-afterEach(() => void tests.push([testStart, performance.now()]));
+afterEach(() => void timings().tests.push([testStart, performance.now()]));
 afterAll(async () => {
   if (mode === "trace") return commands.stopTrace(name);
   if (mode !== "timings") await commands.stopProfile(name);
-  const timings = { tests, requests: registry.requestTimings, flight, queries, profileStart };
+  const { tests, flight, queries } = timings();
+  const file = { tests, requests: registry.requestTimings, flight, queries, profileStart };
   registry.requestTimings = undefined;
-  await commands.writeTimings(name, JSON.stringify(timings));
+  await commands.writeTimings(name, JSON.stringify(file));
 });

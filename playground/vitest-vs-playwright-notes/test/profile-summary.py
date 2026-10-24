@@ -46,10 +46,11 @@ def regions(path):
 
 def package_of(source):
     """`next (server)`, `react-dom (client)`, `@electric-sql/pglite`, … of a path in node_modules."""
-    # React's Flight, also the copies that Next and Vite RSC vendor.
+    # React's Flight, also the copies that Next and Vite RSC vendor: its
+    # client is `react-server-dom-webpack-client.*.js`, "server" and all.
     if "react-server-dom" in source:
-        server = "server" in os.path.basename(source)
-        return "React Flight (server)" if server else "React Flight (client)"
+        client = "client" in os.path.basename(source)
+        return "React Flight (client)" if client else "React Flight (server)"
     if "node_modules/" not in source:
         return "vitest-plugin-rsc" if "vitest-plugin-rsc" in source else "other: " + os.path.basename(source)
     rest = source.rsplit("node_modules/", 1)[-1]
@@ -66,8 +67,6 @@ def package_of(source):
             return "next (client)"
         else:
             return "next (shared)"
-    if name.startswith("react-server-dom"):
-        return "React Flight (server)" if "server" in os.path.basename(path) else "React Flight (client)"
     if name == "react-dom":
         return "react-dom (server)" if "server" in os.path.basename(path) else "react-dom (client)"
     return name
@@ -106,15 +105,24 @@ def category(frame):
     return "other: " + os.path.basename(path)
 
 
+def samples(profile):
+    """(node, time, seconds) of each sample, but the first: its delta is the
+    wait from `Profiler.start` until sampling began, hundreds of ms of nothing."""
+    at = profile["startTime"]
+    for index, (node_id, delta) in enumerate(zip(profile["samples"], profile["timeDeltas"])):
+        at += delta
+        if index:
+            yield node_id, at, max(delta, 0) / 1e6
+
+
 totals = collections.Counter()
 functions = collections.Counter()
 for file in profiles:
     with open(file) as handle:
         profile = json.load(handle)
     nodes = {node["id"]: node for node in profile["nodes"]}
-    for node_id, delta in zip(profile["samples"], profile["timeDeltas"]):
+    for node_id, _, seconds in samples(profile):
         frame = nodes[node_id]["callFrame"]
-        seconds = max(delta, 0) / 1e6
         kind = category(frame)
         totals[kind] += seconds
         if kind not in ("(program)", "(garbage collector)", "(idle)", "(root)"):
@@ -179,17 +187,11 @@ for file in profiles:
     request_starts = [start for start, _, _ in requests]
     test_starts = [start for start, _, _ in tests]
     # The first sample of `__profileSync()` is when it started, `profileStart`.
-    at, sync = profile["startTime"], None
-    for node_id, delta in zip(profile["samples"], profile["timeDeltas"]):
-        at += delta
-        if nodes[node_id]["callFrame"]["functionName"] == "__profileSync":
-            sync = at
-            break
+    syncs = (at for node_id, at, _ in samples(profile) if nodes[node_id]["callFrame"]["functionName"] == "__profileSync")
+    sync = next(syncs, None)
     if sync is None:
         continue
-    at = profile["startTime"]
-    for node_id, delta in zip(profile["samples"], profile["timeDeltas"]):
-        at += delta
+    for node_id, at, seconds in samples(profile):
         time = timings["profileStart"] + (at - sync) / 1000
         phase = "between tests (hooks, Vitest)"
         index = bisect.bisect_right(request_starts, time) - 1
@@ -199,7 +201,7 @@ for file in profiles:
             index = bisect.bisect_right(test_starts, time) - 1
             if index >= 0 and tests[index][0] <= time < tests[index][1]:
                 phase = tests[index][2]
-        by_phase[phase][category(nodes[node_id]["callFrame"])] += max(delta, 0) / 1e6
+        by_phase[phase][category(nodes[node_id]["callFrame"])] += seconds
 
 if by_phase:
     print("\nWhat ran in each phase of the tests, by its CPU samples:\n")
