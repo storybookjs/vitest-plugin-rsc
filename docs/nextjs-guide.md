@@ -798,6 +798,19 @@ Tests within a file run one at a time. [`test.concurrent`](https://vitest.dev/ap
 
 Each worker loads Next's runtime before its first test, so that one's slower. With as many workers as CPU cores, it can even time out. The notes demo sets `maxWorkers: 4` to avoid that.
 
+### A faster start, until Vitest has it
+
+At every start, Vitest's mocker parses each pre-bundled dependency that has an `import()` or a `vi.mock(` in its text, to wrap the `import()`s for its mocks: the page loads hundreds of those chunks, Next's and React's, and a database like PGlite is one of 1.8 MB. On CI, skipping them takes 0.27–0.42 s off a one-file run of the notes benchmark of about 4 s, in the medians of 8 rounds on each of four runners. This repository skips them with [`pnpm patch`](https://pnpm.io/cli/patch) (`patches/@vitest__mocker@5.0.5.patch`, applied through `patchedDependencies` in `pnpm-workspace.yaml`), until Vitest has the change. A `vi.mock()` of a dependency still applies, by the module's URL, and the modules inside a chunk can't be mocked one by one either way. What you give up: an `import()` inside a dependency no longer waits for a `vi.doMock()` that is still on its way to the browser, and a `vi.mock()` inside a pre-bundled dependency isn't hoisted.
+
+To use it in your app with pnpm, copy the patch file and add it to your `pnpm-workspace.yaml`, for the version of `@vitest/mocker` that you have:
+
+```yaml
+patchedDependencies:
+  "@vitest/mocker@5.0.5": patches/@vitest__mocker@5.0.5.patch
+```
+
+Then run `pnpm install --config.optimistic-repeat-install=false` once, so that pnpm installs the patched package. The patch is a small helper, `isOptimizedDepFile()`, and a check of it in the transform of both plugins, `vitest:browser:esm-injector` and `vitest:mocks`, in `dist/node.js`. It pins `@vitest/mocker` 5.0.5: on a bump of Vitest, redo it for the new version with `pnpm patch @vitest/mocker`, or drop it once Vitest has the change.
+
 ## Development or production
 
 By default, Next and React run their development builds, like `next dev`. Set `vitestPluginNext({ build: "production" })` to run them like `next start`: faster, and without dev warnings. It's still experimental.
