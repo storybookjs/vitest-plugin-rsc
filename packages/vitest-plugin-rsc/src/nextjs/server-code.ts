@@ -200,9 +200,15 @@ function findPackagesWithDependencies(names: Iterable<string>, root: string): Se
   return dirs;
 }
 
-// The packages of the test runner, and of another host (`host.packages`), by
-// name. Their own modules have state that is the page's.
-const hostPackages = (packages: string[]) => ["vitest", "@vitest/*", ...packages];
+// The packages of the test runner, Testing Library's (the DOM of a test: see
+// in-page.ts), and of another host (`host.packages`), by name. Their own
+// modules have state that is the page's.
+const hostPackages = (packages: string[]) => [
+  "vitest",
+  "@vitest/*",
+  "@testing-library/*",
+  ...packages,
+];
 
 // The package of a module, by its name: `host-kit` of `host-kit/test`,
 // `@scope/name` of `@scope/name/module`.

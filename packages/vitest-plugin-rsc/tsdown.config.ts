@@ -112,6 +112,7 @@ export default defineConfig([
       "src/testing-library-client.tsx",
       "src/nextjs/index.ts",
       "src/nextjs/client-components.ts",
+      "src/nextjs/in-page.ts",
       "src/nextjs/plugin.ts",
       "src/nextjs/adapter.ts",
       "src/nextjs/setup.ts",
@@ -141,6 +142,7 @@ export default defineConfig([
         /^virtual:/,
         /^@vitejs\/plugin-rsc\/vendor\//,
         /^vitest(\/|$)/,
+        /^@testing-library\//,
         // Left as this import in dist: it resolves to the entry of its own,
         // dist/nextjs/node-rendered.js, with its "use client". See rsc.ts.
         "vitest-plugin-rsc/nextjs/node-rendered",

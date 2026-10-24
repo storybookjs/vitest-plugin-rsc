@@ -52,6 +52,11 @@
       "vitest-plugin-rsc-source": "./src/nextjs/index.ts",
       "default": "./dist/nextjs/index.js"
     },
+    "./nextjs/in-page": {
+      "types": "./dist/nextjs/in-page.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/in-page.ts",
+      "default": "./dist/nextjs/in-page.js"
+    },
     "./nextjs/client-components": {
       "types": "./dist/nextjs/client-components.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/client-components.ts",
@@ -107,6 +112,8 @@
   "devDependencies": {
     "@next/routing": "16.4.0",
     "@noble/hashes": "2.4.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/user-event": "^14.6.8",
     "@types/convert-source-map": "^2.0.3",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
@@ -130,6 +137,8 @@
   },
   "peerDependencies": {
     "@next/routing": ">=16.4.0-0",
+    "@testing-library/dom": ">=10.0.0",
+    "@testing-library/user-event": ">=14.0.0",
     "next": ">=16.4.0-0",
     "react": "*",
     "react-dom": "*",
@@ -138,6 +147,12 @@
   },
   "peerDependenciesMeta": {
     "@next/routing": {
+      "optional": true
+    },
+    "@testing-library/dom": {
+      "optional": true
+    },
+    "@testing-library/user-event": {
       "optional": true
     },
     "next": {
