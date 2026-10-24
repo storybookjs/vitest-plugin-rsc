@@ -53,19 +53,25 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # Bun runs Vitest's own process, which starts a run 2 to 3 s sooner
+      # than `pnpm exec vitest` on Node.js; the tests then take the same
+      # time. See the playgrounds' README.md.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm --filter vitest-plugin-rsc build
       - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
+            echo "### Vitest on Bun, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -78,13 +84,13 @@ jobs:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
+            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -101,13 +107,13 @@ jobs:
           VITEST_PLUGIN_RSC_FAST: ""
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
+            echo "### Vitest on Bun, production, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -122,13 +128,13 @@ jobs:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
+            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -140,7 +146,7 @@ jobs:
         if: matrix.fast
         run: |
           {
-            echo "### Vitest, ${{ matrix.app }}, ${{ matrix.tests }}, default mode and fast mode on one runner"
+            echo "### Vitest on Bun, ${{ matrix.app }}, ${{ matrix.tests }}, default mode and fast mode on one runner"
             echo
             echo "| Next and React | Default mode, seconds | Fast mode, seconds | Default / fast |"
             echo "| --- | ---: | ---: | ---: |"
@@ -156,6 +162,9 @@ jobs:
   # test file, summed up by package in the summary of the run, a trace of
   # Chrome for two files, summed up by what the browser did, and both as an
   # artifact, to open in Chrome's DevTools.
+  # Vitest on Node.js, here and in the primitives below, unlike the vitest
+  # job: their numbers, the startup of the primitives too, compare with
+  # earlier runs.
   profile:
     name: Vitest, vitest-vs-playwright-notes, vitest-user-event, fast mode, CPU profile
     runs-on: ubuntu-latest
