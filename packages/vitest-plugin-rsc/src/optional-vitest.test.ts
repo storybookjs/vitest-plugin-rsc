@@ -25,7 +25,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"
 };
 
 /** What only Vitest loads. */
-const vitestFiles = ["nextjs/setup.js"];
+const vitestFiles = ["nextjs/setup.js", "nextjs/setup-browser.js", "nextjs/setup-node.js"];
 
 const isVitest = (specifier: string) => /^(?:vitest|@vitest\/[^/]+)(?:\/|$)/.test(specifier);
 

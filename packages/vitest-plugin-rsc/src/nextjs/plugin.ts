@@ -172,10 +172,12 @@ const ownFile = (name: string) =>
   normalizePath(
     fileURLToPath(new URL(`./${name}${path.extname(import.meta.url)}`, import.meta.url)),
   );
-// Vitest wants a file path for a setup file, not a package specifier. It is
-// the only file of the layers that imports Vitest: a host without Vitest
-// never loads it.
-const setupFile = ownFile("setup");
+// Vitest wants a file path for a setup file, not a package specifier. With
+// what it imports of setup.ts, the only file of the layers that imports
+// Vitest: a host without Vitest never loads it. One for Browser Mode, and one
+// for a worker of Node.js, which `configureVitest` puts in its place.
+const setupFile = ownFile("setup-browser");
+const nodeSetupFile = ownFile("setup-node");
 // What a test imports `renderServer()` from, and the file that is.
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
@@ -1337,6 +1339,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           resolve: test.dir || test.root,
         });
         serverCode.addTestFiles((file) => isSetupFile(file) || isIncluded(file));
+        // Without Browser Mode the tests run in a worker of Node.js, which
+        // has no `vitest/browser`. As the `config` hook put it, first.
+        if (!test.browser.enabled) {
+          test.setupFiles = test.setupFiles.map((file) =>
+            normalizePath(file) === setupFile ? nodeSetupFile : file,
+          );
+        }
       },
       // Without Vitest, a page of the host has the rsc layer's modules as the
       // browser loaded them, with the plugin's runtime, whose modules of the

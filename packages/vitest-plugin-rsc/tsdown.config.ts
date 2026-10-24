@@ -114,7 +114,11 @@ export default defineConfig([
       "src/nextjs/client-components.ts",
       "src/nextjs/plugin.ts",
       "src/nextjs/adapter.ts",
+      // The setup files, and what both of them run, in a file of its own: the
+      // only files of the build that import Vitest.
       "src/nextjs/setup.ts",
+      "src/nextjs/setup-browser.ts",
+      "src/nextjs/setup-node.ts",
       "src/nextjs/rsc.ts",
       "src/nextjs/ssr.ts",
       "src/nextjs/client.tsx",
