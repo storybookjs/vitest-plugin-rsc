@@ -1,0 +1,63 @@
+{
+  "name": "dom-locators",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vitest browser mode's page locators, with their waiting and their actions, answered inside the document under test.",
+  "keywords": [
+    "dom",
+    "locators",
+    "playwright",
+    "testing",
+    "vitest"
+  ],
+  "license": "MIT AND Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/storybookjs/vitest-plugin-rsc.git",
+    "directory": "packages/dom-locators"
+  },
+  "files": [
+    "dist",
+    "NOTICE"
+  ],
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --sourcemap --watch src"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitest/browser": "5.0.5",
+    "@vitest/browser-playwright": "5.0.5",
+    "playwright": "^1.64.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tsdown": "^0.22.0",
+    "vitest": "5.0.5"
+  },
+  "peerDependencies": {
+    "vitest": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  }
+}
