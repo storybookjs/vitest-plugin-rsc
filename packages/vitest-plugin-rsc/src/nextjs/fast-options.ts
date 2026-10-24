@@ -46,7 +46,8 @@ export function resolveFast(
   option: boolean | FastOptions | undefined,
   env: Record<string, string | undefined>,
 ): ResolvedFastOptions {
-  const fast = option ?? env.VITEST_PLUGIN_RSC_FAST === "1";
+  // TEMP (nextpipe A/B, not to commit)
+  const fast = option ?? (env.VITEST_PLUGIN_RSC_FAST === "1" ? (env.VITEST_PLUGIN_RSC_FAST_OFF ? { [env.VITEST_PLUGIN_RSC_FAST_OFF]: false } : true) : false);
   return Object.fromEntries(
     fastFeatures.map((feature) => [
       feature,
