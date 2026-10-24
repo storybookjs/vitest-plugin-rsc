@@ -19,6 +19,16 @@ export type FastOptions = {
   cacheDevServer?: boolean;
   /** Password hashes and key derivation cost microseconds, with the same API. */
   crypto?: boolean;
+  /**
+   * Pre-bundled dependencies go without Vitest's wrapper of their `import()`s,
+   * which waits for a `vi.mock()` that is still being registered: a parse of
+   * every chunk with an `import()` at every start, 0.5 s for one of 1.8 MB.
+   * An `import()` in a dependency that runs while a `vi.doMock()` is still on
+   * its way to the browser can get the module unmocked.
+   */
+  unwrapDependencyImports?: boolean;
+  /** What the dev server compiles of the pre-bundled dependencies is kept on disk across starts. */
+  cacheTransforms?: boolean;
 };
 
 /** Which features of fast mode are on: `fast` of `vitestPluginNext()`, resolved. */
@@ -31,6 +41,8 @@ const fastFeatures = [
   "watchDom",
   "cacheDevServer",
   "crypto",
+  "unwrapDependencyImports",
+  "cacheTransforms",
 ] as const satisfies (keyof FastOptions)[];
 
 /**

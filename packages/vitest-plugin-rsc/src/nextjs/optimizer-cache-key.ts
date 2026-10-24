@@ -98,11 +98,8 @@ function ownCodeDirs(): string[] {
 
 let ownCodeKey: string | undefined;
 
-/** For the `define` of the optimizer of a layer, which Vite keys its cache on. */
-export function optimizerCacheKey(
-  project: OptimizerInputs,
-  layer: NextLayer,
-): Record<string, string> {
+/** The key of this plugin's code, see `codeKey()`: "" where it cannot be read. */
+export function pluginCodeKey(): string {
   if (ownCodeKey === undefined) {
     // The key only renews a cache: a file that cannot be read, like one that
     // a build is writing, leaves it to the version in the lockfile, as
@@ -117,6 +114,15 @@ export function optimizerCacheKey(
       ownCodeKey = "";
     }
   }
+  return ownCodeKey;
+}
+
+/** For the `define` of the optimizer of a layer, which Vite keys its cache on. */
+export function optimizerCacheKey(
+  project: OptimizerInputs,
+  layer: NextLayer,
+): Record<string, string> {
+  const ownCodeKey = pluginCodeKey();
   return {
     __vitest_plugin_rsc_project__: JSON.stringify(projectKey(project, layer)),
     __vitest_plugin_rsc_code__: JSON.stringify(ownCodeKey),

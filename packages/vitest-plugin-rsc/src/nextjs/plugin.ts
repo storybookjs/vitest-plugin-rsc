@@ -1,6 +1,7 @@
 import "../compile-cache.ts";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
@@ -50,7 +51,8 @@ import {
 import { moduleFileAt } from "./project/context.ts";
 import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
-import { optimizerCacheKey } from "./optimizer-cache-key.ts";
+import { optimizerCacheKey, pluginCodeKey } from "./optimizer-cache-key.ts";
+import { transformCachePlugin } from "./transform-cache.ts";
 import { createCommonJsPlugin } from "./commonjs.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
@@ -777,6 +779,15 @@ const runtimeImports: Record<NextLayer, string[]> = {
   ],
 };
 
+// The version of the project's Vitest, for keys of what is cached on disk.
+function vitestVersionOf(root: string): string {
+  try {
+    return (createRequire(path.join(root, "package.json"))("vitest/package.json") as { version: string }).version;
+  } catch {
+    return "";
+  }
+}
+
 export type { NextBuild };
 export type { FastOptions, ResolvedFastOptions };
 
@@ -975,16 +986,17 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         },
       },
     },
-    // Vitest's browser mode wraps every `import()` of a module of the page
-    // for its mocks, by a parse and a walk of the module and a source map of
-    // the change: also of a pre-bundled dependency, like the 1.8 MB of
-    // PGlite, where it costs about 0.5 s of the dev server at every start
-    // (`vitest:browser:esm-injector` of @vitest/mocker). Not for a module of
-    // the dependency cache: a `vi.mock()` of a module that only a dependency
-    // imports with `import()` is not seen there.
+    // Fast mode's `unwrapDependencyImports`: Vitest's browser mode wraps
+    // every `import()` of a module of the page, so that it waits for the
+    // `vi.mock()`s that are being registered, by a parse and a walk of the
+    // module and a source map of the change (`vitest:browser:esm-injector` of
+    // @vitest/mocker). Also of a pre-bundled dependency, like the 1.8 MB of
+    // PGlite, where it costs about 0.5 s of the dev server at every start.
+    // Not for a chunk of the dependency cache.
     {
       name: "vitest-plugin-rsc:next-dependency-imports",
       configureServer(server) {
+        if (!fast.unwrapDependencyImports) return;
         const cacheDir = `${normalizePath(server.config.cacheDir)}/`;
         for (const environment of Object.values(server.environments)) {
           for (const plugin of environment.plugins as Plugin[]) {
@@ -994,15 +1006,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               this: unknown,
               ...args: unknown[]
             ) => unknown;
-            const transform = function (
-              this: unknown,
-              code: unknown,
-              id: unknown,
-              ...rest: unknown[]
-            ) {
-              return String(id).startsWith(cacheDir)
-                ? undefined
-                : handler.call(this, code, id, ...rest);
+            const transform = function (this: unknown, code: unknown, id: unknown, ...rest: unknown[]) {
+              return String(id).startsWith(cacheDir) ? undefined : handler.call(this, code, id, ...rest);
             };
             (plugin as { transform: unknown }).transform =
               typeof hook === "function" ? transform : { ...hook, handler: transform };
@@ -1010,6 +1015,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
       },
     },
+    transformCachePlugin({
+      enabled: () => fast.cacheTransforms,
+      codeKey: pluginCodeKey,
+      vitestVersion: () => vitestVersionOf(project.root),
+    }),
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
     createPathsPlugin(getProject),
     {
