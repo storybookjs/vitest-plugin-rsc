@@ -15,4 +15,4 @@ allowBuilds:
   prisma: false
   sharp: true
 patchedDependencies:
-  '@electric-sql/pglite@0.5.10': patches/@electric-sql__pglite@0.5.10.patch
+  "@electric-sql/pglite@0.5.10": patches/@electric-sql__pglite@0.5.10.patch
