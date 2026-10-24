@@ -4,10 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "test:run:bun": "bun --bun vitest run",
-    "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native"
+    "test": "bun --bun vitest --configLoader native",
+    "test:run": "bun --bun vitest run --configLoader native",
+    "test:run:node": "vitest run",
+    "build": "bun --bun --conditions=vitest-plugin-rsc-source vite build --configLoader native"
   },
   "dependencies": {
     "@next/routing": "16.4.0",

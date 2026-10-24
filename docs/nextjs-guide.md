@@ -809,14 +809,18 @@ See [Development or production](internals/next-routes.md#development-or-producti
 A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On a notes app with accounts, a run of one test file took 10.4 s with `pnpm exec vitest run` and 7.6 s with `bun --bun vitest run`; once the tests run, they take the same time. About 1.1 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too.
 
 ```bash
-bun --bun vitest run
+bun --bun vitest run --configLoader native
 ```
+
+`--configLoader native` has Bun import the config file itself, rather than Vite bundle it first.
 
 Give Bun a dependency cache of its own in your Vitest config. Vite's hash of the config includes its functions as text, which Bun prints differently from Node.js, so each runtime would find the other's cache stale and optimize the dependencies again:
 
 ```ts
 cacheDir: process.versions.bun ? "node_modules/.vite-bun" : undefined,
 ```
+
+The playgrounds of this repo run on Bun by default: `pnpm test:run` there is `bun --bun vitest run --configLoader native`, and their Vite scripts run on Bun too. `pnpm test:run:node` runs the tests on Node.js, on a machine without Bun. Bun ignores the `--conditions` of `NODE_OPTIONS`, so a script that needs a condition passes it to Bun: `bun --bun --conditions=vitest-plugin-rsc-source vite build`.
 
 Vitest is made for Node.js, not Bun, so keep a run on Node.js in CI.
 

@@ -3,15 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite --configLoader native",
-    "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native",
+    "dev": "bun --bun --conditions=vitest-plugin-rsc-source vite --configLoader native",
+    "build": "bun --bun --conditions=vitest-plugin-rsc-source vite build --configLoader native",
     "check": "tsc -b",
-    "preview": "vite preview",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "test:run:bun": "bun --bun vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest watch"
+    "preview": "bun --bun vite preview --configLoader native",
+    "test": "bun --bun vitest --configLoader native",
+    "test:run": "bun --bun vitest run --configLoader native",
+    "test:run:node": "vitest run",
+    "test:coverage": "bun --bun vitest run --configLoader native --coverage",
+    "test:watch": "bun --bun vitest watch --configLoader native"
   },
   "dependencies": {
     "react": "19.2.6",
