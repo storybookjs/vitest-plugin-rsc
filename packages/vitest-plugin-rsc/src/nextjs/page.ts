@@ -5,7 +5,13 @@ import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
 import { setOpenPage, setRouterOutlivesPage, sendRequest, unlessAborted } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
-import { keepProperties, loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
+import {
+  keepProperties,
+  loadDocument,
+  unloadDocument,
+  unloadKeptApp,
+  type HistoryEntry,
+} from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
 import { oncePerTestFile } from "./fast-mode.ts";
 import { noRouter } from "./host-document.ts";
@@ -145,15 +151,19 @@ type Client = typeof import("./client.tsx");
 let kept: { client: Client; leave(): void } | undefined;
 
 /**
- * Leaves the kept app, if any: its root, its module graph and what its
- * modules left behind as they loaded go. Once its page is left: see
- * `leavePage()`, and `leaveKeptAppWithPage()`.
+ * Leaves the kept app, if any: its root, its module graph, what its modules
+ * left behind as they loaded, and what its code added to the `<head>` go.
+ * Once its page is left: see `leavePage()`, and `leaveKeptAppWithPage()`.
  */
 function leaveKeptApp(): void {
   const app = kept;
   kept = undefined;
   setRouterOutlivesPage(false);
-  app?.leave();
+  try {
+    app?.leave();
+  } finally {
+    unloadKeptApp();
+  }
 }
 
 /**
@@ -242,8 +252,10 @@ export async function loadPage(
   const loading = (async () => {
     await leaving;
     page.signal.throwIfAborted();
-    // A page that is not one of the kept app starts an app of its own.
-    if (!inKeptApp) leaveKeptApp();
+    // A page that is not one of the kept app starts an app of its own, and so
+    // does one when there is none, like after a first page whose app did not
+    // start: what that app added to the `<head>` goes first.
+    if (!inKeptApp || !kept) leaveKeptApp();
 
     // Once the node that was in it is gone.
     if (opening?.container?.hasChildNodes()) {
@@ -329,7 +341,7 @@ async function openPage(
     // reports the error that takes the node's place as the page hydrates.
     if (!opening?.opened.node?.layouts) opening?.nodeOnPage?.replaced();
   }
-  await loadDocument(html, response.url, container, after);
+  await loadDocument(html, response.url, container, after, page.inKeptApp);
   superseded();
   const { inKeptApp } = page;
   // A page of the kept app renders in it, from the Flight payload of its
@@ -396,6 +408,8 @@ async function openPage(
           (key.startsWith("__reactContainer$") || key.startsWith("_reactListening")),
       );
       keepProperties(document, marks);
+      // A kept app before this one, if any. What it added to the `<head>` is
+      // gone already: see `loadPage()`.
       leaveKeptApp();
       kept = {
         client,

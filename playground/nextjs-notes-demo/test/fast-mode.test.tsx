@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { signedInAs } from "#test/auth.ts";
 import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
@@ -82,4 +82,33 @@ test("answers a request of the test with the HTML of its page, while a page with
 
   expect(html).toContain(">Profile</h1>");
   expect(html).not.toContain("__next_error__");
+});
+
+test("removes without an error a `<style>` that the app removes a moment after its page is left", async () => {
+  const { unmount } = await renderServer({ url: "/auth/sign-in" });
+  // As the theme changes, the theme provider of the app takes the
+  // transitions off with a `<style>` in the `<head>`, and removes it a moment
+  // later: here only once the page is left.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const added = new Promise<Node>((resolve) => {
+    const observer = new MutationObserver((records) => {
+      const style = records
+        .flatMap((record) => Array.from(record.addedNodes))
+        .find((node) => node instanceof HTMLStyleElement);
+      if (!style) return;
+      observer.disconnect();
+      resolve(style);
+    });
+    observer.observe(document.head, { childList: true });
+  });
+  window.dispatchEvent(new StorageEvent("storage", { key: "theme", newValue: "dark" }));
+  const style = await added;
+
+  await unmount();
+  vi.advanceTimersByTime(1);
+
+  expect(style.isConnected).toBe(false);
 });
