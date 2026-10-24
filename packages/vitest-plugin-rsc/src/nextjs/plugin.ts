@@ -815,6 +815,11 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    *   from one of these, like after a `<form>` without a Server Action: a
    *   test that asserts on it passes `ssr: true`, and gets a page load of its
    *   own. In development the page has no dev overlay.
+   * - `flightLoads`: a page of the kept app loads with the request Next's
+   *   router sends for a page, for its Flight payload alone, so the server
+   *   renders no HTML for it, and its `response` of `renderServer()` is that
+   *   one. A page whose render throws, like a `redirect()` or a `notFound()`,
+   *   loads as a document after all.
    * - `skipPrefetch`: Next's `<Link>` and `<Form>` prefetch nothing.
    * - `immediates`: the server runs the steps of a render, which React
    *   separates with `setTimeout(work, 0)`, without the delay a browser adds

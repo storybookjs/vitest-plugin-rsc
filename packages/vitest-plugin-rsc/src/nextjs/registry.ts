@@ -88,7 +88,11 @@ export type Opened = {
 export type RequestTiming = {
   method: string;
   url: string;
-  /** Whether it is a Server Action, a request of Next's router for Flight, or a page. */
+  /**
+   * Whether it is a Server Action, a request of Next's router for Flight, or
+   * a page load: of a document, or of a page of fast mode's kept app by its
+   * Flight payload.
+   */
   kind: "action" | "flight" | "page";
   queued: number;
   started?: number;

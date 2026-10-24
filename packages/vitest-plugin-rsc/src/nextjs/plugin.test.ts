@@ -755,6 +755,7 @@ test("takes no other build", () => {
 test("turns on every feature of fast mode for `true`, none for `false`, and all but the ones set to `false` for an object", () => {
   const all = {
     keepApp: true,
+    flightLoads: true,
     skipPrefetch: true,
     immediates: true,
     watchDom: true,

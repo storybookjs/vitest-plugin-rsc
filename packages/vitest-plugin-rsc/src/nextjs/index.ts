@@ -233,7 +233,11 @@ export type RenderServerOptions = RequestOptions & {
 };
 
 export type RenderServerResult = {
-  /** The server's response to the request of the document. */
+  /**
+   * The server's response to the request of the document. With fast mode's
+   * `flightLoads`, for a page of the kept app, the response to the request
+   * of its Flight payload, which loads it without a document.
+   */
   response: Response;
   /**
    * The errors that React reported on the page, in order: what threw as the

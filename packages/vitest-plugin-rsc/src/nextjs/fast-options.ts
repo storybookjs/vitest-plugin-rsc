@@ -9,6 +9,8 @@
 export type FastOptions = {
   /** The pages of a test file render in one app, from their Flight payload, without HTML of the server. */
   keepApp?: boolean;
+  /** A page of the kept app loads by its Flight payload alone, as Next's router fetches one: no document. */
+  flightLoads?: boolean;
   /** `<Link>` and `<Form>` prefetch nothing. */
   skipPrefetch?: boolean;
   /** Server code's timeouts of no delay run as immediates, unless the timers are faked. */
@@ -26,6 +28,7 @@ export type ResolvedFastOptions = Required<FastOptions>;
 
 const fastFeatures = [
   "keepApp",
+  "flightLoads",
   "skipPrefetch",
   "immediates",
   "watchDom",

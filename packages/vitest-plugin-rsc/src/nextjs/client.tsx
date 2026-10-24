@@ -188,6 +188,8 @@ export async function start(
     for (const added of listeners) added.remove();
   };
 
+  // The payload of this page, which Next's entry reads and empties.
+  const firstSegments = [...documentSegments()];
   try {
     // Next's entry reads the Flight payload in the document when it loads, so
     // it loads here, once Client Components can be loaded. Also for a page that
@@ -260,7 +262,18 @@ export async function start(
   if (!keep) return { unmount: leave, leaveApp: leave };
   // A kept app outlives its first page: leaving that page empties the root,
   // and leaving the app is what removes it.
-  app = { root, renders: 0 };
+  // The payload of the first page, for the global error: decoded once, as
+  // a page without one asks for it.
+  let globalError: Promise<unknown> | undefined;
+  app = {
+    root,
+    renders: 0,
+    globalError: () =>
+      // A promise of its own: what the Flight client returns is a thenable.
+      (globalError ??= Promise.resolve(
+        createFromReadableStream(documentPayload(firstSegments), { callServer }),
+      ).then((payload) => (payload as { G: unknown }).G)),
+  };
   return {
     unmount: () => leavePage(page, forgetLoader),
     leaveApp() {
@@ -280,7 +293,10 @@ export type StartedApp = {
 
 // The app that `start()` kept for the pages after its first: its root,
 // and how many trees it has rendered, each with a key of its own.
-let app: { root: Root; renders: number } | undefined;
+// `globalError` is the global error of the app, its `global-error.js` and
+// its CSS, which the payload of a document has and the one of Flight alone
+// does not: the same for every page of the app.
+let app: { root: Root; renders: number; globalError: () => Promise<unknown> } | undefined;
 
 // Leaves a page of a kept app: its tree goes, at once, as with a page load
 // that unmounts the root, and the root stays for the next page.
@@ -294,8 +310,10 @@ function leavePage(page: CurrentPage, forgetLoader: () => void): void {
 // `self.__next_f`, as Next's entry reads it (`nextServerDataCallback()` of
 // app-index.js): a page that `renderAgain()` renders is in the document in
 // full before it starts, so the stream ends there.
-function documentPayload(): ReadableStream<Uint8Array> {
-  const segments = (self as unknown as { __next_f?: [number, string?][] }).__next_f ?? [];
+type PayloadSegments = [number, string?][];
+const documentSegments = (): PayloadSegments =>
+  (self as unknown as { __next_f?: PayloadSegments }).__next_f ?? [];
+function documentPayload(segments = documentSegments()): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream({
     start(controller) {
@@ -304,6 +322,16 @@ function documentPayload(): ReadableStream<Uint8Array> {
         else if (kind === 3)
           controller.enqueue(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)));
       }
+      controller.close();
+    },
+  });
+}
+
+// A payload that is there in full, as a stream.
+function streamOfBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes);
       controller.close();
     },
   });
@@ -330,7 +358,11 @@ function Committed({ onCommit, children }: { onCommit: () => void; children: Rea
  * of its router are emptied, but the state of a module of the app, or of a
  * package, is still there.
  */
-export async function renderAgain(signal: AbortSignal, errors: unknown[]): Promise<StartedApp> {
+export async function renderAgain(
+  signal: AbortSignal,
+  errors: unknown[],
+  flight?: Uint8Array,
+): Promise<StartedApp> {
   const kept = app;
   if (!kept) throw new Error("vitest-plugin-rsc: there is no kept app to render the page in.");
   setNodeOnPage(undefined);
@@ -344,7 +376,12 @@ export async function renderAgain(signal: AbortSignal, errors: unknown[]): Promi
   invalidateEntirePrefetchCache(null, null as never);
   invalidateBfCache();
   try {
-    const payload = await createFromReadableStream(documentPayload(), { callServer });
+    const payload = (await createFromReadableStream(
+      flight ? streamOfBytes(flight) : documentPayload(),
+      { callServer },
+    )) as { G?: unknown; c?: string[] };
+    // The payload of a request of Flight alone has no global error.
+    const globalErrorState = payload.G ?? (await kept.globalError());
     signal.throwIfAborted();
     // Next creates the queue of its router once per page load, and checks
     // that it does: the plugin's patch lets it replace it here (plugin.ts).
@@ -354,7 +391,11 @@ export async function renderAgain(signal: AbortSignal, errors: unknown[]): Promi
       actionQueue = createMutableActionQueue(
         createInitialRouterState({
           navigatedAt: Date.now(),
-          initialRSCPayload: payload,
+          // The canonical URL, which a payload of Flight alone does not
+          // have: the router takes the one of `location`.
+          initialRSCPayload: payload.c
+            ? payload
+            : { ...payload, c: (location.pathname + location.search).split("/") },
           initialFlightStreamForCache: null,
           location: window.location,
         } as never),
@@ -377,7 +418,7 @@ export async function renderAgain(signal: AbortSignal, errors: unknown[]): Promi
               <AppRouter
                 key={++kept.renders}
                 actionQueue={actionQueue}
-                globalErrorState={(payload as { G: never }).G}
+                globalErrorState={globalErrorState as never}
               />
             </Committed>
           </HeadManagerContext.Provider>
