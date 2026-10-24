@@ -121,6 +121,7 @@ jobs:
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - name: Check out and build every ref
         run: |
+          mkdir -p .bench-ab
           i=0
           IFS=, read -ra refs <<< "$REFS"
           for ref in "${refs[@]}"; do
@@ -130,12 +131,12 @@ jobs:
             echo "ref $i: $ref = $(git -C "../wt$i" rev-parse --short HEAD)"
             (cd "../wt$i" && pnpm install --frozen-lockfile --silent && pnpm --filter vitest-plugin-rsc build > /dev/null)
           done
-          echo "$i" > ../count
+          echo "$i" > .bench-ab/count
       - name: Run the rounds, interleaved
         run: |
           IFS=, read -ra refs <<< "$REFS"
-          count=$(cat ../count)
-          mkdir -p ../logs
+          count=$(cat .bench-ab/count)
+          mkdir -p .bench-ab/logs
           config=""
           if [ "$PROFILE" != none ]; then config="-c vitest.profile.config.ts"; fi
           if [ "$PROFILE" = timings ]; then export VITEST_PROFILE=timings; fi
@@ -143,31 +144,31 @@ jobs:
           for i in $(seq 1 "$count"); do
             (cd "../wt$i/playground/$APP" && pnpm exec vitest run --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
           done
-          echo -e "round\tref\tduration_s\tfiles_ms\ttests" > ../results.tsv
+          echo -e "round\tref\tduration_s\tfiles_ms\ttests" > .bench-ab/results.tsv
           for r in $(seq 1 "$REPS"); do
             for i in $(seq 1 "$count"); do
               dir="../wt$i/playground/$APP"
               rm -rf "$dir/timings" "$dir/profiles"
-              log="../logs/r$r-ref$i.log"
-              (cd "$dir" && pnpm exec vitest run $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$OLDPWD/$log") || true
+              log="$GITHUB_WORKSPACE/.bench-ab/logs/r$r-ref$i.log"
+              (cd "$dir" && pnpm exec vitest run $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
               duration=$(grep -oP 'Duration\s+\K[0-9.]+' "$log" | tail -1)
               tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' "$log" | tail -1)
               # The sum of the files' own times, from the tree reporter's lines.
               files=$(grep -oP '\(\d+ tests?\) \K[0-9]+(?=ms)' "$log" | paste -sd+ | bc)
-              echo -e "$r\t${refs[$((i - 1))]}\t${duration:-nan}\t${files:-nan}\t${tests:-failed}" >> ../results.tsv
+              echo -e "$r\t${refs[$((i - 1))]}\t${duration:-nan}\t${files:-nan}\t${tests:-failed}" >> .bench-ab/results.tsv
               if [ "$PROFILE" != none ]; then
-                mkdir -p "../prof/r$r-ref$i"
-                cp -r "$dir/timings" "../prof/r$r-ref$i/" 2>/dev/null || true
-                cp -r "$dir/profiles" "../prof/r$r-ref$i/" 2>/dev/null || true
+                mkdir -p "$GITHUB_WORKSPACE/.bench-ab/prof/r$r-ref$i"
+                cp -r "$dir/timings" "$GITHUB_WORKSPACE/.bench-ab/prof/r$r-ref$i/" 2>/dev/null || true
+                cp -r "$dir/profiles" "$GITHUB_WORKSPACE/.bench-ab/prof/r$r-ref$i/" 2>/dev/null || true
               fi
             done
           done
-          cat ../results.tsv
+          cat .bench-ab/results.tsv
       - name: Sum up
         run: |
           python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
           import csv, statistics
-          rows = list(csv.DictReader(open("../results.tsv"), delimiter="\t"))
+          rows = list(csv.DictReader(open(".bench-ab/results.tsv"), delimiter="\t"))
           refs = []
           for row in rows:
               if row["ref"] not in refs:
@@ -187,10 +188,10 @@ jobs:
               print(f"| `{ref}` | {d:.1f} | {f / 1000:.1f} | {100 * (f - base) / base:+.1f}% | {rounds} | {tests} |")
           EOF
           if [ "$PROFILE" = timings ]; then
-            for d in ../prof/r1-ref*; do
+            for d in .bench-ab/prof/r1-ref*; do
               [ -d "$d/timings" ] || continue
               echo "### Timings of $(basename "$d")" >> "$GITHUB_STEP_SUMMARY"
-              (cd "../wt1/playground/$APP" && python3 test/timings-summary.py "$OLDPWD/$d/timings") >> "$GITHUB_STEP_SUMMARY" || true
+              (cd "../wt1/playground/$APP" && python3 test/timings-summary.py "$GITHUB_WORKSPACE/$d/timings") >> "$GITHUB_STEP_SUMMARY" || true
             done
           fi
       - uses: actions/upload-artifact@v6
@@ -198,7 +199,7 @@ jobs:
         with:
           name: bench-ab-${{ matrix.copy }}
           path: |
-            ../logs
-            ../results.tsv
-            ../prof
+            .bench-ab/logs
+            .bench-ab/results.tsv
+            .bench-ab/prof
           if-no-files-found: ignore
