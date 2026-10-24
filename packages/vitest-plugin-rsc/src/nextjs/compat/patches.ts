@@ -1,10 +1,10 @@
 // What the plugin changes in Next's own code: `nextPatchesPlugin()` of
 // plugin.ts applies these. Each edit replaces every `find` in a file of Next
-// with `replace`. The code it adds reads the registry (registry.ts) as it
-// runs, so that the pre-bundled files are the same with fast mode and
-// without, and with HTML of the server and without. A `find` that a version
-// of Next no longer has leaves its file as it is, with a warning that says
-// what then does not work: see `lost`.
+// with `replace`. The code it adds reads the registry (registry.ts) as it runs,
+// so that the pre-bundled files are the same in either mode, with any speed
+// features, and with HTML of the server and without. A `find` that a version of
+// Next no longer has leaves its file as it is, with a warning that says what
+// then does not work: see `lost`.
 export type NextPatch = {
   file: RegExp;
   /** What does not work without the patch. */
@@ -38,12 +38,12 @@ export const nextPatches = (registry: string): NextPatch[] => [
       ],
     ],
   },
-  // The kept app of fast mode renders every page with a router of its own
+  // The kept app of `keepApp` renders every page with a router of its own
   // (`renderAgain()` in client.tsx). Next creates the action queue of its
   // router once per page load, and throws when it is created again.
   {
     file: /\/next\/dist\/esm\/client\/components\/app-router-instance\.js$/,
-    lost: "fast mode cannot render a page in the kept app",
+    lost: "`keepApp` cannot render a page in the kept app",
     edits: [
       [
         "if (globalActionQueue !== null) {",
@@ -53,7 +53,7 @@ export const nextPatches = (registry: string): NextPatch[] => [
   },
   // React DOM, in development, warns once that a `<script>` it renders on the
   // client never runs. A page without HTML of the server, like every page of
-  // fast mode, renders on the client what the server would have rendered as
+  // `keepApp`, renders on the client what the server would have rendered as
   // HTML, like the inline script of a theme: the warning is the plugin's doing,
   // not the app's. A page that hydrates gets it as it would in the app.
   {
@@ -62,7 +62,7 @@ export const nextPatches = (registry: string): NextPatch[] => [
     edits: [
       [
         "didWarnScriptTags ||",
-        `didWarnScriptTags || ${registry}?.fast?.keepApp || ${registry}?.opened?.ssr === false ||`,
+        `didWarnScriptTags || ${registry}?.speedFeatures?.keepApp || ${registry}?.opened?.ssr === false ||`,
       ],
     ],
   },

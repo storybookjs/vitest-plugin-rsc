@@ -14,8 +14,8 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const preview: import("./project.ts").NextProject["preview"];
   /** The `build` option: which code of Next runs, and so whether it keeps what it prerenders. */
   export const build: import("./build.ts").NextBuild;
-  /** The features of fast mode that are on, the `fast` option resolved: see fast-mode.ts. */
-  export const fast: import("./fast-options.ts").ResolvedFastOptions;
+  /** The speed features that are on, `mode` and the options of the features resolved: see speed-features.ts. */
+  export const speedFeatures: import("./mode.ts").SpeedFeatures;
 }
 
 declare module "virtual:vitest-plugin-rsc/next-prerender" {
@@ -73,5 +73,6 @@ declare module "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser" {
   ): Promise<T>;
 }
 
-// Web Crypto's stand-in of `fast.crypto`, or nothing: see fast-crypto.ts.
+// Web Crypto's stand-in of the speed feature `fastCrypto`, or nothing: see
+// fast-crypto.ts.
 declare module "virtual:vitest-plugin-rsc/next-fast-crypto" {}

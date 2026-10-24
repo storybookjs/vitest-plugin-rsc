@@ -16,7 +16,7 @@ import {
 import { expect, onTestFinished, test, vi } from "vitest";
 import { vitestPluginRSC } from "../index.ts";
 import { createNodePlatform } from "./node-platform.ts";
-import { resolveFast } from "./fast-options.ts";
+import { resolveSpeedFeatures } from "./mode.ts";
 import { vitestPluginNext, type VitestPluginNextOptions } from "./plugin.ts";
 
 // The tests load Next projects: longer than Vitest's 5 s on a loaded CI.
@@ -752,37 +752,61 @@ test("takes no other build", () => {
   );
 });
 
-test("turns on every feature of fast mode for `true`, none for `false`, and all but the ones set to `false` for an object", () => {
-  const all = {
+test("turns every speed feature off in fidelity mode, the default, and on in fast mode", () => {
+  const fast = {
     keepApp: true,
     skipPrefetch: true,
     immediates: true,
     watchDom: true,
     cacheDevServer: true,
-    crypto: true,
+    fastCrypto: true,
   };
-  const none = Object.fromEntries(Object.keys(all).map((feature) => [feature, false]));
-  expect(resolveFast(true, {})).toEqual(all);
-  expect(resolveFast(false, {})).toEqual(none);
-  expect(resolveFast(undefined, {})).toEqual(none);
-  expect(resolveFast({}, {})).toEqual(all);
-  expect(resolveFast({ crypto: false }, {})).toEqual({ ...all, crypto: false });
-  expect(resolveFast({ crypto: true, keepApp: undefined }, {})).toEqual(all);
-  // One feature alone: the others set to `false`.
-  expect(resolveFast({ ...none, watchDom: true }, {})).toEqual({ ...none, watchDom: true });
-  // The environment variable, where the option is absent.
-  expect(resolveFast(undefined, { VITEST_PLUGIN_RSC_FAST: "1" })).toEqual(all);
-  expect(resolveFast(undefined, { VITEST_PLUGIN_RSC_FAST: "0" })).toEqual(none);
-  expect(resolveFast(false, { VITEST_PLUGIN_RSC_FAST: "1" })).toEqual(none);
-  expect(resolveFast({ crypto: false }, { VITEST_PLUGIN_RSC_FAST: "1" })).toEqual({
-    ...all,
-    crypto: false,
-  });
+  const fidelity = Object.fromEntries(Object.keys(fast).map((feature) => [feature, false]));
+  expect(resolveSpeedFeatures({}, {})).toEqual(fidelity);
+  expect(resolveSpeedFeatures({ mode: "fidelity" }, {})).toEqual(fidelity);
+  expect(resolveSpeedFeatures({ mode: "fast" }, {})).toEqual(fast);
 });
 
-test("gives the page the features of fast mode, with `crypto` in a test run of Vitest only, never in a build", async () => {
+test("has the option of a speed feature override the mode, in either direction", () => {
+  const fast = resolveSpeedFeatures({ mode: "fast" }, {});
+  const fidelity = resolveSpeedFeatures({}, {});
+  expect(resolveSpeedFeatures({ mode: "fast", fastCrypto: false }, {})).toEqual({
+    ...fast,
+    fastCrypto: false,
+  });
+  expect(resolveSpeedFeatures({ watchDom: true }, {})).toEqual({ ...fidelity, watchDom: true });
+  expect(resolveSpeedFeatures({ mode: "fidelity", keepApp: false, watchDom: true }, {})).toEqual({
+    ...fidelity,
+    watchDom: true,
+  });
+  expect(resolveSpeedFeatures({ mode: "fast", keepApp: undefined }, {})).toEqual(fast);
+});
+
+test("takes the mode from `VITEST_PLUGIN_RSC_MODE` in a test run of Vitest, when the option has none", () => {
+  const fast = resolveSpeedFeatures({ mode: "fast" }, {});
+  const fidelity = resolveSpeedFeatures({}, {});
+  const run = (mode: string) => ({ VITEST: "true", VITEST_PLUGIN_RSC_MODE: mode });
+  expect(resolveSpeedFeatures({}, run("fast"))).toEqual(fast);
+  expect(resolveSpeedFeatures({}, run("fidelity"))).toEqual(fidelity);
+  expect(resolveSpeedFeatures({}, run(""))).toEqual(fidelity);
+  expect(resolveSpeedFeatures({ mode: "fidelity" }, run("fast"))).toEqual(fidelity);
+  expect(resolveSpeedFeatures({ fastCrypto: false }, run("fast"))).toEqual({
+    ...fast,
+    fastCrypto: false,
+  });
+  // `storybook dev` or a build, which a shell with the variable starts too.
+  expect(resolveSpeedFeatures({}, { VITEST_PLUGIN_RSC_MODE: "fast" })).toEqual(fidelity);
+  expect(() => resolveSpeedFeatures({}, run("1"))).toThrow(
+    '`VITEST_PLUGIN_RSC_MODE` is "fidelity" or "fast", not "1"',
+  );
+  expect(() => resolveSpeedFeatures({ mode: "quick" as "fast" }, {})).toThrow(
+    '`mode` is "fidelity" or "fast", not "quick"',
+  );
+});
+
+test("gives the page the speed features, with `fastCrypto` in a test run of Vitest only, never in a build", async () => {
   const fastOf = async (command: "serve" | "build") => {
-    const plugin = vitestPluginNext({ fast: true }).find(
+    const plugin = vitestPluginNext({ mode: "fast" }).find(
       ({ name }) => name === "vitest-plugin-rsc:next",
     )!;
     await (plugin.config as ConfigHook<unknown>)({ root }, { command });
@@ -791,11 +815,11 @@ test("gives the page the features of fast mode, with `crypto` in a test run of V
       { environment: { mode: command === "build" ? "build" : "dev" } },
       "\0virtual:vitest-plugin-rsc/next-manifest",
     );
-    return JSON.parse(manifest.match(/^export const fast = (.*);$/m)![1]!);
+    return JSON.parse(manifest.match(/^export const speedFeatures = (.*);$/m)![1]!);
   };
   // Vitest runs this test file: `VITEST` is set.
-  expect(await fastOf("serve")).toMatchObject({ keepApp: true, crypto: true });
-  expect(await fastOf("build")).toMatchObject({ keepApp: true, crypto: false });
+  expect(await fastOf("serve")).toMatchObject({ keepApp: true, fastCrypto: true });
+  expect(await fastOf("build")).toMatchObject({ keepApp: true, fastCrypto: false });
 });
 
 test("gives the server layers the package's module of Node.js, after Next's aliases and the bridges", async () => {

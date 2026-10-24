@@ -1,12 +1,12 @@
-// `fast.crypto` of `vitestPluginNext()`: what the server layers import to
-// hash a password or derive a key, as a module of stand-ins that cost
-// microseconds, src/fast-crypto/index.ts. The app's code and its packages run as they are:
-// the layer resolves their import of `bcryptjs` or of `node:crypto` to a
-// module that the plugin makes here, which has the API of the one it stands
-// in for, and the stand-ins in it. The test files, which are in the rsc
-// layer's environment, get the same, so that a user a test makes has a hash
-// that the app's sign-in verifies. Web Crypto, which is the page's own, the
-// plugin's setup file makes a stand-in of: `installWebCrypto()`.
+// The speed feature `fastCrypto` of `vitestPluginNext()`: what the server
+// layers import to hash a password or derive a key, as a module of stand-ins
+// that cost microseconds, src/fast-crypto/index.ts. The app's code and its
+// packages run as they are: the layer resolves their import of `bcryptjs` or of
+// `node:crypto` to a module that the plugin makes here, which has the API of
+// the one it stands in for, and the stand-ins in it. The test files, which are
+// in the rsc layer's environment, get the same, so that a user a test makes has
+// a hash that the app's sign-in verifies. Web Crypto, which is the page's own,
+// the plugin's setup file makes a stand-in of: `installWebCrypto()`.
 //
 // Only in a test run of Vitest, with the option: see plugin.ts.
 

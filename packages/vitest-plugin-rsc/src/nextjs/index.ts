@@ -5,7 +5,7 @@ import { closeContext, openContext } from "./browser-context.ts";
 import { unlinkStylesheets } from "./client-graph.ts";
 import { resetDisk } from "./disk.ts";
 import "./document-loads.ts";
-import { fast } from "./fast-mode.ts";
+import { speedFeature } from "./speed-features.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { leavePage, loadPage } from "./page.ts";
 import { registry, type Opened } from "./registry.ts";
@@ -223,11 +223,11 @@ export type RenderServerOptions = RequestOptions & {
    * test no longer sees the HTML of the server, or a mismatch between it and
    * the browser.
    *
-   * Defaults to `true`, and to `false` in fast mode (`fast.keepApp` of
-   * `vitestPluginNext()`), where a page without HTML of the server renders
-   * in the app of the page before it in the test file: see
-   * `VitestPluginNextOptions.fast`. A test that asserts on the HTML of the
-   * server passes `ssr: true`, and gets a page load of its own.
+   * Defaults to `true`, and to `false` with the speed feature `keepApp` of
+   * `vitestPluginNext()`, on in fast mode, where a page without HTML of the
+   * server renders in the app of the page before it in the test file: see
+   * `SpeedOptions.keepApp`. A test that asserts on the HTML of the server
+   * passes `ssr: true`, and gets a page load of its own.
    */
   ssr?: boolean;
 };
@@ -385,8 +385,8 @@ export async function renderServer(
           "`renderServer(<Page />, { url })`.",
       );
     }
-    // Fast mode renders a page without HTML in the app of the page before.
-    const ssr = first.ssr ?? !fast("keepApp");
+    // `keepApp` renders a page without HTML in the app of the page before.
+    const ssr = first.ssr ?? !speedFeature("keepApp");
     const opened = { pathname, proxy: first.proxy ?? true, ssr };
     return {
       response: await loadPage(url, { headers }, store, {
@@ -395,7 +395,7 @@ export async function renderServer(
         cookie,
         signal,
         errors,
-        inKeptApp: fast("keepApp") && !ssr,
+        inKeptApp: speedFeature("keepApp") && !ssr,
       }),
       errors,
       unmount,

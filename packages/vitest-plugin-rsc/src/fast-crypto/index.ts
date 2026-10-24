@@ -1,11 +1,11 @@
-// The stand-ins of `fast.crypto` (plugin.ts): password hashes and key
-// derivations that cost microseconds, for a test that signs up or signs in a
-// user and should not spend a tenth of a second, or a whole second in the
+// The stand-ins of the speed feature `fastCrypto` (plugin.ts): password hashes
+// and key derivations that cost microseconds, for a test that signs up or signs
+// in a user and should not spend a tenth of a second, or a whole second in the
 // JavaScript of a browser, on a hash that only an attacker would have to
-// compute. Each keeps the contract of what it stands in for: the same API,
-// the same shape, length and encoding of what it returns, the same result for
-// the same password, salt and work factor, and a different one when any of
-// them differs. A password that is wrong does not verify.
+// compute. Each keeps the contract of what it stands in for: the same API, the
+// same shape, length and encoding of what it returns, the same result for the
+// same password, salt and work factor, and a different one when any of them
+// differs. A password that is wrong does not verify.
 //
 // What they compute is one SHA-256 over all the inputs, with the name of the
 // algorithm, expanded to the length asked for: `derive()`. Not a password
@@ -65,10 +65,10 @@ export function derive(algorithm: string, inputs: Input[], length: number): Byte
 /** The error of a hash that the stand-in did not make. */
 export function notMadeHere(api: string, hash: string): Error {
   return new Error(
-    `vitest-plugin-rsc: \`fast.crypto\` stands in for ${api}, which got a hash it did not make: ` +
+    `vitest-plugin-rsc: the speed feature \`fastCrypto\` stands in for ${api}, which got a hash it did not make: ` +
       `${JSON.stringify(hash.slice(0, 32))}... A hash made by the real algorithm, like one of a ` +
       `fixture, does not verify under the stand-in. Make the hash in the test, with the app's ` +
-      `own function, or run the test with \`fast: { crypto: false }\`.`,
+      `own function, or set \`fastCrypto: false\` in \`vitestPluginNext()\`.`,
   );
 }
 

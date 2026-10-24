@@ -1,11 +1,11 @@
 """Compares runs of the benchmark of primitives: bench-results/<label>.json.
 
-    python3 bench/compare.py bench-results/default.json bench-results/fast.json
+    python3 bench/compare.py bench-results/fidelity.json bench-results/fast.json
     python3 bench/compare.py --stat p90 old.json new.json
 
 Prints a Markdown table: the median (or --stat) of every primitive and of its
 parts in each run, and the last run over the first. For runs of two commits,
-or of two modes: the default mode against fast mode. Then the startup marks
+or of two modes: fidelity mode against fast mode. Then the startup marks
 of each run, in ms since the start.
 """
 

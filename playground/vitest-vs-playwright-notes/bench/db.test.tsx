@@ -35,7 +35,7 @@ test("insert a note", async () => {
 
 test("resetDb", async () => {
   await measure("DB › resetDb() of a user, a session and 20 notes", () => resetDb(), {
-    // Without hashing a password, which the default mode does for real.
+    // Without hashing a password, which fidelity mode does for real.
     before: async () => {
       const [user] = await db
         .insert(users)

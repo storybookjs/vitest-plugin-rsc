@@ -10,7 +10,7 @@ name: Benchmark A/B
 # `.github/bench-ab.json` on that branch (every key optional):
 #
 #   { "refs": ["kasper/some-branch", "HEAD"], "tests": "tests/vitest-user-event/",
-#     "reps": 3, "copies": [1, 2], "fast": "1", "build": "production",
+#     "reps": 3, "copies": [1, 2], "mode": "fast", "build": "production",
 #     "profile": "timings", "app": "vitest-vs-playwright-notes" }
 #
 # "HEAD" is the pushed commit. Or on demand, with the same settings as
@@ -29,8 +29,8 @@ on:
       tests:
         description: "Test files or directory, passed to vitest"
         type: string
-      fast:
-        description: "Fast mode (VITEST_PLUGIN_RSC_FAST): 1 or 0"
+      mode:
+        description: "The mode (VITEST_PLUGIN_RSC_MODE): fast or fidelity"
         type: string
       build:
         description: "Next and React build: production or development"
@@ -57,7 +57,7 @@ jobs:
       refs: ${{ steps.merge.outputs.refs }}
       app: ${{ steps.merge.outputs.app }}
       tests: ${{ steps.merge.outputs.tests }}
-      fast: ${{ steps.merge.outputs.fast }}
+      mode: ${{ steps.merge.outputs.mode }}
       build: ${{ steps.merge.outputs.build }}
       reps: ${{ steps.merge.outputs.reps }}
       copies: ${{ steps.merge.outputs.copies }}
@@ -69,7 +69,7 @@ jobs:
           IN_REFS: ${{ inputs.refs }}
           IN_APP: ${{ inputs.app }}
           IN_TESTS: ${{ inputs.tests }}
-          IN_FAST: ${{ inputs.fast }}
+          IN_MODE: ${{ inputs.mode }}
           IN_BUILD: ${{ inputs.build }}
           IN_REPS: ${{ inputs.reps }}
           IN_COPIES: ${{ inputs.copies }}
@@ -85,7 +85,7 @@ jobs:
             echo "refs=$refs"
             echo "app=${IN_APP:-$(get app vitest-vs-playwright-notes)}"
             echo "tests=${IN_TESTS:-$(get tests tests/vitest-user-event/)}"
-            echo "fast=${IN_FAST:-$(get fast 1)}"
+            echo "mode=${IN_MODE:-$(get mode fast)}"
             echo "build=${IN_BUILD:-$(get build production)}"
             echo "reps=${IN_REPS:-$(get reps 3)}"
             echo "copies=$copies"
@@ -101,7 +101,7 @@ jobs:
       matrix:
         copy: ${{ fromJSON(needs.settings.outputs.copies) }}
     env:
-      VITEST_PLUGIN_RSC_FAST: ${{ needs.settings.outputs.fast == '1' && '1' || '' }}
+      VITEST_PLUGIN_RSC_MODE: ${{ needs.settings.outputs.mode }}
       VITEST_PLUGIN_RSC_BUILD: ${{ needs.settings.outputs.build }}
       REFS: ${{ needs.settings.outputs.refs }}
       APP: ${{ needs.settings.outputs.app }}
@@ -177,7 +177,7 @@ jobs:
               values = [float(r[key]) for r in rows if r["ref"] == ref and r[key] != "nan"]
               return statistics.median(values) if values else float("nan")
           import os
-          print(f"### A/B copy ${{ matrix.copy }}: {os.environ['APP']} {os.environ['TESTS']}, {'fast mode' if os.environ.get('VITEST_PLUGIN_RSC_FAST') == '1' else 'default mode'}, {os.environ['VITEST_PLUGIN_RSC_BUILD']}, {len(rows) // max(len(refs), 1)} rounds\n")
+          print(f"### A/B copy ${{ matrix.copy }}: {os.environ['APP']} {os.environ['TESTS']}, {os.environ['VITEST_PLUGIN_RSC_MODE']} mode, {os.environ['VITEST_PLUGIN_RSC_BUILD']}, {len(rows) // max(len(refs), 1)} rounds\n")
           print("| Ref | Duration, median s | Files' time, median s | vs first | Rounds (Duration s) | Tests |")
           print("| --- | ---: | ---: | ---: | --- | --- |")
           base = med(refs[0], "files_ms")

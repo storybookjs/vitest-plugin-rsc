@@ -9,7 +9,7 @@ import type { Stylesheets } from "./styles-shared.ts";
 // Each graph has its own copy of this module. They share the object.
 
 import type { SequentialAsyncLocalStorage } from "../async-local-storage.ts";
-import type { ResolvedFastOptions } from "./fast-options.ts";
+import type { SpeedFeatures } from "./mode.ts";
 
 export type ServerRequest = {
   url: string;
@@ -97,9 +97,9 @@ export type RequestTiming = {
 };
 
 export type NextRegistry = {
-  /** The features of fast mode that are on, `fast` of `vitestPluginNext()`: see fast-mode.ts. */
-  fast?: ResolvedFastOptions;
-  /** The caches of `oncePerTestFile()` in fast-mode.ts, which a test file ends with. */
+  /** The speed features that are on, `mode` and the options of the features resolved: see speed-features.ts. */
+  speedFeatures?: SpeedFeatures;
+  /** The caches of `oncePerTestFile()` in speed-features.ts, which a test file ends with. */
   testFileCaches?: Set<Map<string, Promise<unknown>>>;
   /**
    * For a profile of a test run: set to an array, the server adds the timing
@@ -218,8 +218,8 @@ export type NextRegistry = {
    */
   loadBrowserModule?(id: string): Promise<unknown>;
   /**
-   * Set while the browser layer gives the router of fast mode's kept app the
-   * state of its next page, which Next's patched router reads: see
+   * Set while the browser layer gives the router of the kept app of `keepApp`
+   * the state of its next page, which Next's patched router reads: see
    * `nextPatches` in compat/patches.ts.
    */
   replacingRouter?: boolean;

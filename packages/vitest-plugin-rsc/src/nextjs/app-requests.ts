@@ -1,5 +1,5 @@
 import "./globals.ts";
-import { fast } from "./fast-mode.ts";
+import { speedFeature } from "./speed-features.ts";
 import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
@@ -86,7 +86,7 @@ function sameOriginRequest(
 // goes once the page is. Without a page, a request of Next's has none to
 // hear it.
 let page: AbortSignal | undefined;
-// Whether the router of a page outlives it: in fast mode's kept app (see
+// Whether the router of a page outlives it: in the kept app of `keepApp` (see
 // `renderAgain()` in client.tsx) the modules of Next's router stay, and so
 // does what they count, like the prefetches in flight. A request that never
 // settles would count for good, so one of a page that was left fails as the
@@ -95,7 +95,7 @@ let page: AbortSignal | undefined;
 // reports no failure of a request then (see `leave()` of `Page` in page.ts).
 // Not a Server Action: Next rejects the call of the action with its failure,
 // and code that does not wait for the call, like `onClick={() => action()}`,
-// would reject unhandled. It hears nothing, as in the default mode: the queue
+// would reject unhandled. It hears nothing, as without `keepApp`: the queue
 // it waits in is its page's alone, which no page after it uses.
 let routerOutlivesPage = false;
 
@@ -391,7 +391,7 @@ const appFetch =
 // per request: a pending promise holds on to what awaits it.
 const never = () => new Promise<never>(() => {});
 
-// A prefetch of Next's router, which fast mode's `skipPrefetch` answers
+// A prefetch of Next's router, which the speed feature `skipPrefetch` answers
 // itself. Each has `priority: "low"`, and all but the data of a
 // `<Link prefetch>` to a route the router knows a `next-router-prefetch`
 // header too.
@@ -472,7 +472,7 @@ export function pageFetch(
     const action = sent.headers.has("next-action");
     const sender = page;
     if (!sender || sender.aborted) return ofLeftPage(action);
-    if (fast("skipPrefetch") && isPrefetch(sent, init)) return noPrefetch();
+    if (speedFeature("skipPrefetch") && isPrefetch(sent, init)) return noPrefetch();
     return heardBy(sender, browserFetch(input, init), action);
   };
 }

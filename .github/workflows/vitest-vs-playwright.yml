@@ -27,25 +27,25 @@ defaults:
 
 jobs:
   vitest:
-    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}
+    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # tests/vitest/ clicks and fills with Vitest's commands, which
         # Playwright carries out; tests/vitest-user-event/ with Testing
-        # Library's user-event, in the page. `fast` runs them in the plugin's
-        # fast mode (`VITEST_PLUGIN_RSC_FAST=1`): see its README.md.
+        # Library's user-event, in the page. `mode: fast` runs them in the
+        # plugin's fast mode (`VITEST_PLUGIN_RSC_MODE=fast`): see its README.md.
         include:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event }
-          - { app: vitest-vs-playwright-notes, tests: vitest-user-event, fast: true }
+          - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast }
     defaults:
       run:
         working-directory: playground/${{ matrix.app }}
     env:
-      VITEST_PLUGIN_RSC_FAST: ${{ matrix.fast && '1' || '' }}
+      VITEST_PLUGIN_RSC_MODE: ${{ matrix.mode || 'fidelity' }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -65,14 +65,14 @@ jobs:
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
+            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "VITEST_SECONDS_${{ matrix.fast && 'FAST' || 'DEFAULT' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
+          echo "VITEST_SECONDS_${{ matrix.mode == 'fast' && 'FAST' || 'FIDELITY' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
       - name: Run the tests, Next and React in development
         env:
           VITEST_PLUGIN_RSC_BUILD: development
@@ -84,21 +84,21 @@ jobs:
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
+            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "VITEST_SECONDS_${{ matrix.fast && 'FAST' || 'DEFAULT' }}_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
-      # The job of fast mode runs the tests in the default mode too, on the
+          echo "VITEST_SECONDS_${{ matrix.mode == 'fast' && 'FAST' || 'FIDELITY' }}_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
+      # The job of fast mode runs the tests in fidelity mode too, on the
       # same runner: the ratio of the two is what fast mode gains, which the
       # times of two runners, a minute apart and of other machines, hide.
-      - name: Run the tests in the default mode, Next and React in production
-        if: matrix.fast
+      - name: Run the tests in fidelity mode, Next and React in production
+        if: matrix.mode == 'fast'
         env:
-          VITEST_PLUGIN_RSC_FAST: ""
+          VITEST_PLUGIN_RSC_MODE: fidelity
         run: |
           start=$(date +%s.%N)
           pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
@@ -107,18 +107,18 @@ jobs:
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
+            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "VITEST_SECONDS_DEFAULT_PRODUCTION=$duration" >> "$GITHUB_ENV"
-      - name: Run the tests in the default mode, Next and React in development
-        if: matrix.fast
+          echo "VITEST_SECONDS_FIDELITY_PRODUCTION=$duration" >> "$GITHUB_ENV"
+      - name: Run the tests in fidelity mode, Next and React in development
+        if: matrix.mode == 'fast'
         env:
-          VITEST_PLUGIN_RSC_FAST: ""
+          VITEST_PLUGIN_RSC_MODE: fidelity
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
@@ -128,27 +128,27 @@ jobs:
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}, default mode, on the runner of fast mode"
+            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "VITEST_SECONDS_DEFAULT_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
-      - name: Compare the default mode with fast mode
-        if: matrix.fast
+          echo "VITEST_SECONDS_FIDELITY_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
+      - name: Compare fidelity mode with fast mode
+        if: matrix.mode == 'fast'
         run: |
           {
-            echo "### Vitest, ${{ matrix.app }}, ${{ matrix.tests }}, default mode and fast mode on one runner"
+            echo "### Vitest, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode and fast mode on one runner"
             echo
-            echo "| Next and React | Default mode, seconds | Fast mode, seconds | Default / fast |"
+            echo "| Next and React | Fidelity mode, seconds | Fast mode, seconds | Fidelity / fast |"
             echo "| --- | ---: | ---: | ---: |"
             for build in production development; do
-              default="VITEST_SECONDS_DEFAULT_${build^^}"
+              fidelity="VITEST_SECONDS_FIDELITY_${build^^}"
               fast="VITEST_SECONDS_FAST_${build^^}"
-              printf "| %s | %.1f | %.1f | %.2f |\n" "$build" "${!default}" "${!fast}" \
-                "$(echo "${!default} / ${!fast}" | bc -l)"
+              printf "| %s | %.1f | %.1f | %.2f |\n" "$build" "${!fidelity}" "${!fast}" \
+                "$(echo "${!fidelity} / ${!fast}" | bc -l)"
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -163,7 +163,7 @@ jobs:
       run:
         working-directory: playground/vitest-vs-playwright-notes
     env:
-      VITEST_PLUGIN_RSC_FAST: 1
+      VITEST_PLUGIN_RSC_MODE: fast
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -200,11 +200,11 @@ jobs:
   # The benchmark of primitives (vitest.bench.config.ts, bench/ of the notes
   # app): startup, a page load, a navigation, a Server Action, each kind of
   # event, a wait, a query and the database, each timed a hundred times, in
-  # fast mode and in the default mode on one runner. Their tables and the two
+  # fast mode and in fidelity mode on one runner. Their tables and the two
   # side by side go to the summary of the run, the JSON to an artifact, for
   # bench/compare.py against another commit.
   primitives:
-    name: Vitest, vitest-vs-playwright-notes, primitives, fast and default mode
+    name: Vitest, vitest-vs-playwright-notes, primitives, fast and fidelity mode
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -221,20 +221,22 @@ jobs:
       - run: pnpm --filter vitest-plugin-rsc build
       - name: Time the primitives in fast mode
         env:
-          VITEST_PLUGIN_RSC_FAST: 1
+          VITEST_PLUGIN_RSC_MODE: fast
         run: |
           BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run -c vitest.bench.config.ts --maxWorkers 1
           cat bench-results/fast.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Time the primitives in the default mode
+      - name: Time the primitives in fidelity mode
+        env:
+          VITEST_PLUGIN_RSC_MODE: fidelity
         run: |
           BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run -c vitest.bench.config.ts --maxWorkers 1
-          cat bench-results/default.md >> "$GITHUB_STEP_SUMMARY"
-      - name: Compare the default mode with fast mode
+          cat bench-results/fidelity.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Compare fidelity mode with fast mode
         run: |
           {
-            echo "### Primitives, default mode and fast mode on one runner"
+            echo "### Primitives, fidelity mode and fast mode on one runner"
             echo
-            python3 bench/compare.py bench-results/default.json bench-results/fast.json
+            python3 bench/compare.py bench-results/fidelity.json bench-results/fast.json
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:

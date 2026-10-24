@@ -23,7 +23,7 @@ export type Timing = {
   finished?: number;
 };
 
-type Registry = { requestTimings?: Timing[]; fast?: Record<string, boolean> };
+type Registry = { requestTimings?: Timing[] };
 const registry = (globalThis as { __vitest_plugin_rsc_next__?: Registry })
   .__vitest_plugin_rsc_next__!;
 
@@ -178,14 +178,9 @@ function stats(values: number[], first: number): Stats {
   };
 }
 
-/** The mode of the run, as vitest.bench.config.ts names it: `fast` or `default`, and the build. */
+/** The mode of the run, as vitest.bench.config.ts names it: `fast` or `fidelity`, and the build. */
 export function mode(): string {
   return import.meta.env.BENCH_MODE as string;
-}
-
-/** Whether fast mode has this feature on: see `fast` of `vitestPluginNext()`. */
-export function fastFeature(feature: string): boolean {
-  return registry.fast?.[feature] === true;
 }
 
 /**

@@ -4,7 +4,7 @@ import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
+import { vitestPluginNext, type Mode, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 import { setup as buildStorybookFramework } from "../test-helpers/storybook-framework.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
@@ -46,9 +46,10 @@ const browserMode = () => ({
   instances: [{ browser: "chromium" as const }],
 });
 
-// The tests of the app, which open its routes: as CI runs them, and in fast
-// mode (`fast` of `vitestPluginNext()`), which they pass in too.
-const browserProject = (name: string, fast: boolean) =>
+// The tests of the app, which open its routes: in fidelity mode, as CI runs
+// them, and in fast mode (`mode` of `vitestPluginNext()`), which they pass in
+// too.
+const browserProject = (name: string, mode: Mode) =>
   defineProject({
     root,
     // MSW's worker lives in the repo-root public/ (package.json#msw). Vitest 5
@@ -70,7 +71,7 @@ const browserProject = (name: string, fast: boolean) =>
       // oxlint-disable-next-line no-process-env
       vitestPluginNext({
         build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
-        fast,
+        mode,
       }),
     ],
     test: {
@@ -95,8 +96,8 @@ const browserProject = (name: string, fast: boolean) =>
   });
 
 export const nextjsNotesProjects = [
-  browserProject("nextjs-notes-demo-browser", false),
-  browserProject("nextjs-notes-demo-fast", true),
+  browserProject("nextjs-notes-demo-browser", "fidelity"),
+  browserProject("nextjs-notes-demo-fast", "fast"),
   // Every story of the app, as a test of Storybook's Vitest addon, which
   // makes a story file a test file: a server story renders in a page of the
   // app, a client story in the browser layer, each with the preview its file

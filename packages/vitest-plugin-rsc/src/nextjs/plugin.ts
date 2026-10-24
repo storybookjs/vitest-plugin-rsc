@@ -37,7 +37,13 @@ import {
 import { nextPatches } from "./compat/patches.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
 import { fastCryptoModule, fastCryptoModuleOf, fastCryptoSetup } from "./fast-crypto.ts";
-import { resolveFast, type FastOptions, type ResolvedFastOptions } from "./fast-options.ts";
+import {
+  resolveSpeedFeatures,
+  type SpeedFeatures,
+  type Mode,
+  type ModeOptions,
+  type SpeedOptions,
+} from "./mode.ts";
 import { createNodePlatform, instrumentationPlugin } from "./node-platform.ts";
 import { registryGlobal } from "./registry-global.ts";
 import {
@@ -208,7 +214,8 @@ const devAssetPrefixShim = `export const assetPrefix = "";\n`;
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
 // What a run has said of the installed Next, which its projects share.
 const saidOfNext = new Set<string>();
-// The modules of `fast.crypto`, see fast-crypto.ts: one for each package.
+// The modules of the speed feature `fastCrypto`, see fast-crypto.ts: one for
+// each package.
 const fastCryptoPrefix = `${bridgePrefix}fast-crypto/`;
 // What the plugin's setup file imports: Web Crypto's stand-in, or nothing.
 const fastCryptoSetupId = "virtual:vitest-plugin-rsc/next-fast-crypto";
@@ -387,9 +394,9 @@ function createLayerResolver(
         if (source.startsWith(bridgePrefix) || source === emptyModuleId) return source;
         if (source.startsWith("\0")) return;
         // A package that hashes passwords, and `node:crypto`, in the server
-        // layers and the test files, with `fast.crypto`: the stand-ins. Not
-        // for a dependency whose `browser` field says what it uses for
-        // `crypto`, which gets that, as without the option.
+        // layers and the test files, with the speed feature `fastCrypto`: the
+        // stand-ins. Not for a dependency whose `browser` field says what it
+        // uses for `crypto`, which gets that, as without the option.
         if (layer !== "browser" && fastCrypto()) {
           const name = fastCryptoModuleOf(source);
           if (name && (name !== "node-crypto" || browserMapping(source, importer) === undefined)) {
@@ -778,79 +785,31 @@ const runtimeImports: Record<NextLayer, string[]> = {
 };
 
 export type { NextBuild };
-export type { FastOptions, ResolvedFastOptions };
+export type { Mode, SpeedOptions };
 
-export type VitestPluginNextOptions = ServerCodeOptions & {
-  /**
-   * Experimental. The code that Next's runtime and React run, in all three
-   * layers: `"development"` as `next dev` runs it, `"production"` as
-   * `next start` runs it after `next build`. Production renders faster,
-   * without what the development code checks and reports. In a test run
-   * the app's `process.env.NODE_ENV` stays as it is, in a static build it is
-   * the build. See docs/internals/next-routes.md, "Development Or Production".
-   *
-   * @default `"development"` for a test run and a dev server, `"production"`
-   * for `vite build`, a static build of the app
-   */
-  build?: NextBuild;
-  /**
-   * Experimental. A fast mode for a quick feedback loop, like an agent's or
-   * a watch run's, which gives up some of what a test sees of a browser. A
-   * suite that passes in fast mode is to pass without it too, as in CI.
-   *
-   * `true` turns on every feature of it, `false` none. An object is fast mode
-   * with exceptions: a feature it sets to `false` is off, and every other is
-   * on, so `{ crypto: false }` is fast mode with the real password hashes. To
-   * run one feature alone, set every other to `false`. The features, by
-   * their flags in `FastOptions`:
-   *
-   * - `keepApp`: the pages of a test file render in one app: the first page
-   *   starts it, and every `renderServer({ url })` after it renders its page
-   *   in it, from the page's Flight payload, without a page load. Each page
-   *   gets a tree, a router and caches of the router of its own, so no state
-   *   of a component carries over from one test to the next. What does is
-   *   the state of the modules of the app, of a package and of Next and
-   *   React, as in a single-page app that never reloads. The server renders
-   *   no HTML (`ssr: false`), also not of a page that the app loads itself
-   *   from one of these, like after a `<form>` without a Server Action: a
-   *   test that asserts on it passes `ssr: true`, and gets a page load of its
-   *   own. In development the page has no dev overlay.
-   * - `skipPrefetch`: Next's `<Link>` and `<Form>` prefetch nothing.
-   * - `immediates`: the server runs the steps of a render, which React
-   *   separates with `setTimeout(work, 0)`, without the delay a browser adds
-   *   to a timeout, unless the test has faked the timers.
-   * - `watchDom`: `expect.element()` looks for an element again on every
-   *   change of the DOM, not after a growing wait, and `expect.poll()` every
-   *   5 ms unless the config sets `expect.poll.interval`.
-   * - `cacheDevServer`: what the dev server answers about the stylesheets and
-   *   the modules of a test file is asked once per test file, not for every
-   *   page.
-   * - `crypto`: password hashes and key derivations cost microseconds, with
-   *   the same API, for the server code in the page and the test files:
-   *   PBKDF2 of `crypto.subtle`, `pbkdf2`, `scrypt` and `argon2` of
-   *   `node:crypto`, and the packages bcryptjs, bcrypt, @node-rs/bcrypt,
-   *   argon2, @node-rs/argon2 and the scrypt, pbkdf2 and argon2 of
-   *   @noble/hashes, which Better Auth hashes with. A hash a test makes
-   *   verifies in the app, and a password verifies against its own hash
-   *   only. It is one SHA-256: never a password hash outside a test, and the
-   *   plugin gives it to a test run of Vitest only, never to a build. A hash
-   *   made by the real algorithm, like one in a fixture, does not verify
-   *   under a stand-in: bcrypt's and Argon2's throw an error that says so.
-   *   See docs/nodejs-in-the-browser.md, "Fast crypto".
-   *
-   * @default `true` when the environment variable `VITEST_PLUGIN_RSC_FAST`
-   * is `1`, else `false`
-   */
-  fast?: boolean | FastOptions;
-};
+export type VitestPluginNextOptions = ServerCodeOptions &
+  ModeOptions & {
+    /**
+     * Experimental. The code that Next's runtime and React run, in all three
+     * layers: `"development"` as `next dev` runs it, `"production"` as
+     * `next start` runs it after `next build`. Production renders faster,
+     * without what the development code checks and reports. In a test run
+     * the app's `process.env.NODE_ENV` stays as it is, in a static build it is
+     * the build. See docs/internals/next-routes.md, "Development Or Production".
+     *
+     * @default `"development"` for a test run and a dev server, `"production"`
+     * for `vite build`, a static build of the app
+     */
+    build?: NextBuild;
+  };
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
   // oxlint-disable-next-line no-process-env -- The switch of an agent's run, as `CI` is.
-  const fastOption = resolveFast(options.fast, process.env);
-  // The features of fast mode, with `crypto` in a test run of Vitest only,
-  // once the `config` hook knows: a static build, or a dev server of another
-  // host, hashes for real.
-  let fast: ResolvedFastOptions = { ...fastOption, crypto: false };
+  const chosen = resolveSpeedFeatures(options, process.env);
+  // The speed features of this run: the chosen ones, with `fastCrypto` in a
+  // test run of Vitest only, once the `config` hook knows: a static build, or
+  // a dev server of another host, hashes for real.
+  let speedFeatures: SpeedFeatures = { ...chosen, fastCrypto: false };
   let project: NextProject;
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
@@ -893,7 +852,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       serverCode.isHostPackage(source) ? { id: source, external: true } : undefined,
   };
   const resolvers = Object.fromEntries(
-    layers.map((layer) => [layer, createLayerResolver(getProject, layer, () => fast.crypto)]),
+    layers.map((layer) => [
+      layer,
+      createLayerResolver(getProject, layer, () => speedFeatures.fastCrypto),
+    ]),
   ) as Record<NextLayer, LayerResolver>;
   // The CSS of the app, as the stylesheets of a route.
   let pageRoutes: { of: NextProject; routes: Map<string, NextRoute | ComponentRoute> } | undefined;
@@ -986,8 +948,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // Vitest says it runs in the env of its process, before it loads a
         // config: what tells a test run from a dev server here.
         // oxlint-disable-next-line no-process-env
-        const crypto = fastOption.crypto && !isBuild && process.env.VITEST !== undefined;
-        fast = { ...fastOption, crypto };
+        const fastCrypto = chosen.fastCrypto && !isBuild && process.env.VITEST !== undefined;
+        speedFeatures = { ...chosen, fastCrypto };
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
           static: isBuild,
@@ -1125,8 +1087,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ...definesOf(project, layer),
                 ...(layer === "browser" ? serverCode.browserCacheKey : serverCode.cacheKey),
                 ...optimizerCacheKey(project, layer),
-                // A pre-bundle has the stand-ins of `fast.crypto` in it, or not.
-                __vitest_plugin_rsc_fast_crypto__: JSON.stringify(fast.crypto),
+                // A pre-bundle has the stand-ins of `fastCrypto` in it, or not.
+                __vitest_plugin_rsc_fast_crypto__: JSON.stringify(speedFeatures.fastCrypto),
               },
             },
           },
@@ -1189,8 +1151,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // the stack of an error it reports with the maps on disk, and only
         // a headless run leaves them out.
         test.browser.dependencySourcemaps ??= false;
-        // An assertion of fast mode looks again sooner: see `fast.watchDom`.
-        if (fast.watchDom) ((test.expect ??= {}).poll ??= {}).interval ??= 5;
+        // With `watchDom`, an assertion looks again sooner: see
+        // `SpeedOptions.watchDom`.
+        if (speedFeatures.watchDom) ((test.expect ??= {}).poll ??= {}).interval ??= 5;
 
         // JSX compiled for production, as `next build` compiles it: JSX
         // compiled for development calls `jsxDEV()`, which React's production
@@ -1458,7 +1421,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           );
         }
 
-        if (id === `\0${fastCryptoSetupId}`) return fastCryptoSetup(fast.crypto);
+        if (id === `\0${fastCryptoSetupId}`) return fastCryptoSetup(speedFeatures.fastCrypto);
 
         // Of every layer: the page's `process.env` is one.
         if (id === `\0${envId}`) {
@@ -1483,7 +1446,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n` +
             `export const preview = ${JSON.stringify(project.preview)};\n` +
             `export const build = ${JSON.stringify(build)};\n` +
-            `export const fast = ${JSON.stringify(fast)};\n`
+            `export const speedFeatures = ${JSON.stringify(speedFeatures)};\n`
           );
         }
 

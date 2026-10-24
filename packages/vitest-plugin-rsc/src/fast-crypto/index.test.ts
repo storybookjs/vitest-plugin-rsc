@@ -1,6 +1,6 @@
-// The stand-ins of `fast.crypto`: each keeps the contract of what it stands in
-// for, which Node's own `crypto` is here to compare with, and costs
-// microseconds where the real one costs a tenth of a second or more.
+// The stand-ins of the speed feature `fastCrypto`: each keeps the contract of
+// what it stands in for, which Node's own `crypto` is here to compare with, and
+// costs microseconds where the real one costs a tenth of a second or more.
 
 import nodeCrypto from "node:crypto";
 import { expect, test } from "vitest";

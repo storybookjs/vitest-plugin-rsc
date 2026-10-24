@@ -1,10 +1,9 @@
-import type { FastOptions } from "./fast-options.ts";
+import type { SpeedFeature } from "./mode.ts";
 import { registry } from "./registry.ts";
 
-// The fast mode of `vitestPluginNext({ fast: true })`: what it changes in the
-// page, for a quick feedback loop, like an agent's, at the cost of some of
-// what a test sees of a browser. Each feature has a flag of its own: see
-// `VitestPluginNextOptions.fast`.
+// The speed features in the page: whether one is on, and what `cacheDevServer`
+// and `watchDom` do there. Which are on, the mode of `vitestPluginNext()` and
+// the options of the features decide: see `SpeedOptions` in mode.ts.
 //
 // What the dev server answers about the files of a test, like the
 // stylesheets of a route or whether a module changed, does not change while
@@ -15,9 +14,9 @@ import { registry } from "./registry.ts";
 
 const caches = () => (registry.testFileCaches ??= new Set());
 
-/** Whether a feature of fast mode is on in the page. */
-export function fast(feature: keyof FastOptions): boolean {
-  return registry.fast?.[feature] === true;
+/** Whether a speed feature is on in the page. */
+export function speedFeature(feature: SpeedFeature): boolean {
+  return registry.speedFeatures?.[feature] === true;
 }
 
 /**
@@ -30,7 +29,7 @@ export function oncePerTestFile<T>(
   key: string,
   ask: () => Promise<T>,
 ): Promise<T> {
-  if (!fast("cacheDevServer")) return ask();
+  if (!speedFeature("cacheDevServer")) return ask();
   caches().add(cache as Map<string, Promise<unknown>>);
   let answer = cache.get(key);
   if (!answer) {
@@ -58,7 +57,7 @@ const onEveryChange = Symbol.for("vitest-plugin-rsc:find-on-every-change");
 
 /** With `watchDom`, has `locator` (a Locator of `vitest/browser`) look on every change of the DOM. */
 export function findOnEveryChange(locator: object): void {
-  if (!fast("watchDom")) return;
+  if (!speedFeature("watchDom")) return;
   let proto: { findElement?: unknown } | null = Object.getPrototypeOf(locator);
   while (proto && !Object.prototype.hasOwnProperty.call(proto, "findElement")) {
     proto = Object.getPrototypeOf(proto);

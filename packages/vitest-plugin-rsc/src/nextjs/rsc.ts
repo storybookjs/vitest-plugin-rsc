@@ -5,14 +5,14 @@ import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
-import { fast, nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
+import { nextConfig, speedFeatures } from "virtual:vitest-plugin-rsc/next-manifest";
 import serverReferences from "virtual:vitest-plugin-rsc/server-references";
 import { createElement, type ReactNode } from "react";
 import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { NoFallbackError } from "./compat/rsc/handlers.ts";
 import { preloadPage } from "./document.ts";
-import { oncePerTestFile } from "./fast-mode.ts";
+import { oncePerTestFile } from "./speed-features.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { askDevServer } from "../utils.ts";
 // By the package, so that it stays a module of its own with its "use client"
@@ -51,8 +51,9 @@ ReactServer.setRequireModule({
 // Vite RSC resolves a reference by its module id at runtime, with manifests of
 // its own, so these take Next's manifest arguments and leave them out. See
 // flight.ts for the exports of Next's codec that are not here.
-// What the page reads of the option before it renders: see fast-mode.ts.
-registry.fast = fast;
+// What the page reads of the speed features before it renders: see
+// speed-features.ts.
+registry.speedFeatures = speedFeatures;
 
 registry.flightServer = {
   renderToReadableStream: (model: unknown, _clientModules: unknown, options?: object) =>
@@ -185,7 +186,7 @@ if (directory) {
     });
   };
 } else {
-  // Every request of a page asks: with fast mode's `cacheDevServer` once
+  // Every request of a page asks: with the speed feature `cacheDevServer` once
   // per test file.
   const stylesheets = new Map<string, Promise<Stylesheets>>();
   registry.loadStylesheets = (entry, inline, files) =>

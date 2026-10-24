@@ -9,8 +9,8 @@ import { measure, untilDom } from "./harness.ts";
 // For one that a Server Action brings, the latency of the wait: from the
 // change of the DOM that made it match, which a MutationObserver of the test
 // sees, until the assertion resolved. Vitest looks again after 0, 20, 50,
-// 100, 100 and then every 500 ms; fast mode's `watchDom` on every change of
-// the DOM and every 5 ms.
+// 100, 100 and then every 500 ms; the speed feature `watchDom` on every change
+// of the DOM and every 5 ms.
 
 test("expect.element on an element that is there", async () => {
   await seedApp();
