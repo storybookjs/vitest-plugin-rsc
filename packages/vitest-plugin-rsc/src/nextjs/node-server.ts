@@ -1,9 +1,9 @@
 import { Readable } from "vitest-plugin-rsc/node/stream";
 import { restoreIncrementalCache } from "./cache.ts";
 import {
+  fromNodeOutgoingHttpHeaders,
   isDynamicServerError,
   MockedResponse,
-  splitCookiesString,
   toNodeOutgoingHttpHeaders,
   type RequestMeta,
 } from "./compat/ssr/node-server.ts";
@@ -41,20 +41,6 @@ function createNodeRequest(request: ServerRequest) {
     httpVersion: "1.1",
     socket: { encrypted: url.protocol === "https:" },
   });
-}
-
-// The headers of Next's stand-in for a response, as Node.js sends them: what
-// `fromNodeOutgoingHttpHeaders(res.getHeaders())` makes, without the object
-// between: the stand-in keeps them in a `Headers`, which `getHeaders()` reads.
-// A `Set-Cookie` value that joins several cookies with a comma goes as one
-// header for each.
-function headersOf(res: MockedResponse): Headers {
-  const headers = new Headers();
-  (res as unknown as { headers: Headers }).headers.forEach((value, name) => {
-    if (name !== "set-cookie") headers.append(name, value);
-    else for (const cookie of splitCookiesString(value)) headers.append(name, cookie);
-  });
-  return headers;
 }
 
 /**
@@ -169,7 +155,7 @@ function createNodeResponse(request: ServerRequest) {
       const answer = new registry.Response(empty ? null : body, {
         status: res.statusCode,
         statusText: res.statusMessage,
-        headers: headersOf(res),
+        headers: fromNodeOutgoingHttpHeaders(res.getHeaders()),
       });
       if (!empty) writings.set(answer, { written: bodyWritten, stop });
       return answer;
