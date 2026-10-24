@@ -1,3 +1,4 @@
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import { graphStylesheetAttribute } from "./styles-shared.ts";
 
 // A page load, without loading a page: the test runs in this
@@ -345,9 +346,12 @@ export async function loadDocument(
   }
   const stylesheetsOfHead = stylesheetsOf(page.head, url);
   const stylesheetsOfBody = stylesheetsOf(page.body, url);
+  // A DOM of Node.js loads no stylesheet, and has nothing to wait for.
   const loaded = (stylesheets: HTMLLinkElement[]) =>
     Promise.race([
-      Promise.all(stylesheets.filter((link) => !link.disabled).map(stylesheetLoaded)),
+      pageHost.loadsStylesheets
+        ? Promise.all(stylesheets.filter((link) => !link.disabled).map(stylesheetLoaded))
+        : undefined,
       left,
     ]);
   // Where the browser ended up, after any redirects. Before the page is in

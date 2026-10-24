@@ -12,6 +12,7 @@ import {
 } from "vite/module-runner";
 import hostModules from "virtual:vitest-plugin-rsc/host-modules";
 import builtLayers from "virtual:vitest-plugin-rsc/layers";
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
 import {
   builtUrl,
@@ -22,15 +23,12 @@ import {
 import { isHostModule } from "./host-module.ts";
 import { runnerTimers, timersKey } from "./timers.ts";
 import {
-  answerEvent,
   changedEvent,
   invokeEvent,
   versionEvent,
-  webSocketInfoPath,
-  webSocketQuery,
   type ChangedQuestion,
   type PageAnswer,
-} from "./websocket-bridge.ts";
+} from "./page-bridge.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
 // below evaluate: see vite-client.ts.
@@ -52,33 +50,17 @@ type ViteFetchResult = {
   invalidate?: boolean;
 };
 
-type WebSocketInfo = { token: string; path: string };
-type PendingInvoke = {
-  resolve: (result: unknown) => void;
-  reject: (error: unknown) => void;
-  timeoutId: ReturnType<typeof setTimeout> | undefined;
-};
-type InvokeResultMessage = {
-  type?: string;
-  event?: string;
-  data?: {
-    id?: string;
-    result?: unknown;
-  };
-};
-
-// Before anything replaces it: this request is for the dev server, or for a
-// file of a static build.
+// Before anything replaces it: this request is for a file of a static build.
 const nativeFetch = globalThis.fetch;
 
 /**
- * Asks the dev server what a plugin answers at `event`, over the websocket of
- * the page: see `answerPage()` in websocket-bridge.ts.
+ * Asks the dev server what a plugin answers at `event`, through the host of
+ * the page: see `answerPage()` in page-bridge.ts.
  */
 export async function askDevServer<T>(event: string, question: object): Promise<T> {
   // Without a timeout, as a request of HTTP: one question can take a while,
   // like the first walk of a route, which compiles all of it.
-  const result = (await requestOverWebSocket(event, question, false)) as PageAnswer<T>;
+  const result = (await pageHost.request(event, question, false)) as PageAnswer<T>;
   if ("error" in result) {
     throw new Error(`vitest-plugin-rsc: the dev server failed to answer ${event}: ${result.error}`);
   }
@@ -93,27 +75,10 @@ const built = createBuiltLayers(
   Object.values(builtLayers ?? {}).filter((layer) => layer !== undefined),
 );
 
-let webSocket: WebSocket | undefined;
-let webSocketPromise: Promise<WebSocket> | undefined;
-let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;
-let nextInvokeId = 0;
-const invokeTimeout = 30_000;
-// A test's own timers may be fake.
-const setTimeout = globalThis.setTimeout;
-const clearTimeout = globalThis.clearTimeout;
-const now = performance.now.bind(performance);
-// When the server last answered. A page asks for its modules at once, and a
-// dev server that compiles them for the first time answers them one by one:
-// a request waits for the ones before it, so it times out when the server has
-// been silent, not when it is old.
-let lastAnswer = 0;
-
-const pendingInvokes = new Map<string, PendingInvoke>();
-
 const runners = new Map<string, ModuleRunner>();
 
 // One module runner per Vite environment that runs in the page next to the
-// browser tests. All of them share this websocket.
+// browser tests. All of them share the host's channel to the dev server.
 function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
@@ -237,7 +202,7 @@ export function importReactClient<T = any>(id: string): Promise<T> {
 }
 
 async function invokeEnvironment(environment: string, payload: InvokePayload) {
-  const result = await invokeOverWebSocket(environment, payload);
+  const result = await invokeDevServer(environment, payload);
   // Coverage is collected for the modules the browser itself runs.
   return environment === "react_client" ? await withReactClientCoverage(result) : result;
 }
@@ -260,12 +225,14 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // The modules that were fetched, when the server still has that version of
 // its modules.
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
-  const fetched = requestOverWebSocket(versionEvent, { environment }).then(
-    (version): FetchedModules =>
-      known && known.version === version
-        ? known
-        : { version: version as number, results: new Map() },
-  );
+  const fetched = pageHost
+    .request(versionEvent, { environment })
+    .then(
+      (version): FetchedModules =>
+        known && known.version === version
+          ? known
+          : { version: version as number, results: new Map() },
+    );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and
   // the next page load asks: a runner of the server layer that got others
@@ -550,158 +517,6 @@ function toBrowserCoverageFileUrl(file: string) {
   return url.href;
 }
 
-function invokeOverWebSocket(environment: string, payload: InvokePayload) {
-  return requestOverWebSocket(invokeEvent, {
-    environment,
-    payload,
-  }) as Promise<InvokeResult>;
-}
-
-// Rejects once the server has sent nothing for `invokeTimeout`, unless the
-// request does not `expire`.
-async function requestOverWebSocket(event: string, data: object, expires = true): Promise<unknown> {
-  const socket = await getReactClientWebSocket();
-  const id = String(++nextInvokeId);
-
-  return new Promise((resolve, reject) => {
-    const sent = now();
-    const pending: PendingInvoke = {
-      resolve,
-      reject,
-      timeoutId: expires ? setTimeout(expire, invokeTimeout) : undefined,
-    };
-    function expire() {
-      const silent = now() - Math.max(sent, lastAnswer);
-      if (silent < invokeTimeout) {
-        pending.timeoutId = setTimeout(expire, invokeTimeout - silent);
-        return;
-      }
-      pendingInvokes.delete(id);
-      reject(new Error(`React client websocket invoke timed out: ${event} ${id}`));
-    }
-
-    pendingInvokes.set(id, pending);
-    try {
-      socket.send(JSON.stringify({ type: "custom", event, data: { id, ...data } }));
-    } catch (error) {
-      clearTimeout(pending.timeoutId);
-      pendingInvokes.delete(id);
-      reject(error);
-    }
-  });
-}
-
-async function getReactClientWebSocket() {
-  if (webSocket?.readyState === WebSocket.OPEN) {
-    return webSocket;
-  }
-
-  webSocketPromise ??= openReactClientWebSocket().finally(() => {
-    webSocketPromise = undefined;
-  });
-  return webSocketPromise;
-}
-
-async function openReactClientWebSocket() {
-  const info = await getWebSocketInfo();
-  const socket = new WebSocket(createWebSocketUrl(info), "vite-hmr");
-
-  socket.addEventListener("message", handleWebSocketMessage);
-  socket.addEventListener("close", () => {
-    if (webSocket === socket) {
-      webSocket = undefined;
-    }
-    rejectPendingInvokes(new Error("React client websocket connection closed"));
-  });
-
-  await waitForWebSocketOpen(socket);
-  webSocket = socket;
-  return socket;
-}
-
-function waitForWebSocketOpen(socket: WebSocket) {
-  return new Promise<void>((resolve, reject) => {
-    const cleanup = () => {
-      socket.removeEventListener("open", handleOpen);
-      socket.removeEventListener("error", handleError);
-      socket.removeEventListener("close", handleClose);
-    };
-    const handleOpen = () => {
-      cleanup();
-      resolve();
-    };
-    const handleError = () => {
-      cleanup();
-      reject(new Error("React client websocket connection failed"));
-    };
-    const handleClose = () => {
-      cleanup();
-      reject(new Error("React client websocket closed before opening"));
-    };
-
-    socket.addEventListener("open", handleOpen);
-    socket.addEventListener("error", handleError);
-    socket.addEventListener("close", handleClose);
-  });
-}
-
-function handleWebSocketMessage(event: MessageEvent) {
-  const result = parseInvokeResultMessage(event.data);
-  if (!result) return;
-
-  lastAnswer = now();
-  const pending = pendingInvokes.get(result.id);
-  if (!pending) {
-    return;
-  }
-
-  clearTimeout(pending.timeoutId);
-  pendingInvokes.delete(result.id);
-  pending.resolve(result.result);
-}
-
-function parseInvokeResultMessage(raw: unknown) {
-  if (typeof raw !== "string") {
-    return undefined;
-  }
-
-  try {
-    const message = JSON.parse(raw) as InvokeResultMessage;
-    if (
-      message.type !== "custom" ||
-      message.event !== answerEvent ||
-      typeof message.data?.id !== "string"
-    ) {
-      return undefined;
-    }
-    return { id: message.data.id, result: message.data.result };
-  } catch {
-    return undefined;
-  }
-}
-
-function rejectPendingInvokes(error: unknown) {
-  for (const pending of pendingInvokes.values()) {
-    clearTimeout(pending.timeoutId);
-    pending.reject(error);
-  }
-  pendingInvokes.clear();
-}
-
-function createWebSocketUrl(info: WebSocketInfo) {
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const url = new URL(`${protocol}://${window.location.host}${info.path}`);
-  url.searchParams.set("token", info.token);
-  url.searchParams.set(webSocketQuery, "1");
-  return url;
-}
-
-async function getWebSocketInfo() {
-  webSocketInfoPromise ??= nativeFetch(webSocketInfoPath).then(async (response) => {
-    if (!response.ok) {
-      throw new Error("Failed to fetch React client websocket info");
-    }
-    return response.json() as Promise<WebSocketInfo>;
-  });
-  return webSocketInfoPromise;
+function invokeDevServer(environment: string, payload: InvokePayload) {
+  return pageHost.request(invokeEvent, { environment, payload }) as Promise<InvokeResult>;
 }

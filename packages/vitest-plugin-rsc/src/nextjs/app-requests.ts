@@ -1,4 +1,5 @@
 import "./globals.ts";
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import { speedFeature } from "./speed-features.ts";
 import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
@@ -20,6 +21,11 @@ import { loadedSsrLayer, ssrLayer } from "./server-layers.ts";
 // cache to forget.
 
 type SsrLayer = Awaited<ReturnType<typeof ssrLayer>>;
+
+// The headers of the requests to the app and of its answers are the server's
+// (page-host.ts): in a browser the page's own, in a DOM of Node.js Node's,
+// whatever the page's are by then, like a patch of a mock of the network.
+const { Headers } = pageHost.serverWebApis;
 
 // What Next's server answers a request with, once the ssr layer is there.
 // As with `fetch`, a request whose signal has aborted is not sent: the
@@ -378,7 +384,9 @@ const appFetch =
     // The request, for the network: a body can be read once.
     const spare = input instanceof Request && input.body ? input.clone() : input;
     // The server's Request keeps a `cookie` header, which a browser's drops.
-    const request = server ? new registry.Request(input, init) : new Request(input, init);
+    const request = server
+      ? new registry.Request(input, init)
+      : new Request(input, pageHost.fromPage(init));
     const response = await sendRequest(request, {
       from,
       credentials,

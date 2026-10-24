@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import env from "virtual:vitest-plugin-rsc/next-env";
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import {
   asyncFunctionHooks,
   enterAmbientScope,
@@ -14,8 +15,8 @@ import { registry, type Opened } from "./registry.ts";
 // A browser drops `cookie` from the headers of a Request and `set-cookie` from
 // those of a Response. A server has to see both, so the server layers get
 // these subclasses, which keep the headers they were given.
-const NativeRequest = Request;
-const NativeResponse = Response;
+// Those of the host: the page's in a browser, Node's own in its worker.
+const { Request: NativeRequest, Response: NativeResponse, Headers } = pageHost.serverWebApis;
 
 function headersOf(init: { headers?: HeadersInit } | undefined, input?: unknown): Headers {
   if (init?.headers) return new Headers(init.headers);
@@ -32,6 +33,7 @@ class ServerRequest extends NativeRequest {
   #headers: Headers;
 
   constructor(input: RequestInfo | URL, init?: RequestInit) {
+    init = pageHost.fromPage(init);
     // A browser wants `duplex` for a streamed body. Server runtimes, which
     // Next's code is written for, do not.
     // Node's `Request` also takes a Node.js stream for a body, and Next's
@@ -63,8 +65,10 @@ class ServerRequest extends NativeRequest {
     }
   }
 
+  // Also as the constructor of the class it extends reads them, before this
+  // one has its own: happy-dom's does.
   override get headers(): Headers {
-    return this.#headers;
+    return #headers in this ? this.#headers : super.headers;
   }
 
   override clone(): ServerRequest {
@@ -93,7 +97,7 @@ class ServerResponse extends NativeResponse {
   }
 
   override get headers(): Headers {
-    return this.#headers;
+    return #headers in this ? this.#headers : super.headers;
   }
 
   override clone(): ServerResponse {
@@ -157,7 +161,7 @@ registry.performWork = (request, performWork) => {
 
 // Next patches the `fetch` of its server to cache and dedupe. That must not
 // be the `fetch` of the page, which is the browser's.
-const nativeFetch = globalThis.fetch;
+const nativeFetch = pageHost.serverWebApis.fetch;
 registry.fetch = (input, init) => nativeFetch(input, init);
 registry.network = (input, init) => nativeFetch(input, init);
 

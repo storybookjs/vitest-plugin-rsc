@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isBuiltin } from "node:module";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import {
@@ -22,7 +23,7 @@ import { routeChunksOf } from "./route-chunks.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
 import { clientReferencesId } from "../built-layers.ts";
 import { cssBuildDirPlaceholder, toBuildDir } from "../static-build.ts";
-import { answerPage } from "../websocket-bridge.ts";
+import { answerPage } from "../page-bridge.ts";
 import {
   builtFilesPath,
   componentPagePath,
@@ -424,8 +425,10 @@ export function createStyles(options: StylesOptions): Styles {
       }
       await Promise.all(
         Array.from(node.importedModules, async (imported) => {
-          // Without an id it is a file that is only watched.
-          if (!imported.id || isCSSRequest(imported.id)) return;
+          // Without an id it is a file that is only watched. A module of
+          // Node.js, which a package of the host imports in a worker of
+          // Node.js, is no file.
+          if (!imported.id || isCSSRequest(imported.id) || isBuiltin(imported.id)) return;
           // A file that is no code has no stylesheet to find, like an image
           // or the `.wasm` of a package that loads it with `new URL(…,
           // import.meta.url)`, which Vite adds to the imports of the module.

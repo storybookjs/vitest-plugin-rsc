@@ -112,7 +112,7 @@ server.ws.on("connection", (socket) => {
 
 That is the key bridge. The test is rendering a Server Component, but when React needs a Client Component, Vite resolves it with the browser/client conditions it would have in the app.
 
-A plugin answers the page over the same socket with `answerPage()` (`src/websocket-bridge.ts`), and the page asks with `askDevServer()` (`src/utils.ts`): the Next.js plugin does so for the stylesheets of a route, which every page load asks for. A round trip of the socket is a fraction of one of HTTP.
+A plugin answers the page over the same socket with `answerPage()` (`src/page-bridge.ts`), and the page asks with `askDevServer()` (`src/utils.ts`): the Next.js plugin does so for the stylesheets of a route, which every page load asks for. A round trip of the socket is a fraction of one of HTTP. The page asks through its host (`src/page-host.ts`): the socket in a browser (`src/browser-host.ts`), and in a worker of Node.js without Browser Mode, where Vitest has no socket, a listener of HTTP of the plugin's own, with the same table of answers (`src/node-host.ts`).
 
 A module in `react_client` that Vite imports its client (`/@vite/client`) into gets the page's own instance of it, not a copy with a second HMR websocket (`src/vite-client.ts`).
 
