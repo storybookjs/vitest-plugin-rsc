@@ -236,8 +236,9 @@ export type RenderServerResult = {
   /**
    * The server's response to the request of the document. With the speed
    * feature `flightLoads`, for a page of the kept app, the response to the
-   * request of its Flight payload, which loads it without a document, unless
-   * its render threw and it loaded as a document after all.
+   * request of its Flight payload, `text/x-component`, which loads it
+   * without a document: for a page whose render calls `redirect()`, the one
+   * of the page it redirects to, with `redirected` and its URL.
    */
   response: Response;
   /**
