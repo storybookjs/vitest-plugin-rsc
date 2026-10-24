@@ -4,4 +4,4 @@
 export { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 export { MockedResponse } from "next/dist/server/lib/mock-request";
 export type { RequestMeta } from "next/dist/server/request-meta";
-export { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
+export { splitCookiesString, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
