@@ -5,7 +5,7 @@
 
 import { isVisible } from "./actionability.ts";
 import { UnsupportedError, escapeHatch } from "./errors.ts";
-import { focus, focusNext } from "./focus.ts";
+import { commitChange, focus, focusNext } from "./focus.ts";
 import { deleteBackward, deleteForward, insertText, isTextControl } from "./form-controls.ts";
 
 /** A key of `press()`: a named key, or one printable character. */
@@ -126,6 +126,8 @@ function onEnter(element: HTMLElement): void {
       data: null,
     }),
   );
+  // Enter commits an edit of a text input, as its blur does.
+  commitChange(element);
   const form = element.form;
   if (!form) return;
   // The default button: the form's first submit button, in tree order.
@@ -169,6 +171,12 @@ export function press(element: HTMLElement, key: Key): void {
     );
   }
   let act = element.dispatchEvent(new KeyboardEvent("keydown", init));
+  // A link acts on Enter's `keydown`, and then has no `keypress`, as Chrome.
+  const link = element instanceof HTMLAnchorElement && element.hasAttribute("href");
+  if (act && link && definition.key === "Enter") {
+    keyClick(element);
+    act = false;
+  }
   if (act && definition.charCode !== undefined) {
     act = element.dispatchEvent(
       new KeyboardEvent("keypress", {
