@@ -852,11 +852,13 @@ A suite that passes in fast mode should pass in fidelity mode too. CI tells you 
 
 ## Start sooner on Bun
 
-A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On the notes app of `playground/vitest-vs-playwright-notes` (`pnpm test:vitest:bun` there), a run of one file took 10.4 s with `pnpm exec vitest run` and 7.6 s with `bun --bun vitest run`; once the tests run, they take the same time. About 1.1 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too.
+A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On the notes app of `playground/vitest-vs-playwright-notes` (where `pnpm test:vitest` runs on Bun), a run of one file took 10.4 s with `pnpm exec vitest run` and 7.6 s with `bun --bun vitest run`; once the tests run, they take the same time. About 1.1 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too.
 
 ```bash
-bun --bun vitest run
+bun --bun vitest run --configLoader native
 ```
+
+`--configLoader native` has Bun import the config file itself, rather than Vite bundle it first.
 
 Give Bun a dependency cache of its own in your Vitest config. Vite's hash of the config includes its functions as text, which Bun prints differently from Node.js, so each runtime would find the other's cache stale and optimize the dependencies again:
 
