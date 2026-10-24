@@ -9,6 +9,8 @@ Each Playwright test is the Vitest test of the same name in the file of the same
 
 The workflow `.github/workflows/vitest-vs-playwright.yml` runs Vitest in development and Playwright against `next dev`, and Vitest in production and Playwright against `next build` and `next start`, and writes what each step took to the summary of the run.
 
+`pnpm test:vitest:bun` runs Vitest on [Bun](https://bun.sh), which starts a run sooner: see `../vitest-vs-playwright-notes/README.md`.
+
 ```bash
 # Vitest
 pnpm --dir ../.. --filter vitest-plugin-rsc build
