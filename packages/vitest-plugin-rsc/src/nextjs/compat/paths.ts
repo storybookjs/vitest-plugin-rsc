@@ -60,6 +60,10 @@ export const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/client/components/segment-cache/bfcache",
     "next/dist/client/components/segment-cache/cache",
     "next/dist/shared/lib/head-manager-context.shared-runtime",
+    // browser/client.ts, for a page of a kept app that loads by its Flight
+    // payload: `redirectURL()` of client.tsx
+    "next/dist/client/components/redirect",
+    "next/dist/client/components/redirect-error",
   ],
 };
 

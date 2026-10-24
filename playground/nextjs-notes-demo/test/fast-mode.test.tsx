@@ -65,15 +65,27 @@ test("loads the page that the app navigates to without its router, after a page 
   expect(errors).toEqual([]);
 });
 
-test("opens the page that the request of a page redirects to, from its HTML", async () => {
+test("opens the page that a page redirects to as it renders, with one request of each", async () => {
+  // The page loads of the server, as it gets them.
+  const registry = (globalThis as { __vitest_plugin_rsc_next__?: { requestTimings?: unknown[] } })
+    .__vitest_plugin_rsc_next__!;
+  registry.requestTimings = [];
+  onTestFinished(() => {
+    registry.requestTimings = undefined;
+  });
+
   // Signed out: the page sends the browser to sign in.
   const { errors, response } = await renderServer({ url: "/notes/new" });
 
-  await expect.element(page.getByLabelText("Email")).toBeInTheDocument();
+  // As a browser has it after the 307 of the document: in fast mode, after
+  // the request of Flight of the page that the payload redirects to.
+  expect(response.redirected).toBe(true);
+  expect(new URL(response.url).pathname).toBe("/auth/sign-in");
   expect(window.location.pathname).toBe("/auth/sign-in");
-  // The response of the document, also in fast mode, where a page that
-  // redirects as it renders loads as a document after all.
-  expect(response.headers.get("content-type")).toMatch(/^text\/html\b/);
+  await expect.element(page.getByLabelText("Email")).toBeInTheDocument();
+  const timings = registry.requestTimings as { kind: string; url: string }[];
+  const pageLoads = timings.filter((t) => t.kind === "page").map((t) => new URL(t.url).pathname);
+  expect(pageLoads).toEqual(["/notes/new", "/auth/sign-in"]);
   expect(errors).toEqual([]);
 });
 

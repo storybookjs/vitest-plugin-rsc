@@ -13,6 +13,8 @@ import {
   HeadManagerContext,
   invalidateBfCache,
   invalidateEntirePrefetchCache,
+  isRedirectError,
+  getURLFromRedirectError,
   loadAppIndex,
 } from "./compat/browser/client.ts";
 import { recordListeners, type Leftovers } from "./leftovers.ts";
@@ -349,6 +351,17 @@ function streamOfBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
 function Committed({ onCommit, children }: { onCommit: () => void; children: ReactNode }) {
   useEffect(onCommit, [onCommit]);
   return children;
+}
+
+/**
+ * Where a `redirect()` sends a page, by the digest of the error that the
+ * Flight payload of the page has of it, as Next's router reads it: undefined
+ * for a digest of another error. For a page of the kept app that loads by
+ * its Flight payload: see `followFlight()` in page.ts.
+ */
+export function redirectURL(digest: string): string | undefined {
+  const error = Object.assign(new Error(), { digest });
+  return isRedirectError(error) ? getURLFromRedirectError(error) : undefined;
 }
 
 /**
