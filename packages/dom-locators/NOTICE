@@ -15,7 +15,7 @@ The ported files keep the Apache License 2.0 header and say what changed:
 
 - src/role-utils.ts: packages/playwright-core/src/server/injected/roleUtils.ts
   (ivya src/roleUtils.ts). Changed: the imports; `getAriaRoleCandidates()`
-  is added.
+  and `getPlainTextAccessibleName()` are added.
 - src/dom-utils.ts: packages/playwright-core/src/server/injected/domUtils.ts
   (ivya src/domUtils.ts), and `sortInDOMOrder()` of selectorEvaluator.ts.
   Changed: WebKit is detected by the user agent instead of an option.

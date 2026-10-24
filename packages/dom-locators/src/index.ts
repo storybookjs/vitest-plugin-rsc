@@ -9,6 +9,8 @@ export type { ActionOptions } from "./actionability.ts";
 export type { Key } from "./keyboard.ts";
 export {
   DomLocator,
+  // Vitest's name, so that a test's `import { page, type Locator }` changes its module alone.
+  type DomLocator as Locator,
   type FilterOptions,
   type FindOptions,
   type SerializedLocator,
