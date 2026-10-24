@@ -336,9 +336,14 @@ function withoutSetCookie(response: Response): Response {
 }
 
 // A `fetch` that sends a same-origin request to the app when it is the app's,
-// and everything else to `network`, with what `sameOriginRequest()` made of
-// it: `sent`. The browser's sends the headers and the cookies of `store()`,
-// the store of the page as the request starts.
+// and everything else to `network`. The browser's sends the headers and the
+// cookies of `store()`, the store of the page as the request starts.
+//
+// `sent` is what `sameOriginRequest()` made of the request, undefined for
+// one of another origin. Its caller makes it, once per `fetch`: the
+// browser's `fetch`, `pageFetch()`, reads it too, to tell Next's own
+// requests, and the server's makes it after its check of the URL. Reading
+// the URL and the headers again would build both a second time.
 type SameOriginFetch = (
   input: RequestInfo | URL,
   init: RequestInit | undefined,

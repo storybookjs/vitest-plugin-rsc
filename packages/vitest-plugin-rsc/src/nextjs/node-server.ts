@@ -14,7 +14,8 @@ import { registry, type RequestHandler, type ServerRequest } from "./registry.ts
 // takes the branches of `process.env.NEXT_RUNTIME === "nodejs"`, with web
 // streams: `__NEXT_USE_NODE_STREAMS` is off. This file and build-output.ts are
 // what a Node.js server has around a request and a browser does not:
-//   - `http.IncomingMessage` and `http.ServerResponse`: here.
+//   - `http.IncomingMessage` and `http.ServerResponse`: here, with the body
+//     the browser reads of a response, when it is written and how it stops.
 //   - The files of a build, which Next reads from `.next/`: build-output.ts.
 // The request handlers are Next's own, the ones its build makes for a page
 // and for a route handler and `next start` calls: `handler(req, res, ctx)`.
