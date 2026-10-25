@@ -1,40 +1,19 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { ViteDevServer } from "vite";
+import {
+  answerEvent,
+  pageRequestPath,
+  webSocketQuery,
+  type PageAnswer,
+  type PageRequest,
+} from "./page-protocol.ts";
 
-// What the page and the dev server share of the channel between them, which
-// the runners of the page fetch their modules over (see utils.ts and
-// index.ts), and what the dev server answers on it. The page sends
-// `{ type: "custom", event, data: { id, ... } }`, and the server answers at
-// `answerEvent` with `{ id, result }`. One table of what the server answers,
-// for two channels: the WebSocket of a page in a browser, and, for a page in
-// a worker of Node.js, where Vitest has no WebSocket without Browser Mode, a
-// listener of HTTP of the plugin's own (page-host.ts).
-
-/** Where the page asks for the token and the path of the socket. */
-export const webSocketInfoPath = "/@vite/react-client-runner-websocket";
-/** The query that tells the socket of the page from Vite's own. */
-export const webSocketQuery = "vitest-plugin-rsc-react-client";
-/** Where the page sends an invoke of a runner, for an environment. */
-export const invokeEvent = "vitest-plugin-rsc:react-client:invoke";
-/** Where the page asks for the version of the modules of an environment. */
-export const versionEvent = "vitest-plugin-rsc:react-client:version";
-/**
- * Where the page asks which modules of an environment changed after a
- * version of them: their ids.
- */
-export const changedEvent = "vitest-plugin-rsc:react-client:changed";
-export type ChangedQuestion = { environment: string; since: number };
-/** Where the dev server answers what the page asks over the websocket. */
-export const answerEvent = "vitest-plugin-rsc:react-client:invoke-result";
-
-/** What `answerPage()` sends: the answer, or why there is none. */
-export type PageAnswer<T> = { answer: T } | { error: string };
-
-/** What the page sends over HTTP, to the listener of `listenForPage()`. */
-export type PageRequest = { event: string; data: object };
-/** Where the listener of `listenForPage()` takes a `PageRequest`. */
-export const pageRequestPath = "/@vitest-plugin-rsc/page-request";
+// What the dev server answers on the channel of page-protocol.ts: one table
+// of what it answers, for both of its channels, the WebSocket of a page in a
+// browser and the listener of HTTP of a page in a worker of Node.js. Of the
+// server only: nothing of the page imports this file, which imports Node's
+// `http`.
 
 // What the server answers, by event, with the result it sends.
 type Answers = Map<string, (question: object) => unknown>;

@@ -1,5 +1,5 @@
 import type { PageHost } from "./page-host.ts";
-import { answerEvent, webSocketInfoPath, webSocketQuery } from "./page-bridge.ts";
+import { answerEvent, webSocketInfoPath, webSocketQuery } from "./page-protocol.ts";
 
 // The host of a page in a browser: its requests to the dev server go over a
 // WebSocket of the page's own, next to Vite's, and the browser has the

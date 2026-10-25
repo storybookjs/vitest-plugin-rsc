@@ -28,7 +28,7 @@ import {
   versionEvent,
   type ChangedQuestion,
   type PageAnswer,
-} from "./page-bridge.ts";
+} from "./page-protocol.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
 // below evaluate: see vite-client.ts.

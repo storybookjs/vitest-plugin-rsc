@@ -14,14 +14,16 @@ import {
   answerPage,
   answerPageOverWebSocket,
   answerPageWith,
+  listenForPage,
+} from "./page-bridge.ts";
+import {
   changedEvent,
   invokeEvent,
-  versionEvent,
-  type ChangedQuestion,
-  listenForPage,
   pageRequestPath,
+  versionEvent,
   webSocketInfoPath,
-} from "./page-bridge.ts";
+  type ChangedQuestion,
+} from "./page-protocol.ts";
 
 type ReactClientInvokePayload = Parameters<
   ViteDevServer["environments"][string]["hot"]["handleInvoke"]
