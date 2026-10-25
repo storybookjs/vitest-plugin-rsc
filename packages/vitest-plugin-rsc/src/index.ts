@@ -70,9 +70,10 @@ const ownFile = (name: string) =>
 
 export function vitestPluginRSC(): Plugin[] {
   let devServer: ViteDevServer | undefined;
-  // Whether the tests run in a worker of Node.js, which Vitest says of a
-  // project once its config is resolved. Not under Vitest, as in Storybook or
-  // a static build, the page is in a browser.
+  // Whether the page is in a worker of Node.js, which Vitest says of a
+  // project once its config is resolved: see `hostsPageInNode()`. Under
+  // any other host, like Storybook or a static build, the page is in a
+  // browser.
   let inNode = false;
   return [
     pageViteClientPlugin(),
@@ -95,7 +96,7 @@ export function vitestPluginRSC(): Plugin[] {
       name: "rsc:run-in-browser",
       // Vitest's hook, which awaits what it returns.
       configureVitest: (async ({ project }: { project: VitestProject }) => {
-        inNode = !project.config.browser.enabled;
+        inNode = hostsPageInNode(project.config);
         if (inNode) await startWorkerPage(project);
       }) as unknown as () => void,
       resolveId(source) {
@@ -227,6 +228,7 @@ export function vitestPluginRSC(): Plugin[] {
 type VitestProject = {
   config: {
     browser: { enabled: boolean };
+    environment: string;
     environmentOptions?: Record<string, Record<string, unknown> | undefined>;
   };
   vite: ViteDevServer;
@@ -277,15 +279,31 @@ async function optimizersSettled(server: ViteDevServer): Promise<void> {
 
 type TestOptions = {
   browser?: { enabled?: boolean };
+  environment?: string;
   include?: string[];
   setupFiles?: string | string[];
   execArgv?: string[];
   server?: { deps?: { inline?: (string | RegExp)[] | true } };
 };
 
+// A page in a worker of Node.js, with a DOM of its own: a project of Vitest
+// without Browser Mode, in the environment of happy-dom or jsdom. Only there
+// the plugin is the page's host (node-host.ts), with what that host needs:
+// the listener for the page, the settings of the worker and its own
+// pre-bundles. Another host, like Storybook, a static build or a project of
+// Browser Mode, has none of it, and neither has a project of Node.js without
+// a DOM, which renders no page. By its config, which a plugin like
+// `vitestPluginNext()` gives `test` for any host.
+const domEnvironments = new Set(["happy-dom", "jsdom"]);
+function hostsPageInNode(test: TestOptions | undefined): boolean {
+  return !test?.browser?.enabled && domEnvironments.has(test?.environment ?? "");
+}
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function workerPlugins(): Plugin[] {
+  // Whether the config is of a page in a worker: then only these do anything.
+  let inWorker = false;
   const before = new Map<string, unknown>();
   return [
     {
@@ -293,8 +311,9 @@ function workerPlugins(): Plugin[] {
       config: {
         order: "post",
         handler(config) {
-          const test = ((config as { test?: TestOptions }).test ??= {});
-          if (test.browser?.enabled) return;
+          const { test } = config as { test?: TestOptions };
+          inWorker = hostsPageInNode(test);
+          if (!test || !inWorker) return;
           // The pre-bundles of its own: the projects of a root that run in a
           // browser bundle the same dependencies, from other entries.
           const root = config.root ?? process.cwd();
@@ -315,10 +334,16 @@ function workerPlugins(): Plugin[] {
           // What the optimizer of the rsc layer scans: the test files and the
           // setup files, which Vitest names with Browser Mode only. Without
           // them it finds their dependencies as a test imports them, and
-          // bundles again, mid-run.
+          // bundles again, mid-run. Not a setup file of this package, like
+          // the one of Browser Mode that `vitestPluginNext()` names and swaps
+          // once Vitest says there is none: what this package imports is not
+          // the app's.
+          const ownDir = `${path.dirname(ownFile("index"))}/`;
           const entries = [
             ...(test.include ?? ["**/*.{test,spec}.?(c|m)[jt]s?(x)"]),
-            ...[test.setupFiles ?? []].flat(),
+            ...[test.setupFiles ?? []]
+              .flat()
+              .filter((file) => !normalizePath(file).startsWith(ownDir)),
           ];
           return { cacheDir, environments: { client: { optimizeDeps: { entries } } } };
         },
@@ -329,7 +354,7 @@ function workerPlugins(): Plugin[] {
       configEnvironment: {
         order: "post",
         handler(name, config) {
-          if (config.consumer === "client" || name === "client") {
+          if (inWorker && (config.consumer === "client" || name === "client")) {
             before.set(name, config.optimizeDeps);
           }
         },
