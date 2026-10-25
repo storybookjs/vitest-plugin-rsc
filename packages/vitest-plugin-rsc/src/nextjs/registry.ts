@@ -164,6 +164,13 @@ export type NextRegistry = {
    * `hostFiles`; without it a node has no stylesheets of the host's files.
    */
   nodeFiles?(): string[];
+  /**
+   * Internal, not an API: tells the dev server that the test file of the
+   * tab opened a route, by the name of its modules, which it compiles ahead
+   * when the file runs again (routes-ahead.ts). Set by the plugin's setup
+   * file (setup.ts): another host has no test files.
+   */
+  routeOpened?(entry: string): void;
   /** The directory of the build on the server's disk, of this generation: see cache.ts. */
   buildDir(): string;
   /**

@@ -191,6 +191,7 @@ if (directory) {
   const stylesheets = new Map<string, Promise<Stylesheets>>();
   let stylesheetsOf: string | undefined;
   registry.loadStylesheets = async (entry, inline, files) => {
+    registry.routeOpened?.(entry);
     const versions = await versionsOfAnswers();
     if (versions !== stylesheetsOf) {
       stylesheets.clear();
