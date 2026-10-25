@@ -19,6 +19,24 @@ if (dom !== undefined && dom !== "happy-dom" && dom !== "jsdom") {
   throw new Error(`VITEST_DOM is happy-dom or jsdom, not ${String(dom)}`);
 }
 
+// What a DOM of Node.js does otherwise than Chromium, by the tests of the
+// column that it fails for it: skipped in that DOM. See "The Node host" in
+// docs/internals/architecture.md.
+const knownGaps: Record<"happy-dom" | "jsdom", string[]> = {
+  // The `<output>` of happy-dom 21 has a default value of its own, "", where
+  // the HTML spec's is its text: the reset of a form after its action, which
+  // React does, empties the error of the sign-in form.
+  "happy-dom": [
+    "rejects a wrong password",
+    "rejects an email without an account",
+    "keeps the email after a failed sign-in",
+    "stores no session after a failed sign-in",
+  ],
+  jsdom: [],
+};
+const gaps = dom ? knownGaps[dom] : [];
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
   // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
@@ -70,8 +88,9 @@ export default defineConfig({
       instances: [{ browser: "chromium" }],
     },
     // In Node.js, the plugin is the page's host itself: see
-    // docs/internals/architecture.md of the plugin.
-    environment: dom,
+    // docs/internals/architecture.md of the plugin. Not `undefined`, which
+    // would be Vitest's name of the environment.
+    ...(dom && { environment: dom }),
     // Browser Mode's timeout of a test, where Node.js has 5 s: a locator
     // waits until just before it.
     testTimeout: 15_000,
@@ -79,5 +98,8 @@ export default defineConfig({
     // As long as Playwright's `expect` waits: see playwright.config.ts.
     expect: { poll: { timeout: 5_000 } },
     setupFiles: ["./vitest.setup.ts", ...(dom ? ["./vitest.setup.node.ts"] : [])],
+    ...(gaps.length > 0 && {
+      testNamePattern: new RegExp(`^(?!(?:${gaps.map(escapeRegExp).join("|")})$)`),
+    }),
   },
 });

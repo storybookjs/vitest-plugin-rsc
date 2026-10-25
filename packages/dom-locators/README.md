@@ -32,6 +32,8 @@ Vitest's defaults apply: `exact` is Vitest's `browser.locators.exact` (`true` un
 - Actions: `click`, `dblClick`, `hover`, `unhover`, `fill`, `clear`, `selectOptions`, and `press(key)`, which Vitest's `Locator` does not have (Playwright's `locator.press()`): `"Enter"`, `"Escape"`, `"Tab"`, `"Backspace"`, `"Delete"`, `"Space"` or `" "`, or one printable character. An action takes `{ timeout }`; any other option throws.
 - `configure({ testIdAttribute, timeout })`, and `UnsupportedError`.
 
+Without Browser Mode, in a DOM of Node.js, Vitest has no `expect.element()`: a setup file that imports `dom-locators/expect-element` adds one of the same shape, which waits with `findElement()`, with the matchers of a DOM library, like `@testing-library/jest-dom/vitest`.
+
 `expect.element(locator)` takes a locator of the package, with `.not`, `toHaveLength` and `{ timeout }`: it carries Vitest's locator symbol and has the methods `expect.element` calls. A locator is assignable to `Locator` of `vitest/browser`.
 
 Not yet, on the type and throwing with the way out, `vitestPage.elementLocator(await locator.findElement())`: `tripleClick`, `wheel`, `upload`, `dropTo`, `screenshot`, `mark`, `page.viewport`, `page.screenshot`, `page.mark`, `page.frameLocator`. A locator of `vitest/browser` in `filter({ has })`, `and` or `or` throws too.

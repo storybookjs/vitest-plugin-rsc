@@ -124,6 +124,35 @@ In an environment that the page runs through a module runner, a dependency comes
 
 Vite also compiles every pre-bundled dependency again for a module runner, in every run: it turns the file into a syntax tree in JavaScript, megabytes for a package like an icon set, and walks it to rewrite its imports and exports. That was most of what the dev server did while a page loaded for the first time in a run. Rolldown, which Vite comes with, does that step natively, about ten times as fast and off the main thread, but Vite does not use it yet. So for a pre-bundled file the plugin runs Vite's plugins as Vite does, then Rolldown's `moduleRunnerTransform` in place of Vite's own, and gives Vite the result as the one it has for the module (`src/dependency-transforms.ts`). The files of the app are Vite's to compile. One thing differs from Vite's transform: in a cycle of imports, a module that reads an export before the module that has it defined it gets `undefined` from Vite's, and a `ReferenceError` from Rolldown's. A browser throws too, except for a function that a module exports from another module. Without Rolldown's transform, or when it fails on a file, Vite compiles the file as it always did.
 
+## The Node Host
+
+Without Browser Mode, in a project of Vitest with `environment: "happy-dom"` or `"jsdom"`, the page runs in a worker of Node.js, with that DOM, and the plugin is its host (`src/node-host.ts`, chosen in `configureVitest` of `src/index.ts` as `virtual:vitest-plugin-rsc/page-host`). No module of the page tells the two hosts apart: what a DOM of Node.js lacks, the host gives it.
+
+- **The transport.** The plugin's own listener of HTTP on the loopback, with the table of answers of the socket (`src/page-bridge.ts`), and Node's `http`, not the page's `fetch`, which a test can mock.
+- **The web APIs.** Node's `Request`, `Response`, `Headers` and `fetch` for the page and the server, kept before the DOM replaces them (`src/worker-web-apis.ts`, with `--import`); the DOM keeps its `FormData`, `Blob` and `AbortController`, which the host turns into Node's for a request.
+- **The realm.** Vitest's environment of jsdom puts the typed arrays and `ArrayBuffer` of jsdom's realm on the global, where Node's `Buffer`, `TextEncoder` and `crypto` make the worker's, which fail the `instanceof Uint8Array` of Next's server: the host puts the worker's back (`src/node-dom.ts`). happy-dom has the worker's.
+- **The navigations.** A stand-in of the Navigation API's `navigate` events, for a click on a link, the submit of a form, `location` and `history` (`src/navigation-shim.ts`).
+- **Stylesheets.** A DOM of Node.js loads none, so the document does not wait for them; jsdom has no constructed stylesheets, so its `adoptedStyleSheets` is a list that keeps what it is given (`src/node-dom.ts`).
+- **The pre-bundles.** Vitest turns off the optimizer of every environment without Browser Mode; the page's environments are a browser's, whose dependencies are bundled with their conditions, so the host keeps each one's own, in a `cacheDir` of its own, and the worker starts once their first bundling is done. No environment bundles `vitest`, and Vitest's cache of compiled modules on disk has the version of the pre-bundles in its key (`defineCacheKeyGenerator()`).
+- **Timers.** React's scheduler uses `setImmediate` in Node.js, which the page's timers cover (`src/timers.ts`).
+
+A worker runs its test files one after the other in one DOM, with `isolate: false`: one Vite dev server for the run, in Vitest's process, and one listener on it; in the worker, the server layers load once, in the setup file, and a database of the page, like PGlite in the notes benchmark, is created once and emptied before each test.
+
+### What a DOM of Node.js does otherwise than a browser
+
+What passes in Chromium and may not in a DOM of Node.js, and why. The notes benchmark's dom-locators column skips the tests that a known gap fails, by name (`knownGaps` of its `vitest.config.ts`).
+
+- **Layout.** Nothing is laid out: every box is empty, nothing is on top of anything. dom-locators tells what is visible by the style alone, and a click lands on the element itself, also under an overlay.
+- **CSS.** No stylesheet that the document links is loaded, so a rule of the app's CSS, like `display: none`, hides nothing; happy-dom applies a `<style>` of the document, jsdom some of it. No `new CSSStyleSheet()` in jsdom.
+- **Navigations.** No document is ever loaded: a link or a form to another document is a `navigate` event that the plugin takes, or nothing. Not heard: `form.submit()`, which fires no event, a traversal of the history, and in jsdom `location.assign()`, `replace()`, `reload()` and `href`, which are unforgeable, as a browser's; jsdom keeps the document and tells nobody.
+- **Events.** An event of dom-locators or Testing Library is the page's own: `isTrusted` is `false`, and no default action of the browser follows but the DOM's, like a click on a submit button.
+- **happy-dom's `<output>`.** Its default value is `""`, where the HTML spec's is the element's text unless a script set one, so a form's `reset()`, which React does after a form's action, empties an `<output>` in the form: the error of the notes app's sign-in form. 4 of the 500 tests of the benchmark. A fix of two lines in happy-dom; the plugin cannot correct it without its private symbol, which `reset()` reads.
+
+### What it takes of Vitest
+
+- `configureVitest`, `TestProject.provide()` with `inject()`, `defineCacheKeyGenerator()` and `project.config`: public.
+- The optimizer of the page's environments, which the host puts back after Vitest's `configEnvironment` hook (`vitest:environments-module-runner`, `order: "post"`) set it to Vitest's, with a plugin of its own with `enforce: "post"`. Without Browser Mode Vitest gives every environment its config of a runner of Node.js, also one that Vitest never runs, like the page's `react_client`, rsc and ssr layers; with Browser Mode it leaves them as they are. Its public option, `test.deps.optimizer.<environment>`, turns discovery off and excludes `react`, which the rsc layer has to bundle with `react-server`. What would make this public: Vitest leaves an environment alone that it does not run, as it does in Browser Mode, or an option that says so.
+
 ## A Static Build
 
 `vite build` builds the two environments into a static site, with no dev server behind it (`src/static-build.ts`). A page of the project hosts the Server Components, as a test file does: its `index.html`, with a script that calls `initialize()` and `renderServer()` of `vitest-plugin-rsc/testing-library`. `playground/rsc-vitest-demo` has one, `host/main.tsx`, and a test project that opens its build in a browser, `build-test/`. It builds with Vite's app builder, as `vite build` does: Vite's `build()` builds one environment, so the plugin stops it with an error, and it does not build in `--watch` mode.
