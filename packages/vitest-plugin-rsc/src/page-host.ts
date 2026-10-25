@@ -42,6 +42,15 @@ export type PageHost = {
    * worker's own in the system's temporary directory, gone as it exits.
    */
   readonly serverDir: string;
+  /**
+   * Runs `callback` in a task of its own after the microtasks, as a server's
+   * `setImmediate()`, for the speed feature `immediates`: by a message of one
+   * channel in a browser, which no browser delays as it does a timeout, and
+   * by Node's own `setImmediate()` in a worker of Node.js, which keeps the
+   * stores of Node's `AsyncLocalStorage`, as a message does not. Returns what
+   * cancels it.
+   */
+  serverImmediate(callback: () => void): () => void;
 };
 
 /** The web APIs that a server and a browser both have, and Node.js its own of. */

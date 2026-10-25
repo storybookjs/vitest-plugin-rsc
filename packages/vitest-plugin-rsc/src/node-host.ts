@@ -14,6 +14,7 @@ import type { PageHost, WebApis } from "./page-host.ts";
 // app's layer.
 const http = process.getBuiltinModule("node:http");
 const fs = process.getBuiltinModule("node:fs");
+const timers = process.getBuiltinModule("node:timers");
 const os = process.getBuiltinModule("node:os");
 const path = process.getBuiltinModule("node:path");
 
@@ -141,6 +142,11 @@ export function nodeHost(url: string): PageHost {
     fromPage,
     get serverDir() {
       return serverDirOfWorker();
+    },
+    // Node's own, not the global, which the DOM or a test's fake timers have.
+    serverImmediate(callback) {
+      const immediate = timers.setImmediate(callback);
+      return () => timers.clearImmediate(immediate);
     },
   };
 }

@@ -63,7 +63,9 @@ const nodeDir =
   ) + "/";
 const extension = ".js";
 
-// The package's own `async_hooks`, which ../index.ts aliases in every layer.
+// The package's own `async_hooks`, which ../index.ts aliases in every layer:
+// in a worker of Node.js Node's own for the server layers, by the `node`
+// condition of its export (../async-hooks-node.ts).
 const notHere = new Set(["async_hooks"]);
 
 const files = new Map<string, string | undefined>();
@@ -114,7 +116,9 @@ export const isNativeNodeModule = (id: string): boolean => id.startsWith("node:"
  * gives it. Rolldown's runtime for a browser has no `require` to call.
  */
 export function nativeRequirePlugin(): ReturnType<typeof esmExternalRequirePlugin> {
-  const names = builtinModules.filter((name) => !name.startsWith("_"));
+  const names = builtinModules.filter(
+    (name) => !name.startsWith("_") && nodeModuleOf(name, "native"),
+  );
   const external = [
     ...new Set([...names, ...names.map((name) => name.replace(/^(?!node:)/, "node:"))]),
   ];

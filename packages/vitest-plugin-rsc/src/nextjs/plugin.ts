@@ -998,7 +998,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           build,
           static: isBuild,
         });
-        serverCode.configure(project.root);
+        serverCode.configure(project.root, pageInNode ? "native" : "compiled");
         env = project.env;
         // A static build runs without Vitest, so it has no test files: every
         // file of the project is server code in the rsc layer, but for

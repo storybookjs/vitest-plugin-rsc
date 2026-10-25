@@ -97,9 +97,13 @@ const browserProject = (name: string, mode: Mode) =>
   });
 
 // The tests of the app in a Node.js worker, with happy-dom or jsdom for the
-// document, where the browser projects run in Chromium, in fidelity mode, as
-// the benchmark's columns of a DOM of Node.js run in fast mode. The same plugins: without
-// Browser Mode the plugin is the page's host itself (SB-2419).
+// document, where the browser projects run in Chromium, in fidelity mode,
+// and with happy-dom in fast mode too, as the benchmark's columns of a DOM of
+// Node.js run. The same plugins: without Browser Mode the plugin is the
+// page's host itself (SB-2419). Its server runs on Node.js itself, with
+// Node's `AsyncLocalStorage`: the probes of Next's caches and of a Server
+// Action, components/next-*.test.tsx, run here too, with `page` of
+// dom-locators for the one of `vitest/browser`.
 //
 // A `.tcp.node.test` file is the TCP project's: the app's own `lib/db.ts`, on
 // node-postgres, without the mock, reaches Postgres over TCP: PGlite, served
@@ -108,7 +112,7 @@ const browserProject = (name: string, mode: Mode) =>
 const nodeProject = (
   name: string,
   environment: "happy-dom" | "jsdom",
-  { overTcp = false }: { overTcp?: boolean } = {},
+  { overTcp = false, mode = "fidelity" }: { overTcp?: boolean; mode?: Mode } = {},
 ) =>
   defineProject({
     root,
@@ -116,6 +120,7 @@ const nodeProject = (
     resolve: {
       tsconfigPaths: true,
       conditions: [...vitestPluginRscSourceConditions, "test"],
+      alias: [{ find: /^vitest\/browser$/, replacement: "dom-locators" }],
     },
     // PGlite sees Node.js here, and runs as on Node.js, and MSW's server is
     // one of Node.js: Node.js imports them itself, where a pre-bundle would
@@ -129,14 +134,24 @@ const nodeProject = (
       // oxlint-disable-next-line no-process-env
       vitestPluginNext({
         build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
+        mode,
         // Testing Library, which the tests query the page with, where the
         // browser projects have `vitest/browser`: it asks for `document`.
         browserModules: ["**/node_modules/@testing-library/**"],
+        // And dom-locators, `page` of the probes, and jest-dom's matchers:
+        // the page's own modules, as `vitest` is.
+        host: { packages: ["dom-locators", "@testing-library/jest-dom"] },
       }),
     ],
     test: {
       name,
-      include: [overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}"],
+      include: overTcp
+        ? ["**/*.tcp.node.test.{ts,tsx}"]
+        : [
+            "**/*.node.test.{ts,tsx}",
+            "components/next-cache.test.tsx",
+            "components/next-action-protocol.test.tsx",
+          ],
       exclude: ["e2e/**", "node_modules", ...(overTcp ? [] : ["**/*.tcp.node.test.{ts,tsx}"])],
       environment,
       isolate: false,
@@ -153,6 +168,7 @@ const nodeProject = (
 
 export const nextjsNotesProjects = [
   nodeProject("nextjs-notes-demo-happy-dom", "happy-dom"),
+  nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", { mode: "fast" }),
   nodeProject("nextjs-notes-demo-jsdom", "jsdom"),
   nodeProject("nextjs-notes-demo-tcp", "happy-dom", { overTcp: true }),
   browserProject("nextjs-notes-demo-browser", "fidelity"),

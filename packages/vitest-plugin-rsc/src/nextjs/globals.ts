@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Buffer } from "node:buffer";
 import env from "virtual:vitest-plugin-rsc/next-env";
 import pageHost from "virtual:vitest-plugin-rsc/page-host";
@@ -239,24 +240,26 @@ if (!Buffer.isEncoding("base64url")) {
     return write.apply(this, [base64(text), ...args]);
   };
 }
-scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
+// The platform's: the page's own in a browser, and Node's in a worker of
+// Node.js, by the package's `async-hooks` that `node:async_hooks` is.
+scope.AsyncLocalStorage ??= AsyncLocalStorage;
 
-// Immediates of the speed feature `immediates`: a task each, by a message of one
-// channel, which no browser delays as it does a timeout. Each by a symbol of
-// its own, which is no id of a timer.
+// Immediates of the speed feature `immediates`: a task each, after the
+// microtasks, which the host runs (`serverImmediate()` of page-host.ts). Each
+// by a symbol of its own, which is no id of a timer, with what cancels it.
 const immediates = new Map<symbol, () => void>();
-const channel = new MessageChannel();
-channel.port1.onmessage = () => {
-  const [id, run] = immediates.entries().next().value ?? [];
-  if (id === undefined) return;
-  immediates.delete(id);
-  run!();
-};
 function immediate(callback: (...args: unknown[]) => void, args: unknown[]): symbol {
   const id = Symbol("immediate");
-  immediates.set(id, () => callback(...args));
-  channel.port2.postMessage(null);
+  const cancel = pageHost.serverImmediate(() => {
+    immediates.delete(id);
+    callback(...args);
+  });
+  immediates.set(id, cancel);
   return id;
+}
+function clearImmediateOf(id: symbol): boolean {
+  immediates.get(id)?.();
+  return immediates.delete(id);
 }
 
 // What Next's Node.js server asks of its process. The `process` is the page's
@@ -284,7 +287,7 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
       ? immediate(callback, args)
       : nativeSetTimeout(callback, 0, ...args);
   registry.clearImmediate = (id) =>
-    typeof id === "symbol" ? immediates.delete(id) : nativeClearTimeout(id as number);
+    typeof id === "symbol" ? clearImmediateOf(id) : nativeClearTimeout(id as number);
 
   // Server code's `setTimeout` (server-code.ts), the global as the code calls
   // it, also a fake one of the test. React renders Flight and HTML for the
@@ -302,7 +305,7 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
       : // As Node.js, which takes no code in a string.
         globalThis.setTimeout(callback as (...args: unknown[]) => void, delay, ...args);
   registry.clearTimeout = (id) =>
-    typeof id === "symbol" ? immediates.delete(id) : globalThis.clearTimeout(id as number);
+    typeof id === "symbol" ? clearImmediateOf(id) : globalThis.clearTimeout(id as number);
 
   // Node's own `Buffer` has these, and busboy reads the parts of a form with
   // them. Every layer has its own copy of the `Buffer` polyfill, and each is a
