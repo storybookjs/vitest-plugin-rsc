@@ -188,7 +188,7 @@ export const steps: Step[] = [
     run: (driver) => driver.press(driver.page.getByLabelText("Name"), selectAll),
   },
   {
-    name: "a capital with Shift, and Shift alone",
+    name: "a letter with Shift, and Shift alone",
     before: ({ page }) => page.getByLabelText("Name").click(),
     run: async (driver) => {
       await driver.press(driver.page.getByLabelText("Name"), "Shift+a");
@@ -264,9 +264,11 @@ export async function logOf(
 // Entries whose place in the log is the browser's: `select()` queues its
 // `select` event as a task, which runs before Playwright's typing or after
 // it, as the round trip of CDP takes, and after the package's, which types
-// at once. React's `onSelect` follows the selection. They are in both logs,
-// anywhere.
-export const unordered = (entry: string) => /^(select|react:onSelect)@/.test(entry);
+// at once; a `scroll` comes with the next frame, after as many of the
+// package's events as come before it. React's `onSelect` and `onScroll`
+// follow them. They are in both logs, anywhere.
+export const unordered = (entry: string) =>
+  /^(select|react:onSelect|scroll|react:onScroll)@/.test(entry);
 
 /**
  * How a log of the package differs from Playwright's: the entries of

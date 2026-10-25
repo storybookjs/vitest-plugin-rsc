@@ -168,7 +168,6 @@ test("a key the package does not press throws", async () => {
   await expect(button.press("Hyper+a")).rejects.toThrow(
     /press\("Hyper\+a"\) is not in dom-locators/,
   );
-  await expect(button.press("Shift+1")).rejects.toThrow(/depends on the layout of the keyboard/);
   document.body.innerHTML = '<input aria-label="Name"><select aria-label="Fruit"></select>';
   await expect(page.getByLabelText("Name").press("Control+z")).rejects.toThrow(UnsupportedError);
   await expect(page.getByLabelText("Name").press("ArrowUp")).rejects.toThrow(UnsupportedError);

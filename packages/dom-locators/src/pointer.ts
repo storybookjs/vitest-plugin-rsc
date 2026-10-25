@@ -43,7 +43,7 @@ interface Point {
 
 /**
  * Where the mouse goes for `element`: the middle of its box, or `position`
- * in it, scrolled into the window if it is out of it, and what is on top
+ * in it, scrolled into view if it is out of it, and what is on top
  * there if that is the element or in it, as Playwright's click lands on a
  * `<span>` in a button. Anything else on top, an overlay, gets no events:
  * the element does, where Playwright waits for the overlay to go. In a DOM
@@ -51,18 +51,7 @@ interface Point {
  */
 function pointFor(element: Element, position?: Position): Point {
   if (!isRendered(element.ownerDocument)) return { x: 0, y: 0, target: element };
-  let rect = element.getBoundingClientRect();
-  const view = element.ownerDocument.defaultView;
-  if (
-    view &&
-    (rect.top < 0 ||
-      rect.left < 0 ||
-      rect.bottom > view.innerHeight ||
-      rect.right > view.innerWidth)
-  ) {
-    element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
-    rect = element.getBoundingClientRect();
-  }
+  const rect = scrollIntoView(element);
   const x = position ? rect.left + element.clientLeft + position.x : rect.left + rect.width / 2;
   const y = position ? rect.top + element.clientTop + position.y : rect.top + rect.height / 2;
   // An element with no element in it is what the hit test would give, or
@@ -76,6 +65,34 @@ function pointFor(element: Element, position?: Position): Point {
     hit = inner;
   }
   return { x, y, target: hit && isInsideScope(element, hit) ? hit : element };
+}
+
+/**
+ * Scrolls `element` into view, as Playwright before an action: in the
+ * window and in every box that scrolls it, to the middle, if it is not
+ * there yet. Chrome's own `scrollIntoViewIfNeeded()`; where there is none,
+ * by the window alone. Returns its box then.
+ */
+function scrollIntoView(element: Element): DOMRect {
+  const ifNeeded = (element as { scrollIntoViewIfNeeded?: (center: boolean) => void })
+    .scrollIntoViewIfNeeded;
+  if (ifNeeded) {
+    ifNeeded.call(element, true);
+    return element.getBoundingClientRect();
+  }
+  const rect = element.getBoundingClientRect();
+  const view = element.ownerDocument.defaultView;
+  if (
+    !view ||
+    (rect.top >= 0 &&
+      rect.left >= 0 &&
+      rect.bottom <= view.innerHeight &&
+      rect.right <= view.innerWidth)
+  ) {
+    return rect;
+  }
+  element.scrollIntoView({ block: "center", inline: "center", behavior: "instant" });
+  return element.getBoundingClientRect();
 }
 
 /** A `PointerEvent`, or a `MouseEvent` in a DOM without one. */
@@ -190,7 +207,7 @@ function pressAt(point: Point, button: MouseButton, detail: number): void {
   }
   if (button === "right") {
     target.dispatchEvent(
-      pointerEventOf("contextmenu", { ...pointer, button: number, buttons: bit, detail }),
+      pointerEventOf("contextmenu", { ...pointer, button: number, buttons: bit }),
     );
   }
 }

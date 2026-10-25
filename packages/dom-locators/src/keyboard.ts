@@ -81,22 +81,16 @@ function definitionOf(key: string, pressed: string): KeyDefinition {
       `press("${pressed}") is not in dom-locators: it presses ${pressable}. ${escapeHatch}, or userEvent.keyboard().`,
     );
   }
+  const charCode = key.codePointAt(0)!;
+  // A letter is itself with Shift held too, as Playwright's keyboard has it.
   if (/^[a-z]$/i.test(key)) {
-    // A letter with Shift held is the capital, as Playwright's keyboard has it.
-    const letter = modifierState().shiftKey ? key.toUpperCase() : key;
     return {
-      key: letter,
+      key,
       code: `Key${key.toUpperCase()}`,
       keyCode: key.toUpperCase().charCodeAt(0),
-      charCode: letter.codePointAt(0)!,
+      charCode,
     };
   }
-  if (modifierState().shiftKey) {
-    throw new UnsupportedError(
-      `press("${pressed}") is not in dom-locators: Shift with a character other than a letter depends on the layout of the keyboard. ${escapeHatch}, or userEvent.keyboard().`,
-    );
-  }
-  const charCode = key.codePointAt(0)!;
   if (/^[0-9]$/.test(key)) return { key, code: `Digit${key}`, keyCode: charCode, charCode };
   // The code of a key of punctuation depends on the layout of the keyboard.
   return { key, code: "", keyCode: 0, charCode };
