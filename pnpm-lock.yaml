@@ -361,6 +361,9 @@ importers:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
     devDependencies:
+      '@testing-library/jest-dom':
+        specifier: ^6.9.1
+        version: 6.9.1
       '@types/node':
         specifier: ^24.12.4
         version: 24.12.4
@@ -376,6 +379,12 @@ importers:
       '@vitest/browser-playwright':
         specifier: 5.0.5
         version: 5.0.5(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(playwright@1.64.1)(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(sass@1.106.0)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(vitest@5.0.5)
+      dom-locators:
+        specifier: workspace:*
+        version: link:../../packages/dom-locators
+      happy-dom:
+        specifier: ^21.0.4
+        version: 21.0.4
       playwright:
         specifier: ^1.64.0
         version: 1.64.1
