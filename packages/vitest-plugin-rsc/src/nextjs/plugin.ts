@@ -1340,13 +1340,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         });
         serverCode.addTestFiles((file) => isSetupFile(file) || isIncluded(file));
         // Without Browser Mode the tests run in a worker of Node.js, which
-        // has no `vitest/browser`. As the `config` hook put it, first. And
-        // the worker gets the setup files from here: see setup-node.ts.
+        // has no `vitest/browser`. As the `config` hook put it, first.
         if (!test.browser.enabled) {
           test.setupFiles = test.setupFiles.map((file) =>
             normalizePath(file) === setupFile ? nodeSetupFile : file,
           );
-          testProject.provide("vitest-plugin-rsc:setup-files", test.setupFiles);
         }
       },
       // Without Vitest, a page of the host has the rsc layer's modules as the
@@ -1515,6 +1513,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // A generated module: Vite only replaces `define` keys in pre-bundled
         // dependencies.
         return serverCode.compile(entry.code, `${id.replace(/\W+/g, "-")}.js`, generatedDefines());
+      },
+    },
+    {
+      // The setup files of a worker of Node.js (setup-node.ts), once every
+      // plugin of the project, like a host's, has added its own.
+      name: "vitest-plugin-rsc:next-setup-files",
+      enforce: "post",
+      configureVitest({ project: testProject }: { project: TestProject }) {
+        const test = testProject.config;
+        if (!test.browser.enabled) {
+          testProject.provide("vitest-plugin-rsc:setup-files", test.setupFiles);
+        }
       },
     },
     ...clientFiles({

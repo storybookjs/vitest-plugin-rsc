@@ -3,7 +3,7 @@
 // happy-dom replaces with its own, kept for the layers of the server, as
 // node-host.ts gives them to the page. See `webApisKey` there. And the typed
 // arrays of the worker's realm, which Vitest's environment of jsdom replaces
-// with those of jsdom's: see `typedArraysKey` there.
+// with those of jsdom's, for node-dom.ts to put back.
 
 const key = Symbol.for("vitest-plugin-rsc:worker-web-apis");
 const scope = globalThis as unknown as Record<PropertyKey, unknown>;

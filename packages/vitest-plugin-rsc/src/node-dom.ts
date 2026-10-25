@@ -11,7 +11,10 @@ const scope = globalThis as unknown as Record<PropertyKey, unknown>;
 // jsdom's realm on the global, where Node's `Buffer`, `TextEncoder` and
 // `crypto` make the worker's, which then fail an `instanceof Uint8Array`, as
 // Next's server code and its hashes check. In a browser, the page and the
-// server have one realm; with happy-dom too.
+// server have one realm; with happy-dom too. Vitest's global writes through
+// to jsdom's window, so what jsdom makes has the worker's too. A module that
+// ran before this one keeps jsdom's: node-host.ts, which imports it, is
+// among the first of the page.
 const typedArrays = scope[Symbol.for("vitest-plugin-rsc:worker-typed-arrays")] as
   | Record<string, unknown>
   | undefined;
@@ -27,11 +30,32 @@ if (!("adoptedStyleSheets" in Document.prototype)) {
   const adopted = new WeakMap<Document, CSSStyleSheet[]>();
   Object.defineProperty(Document.prototype, "adoptedStyleSheets", {
     configurable: true,
+    // One list until another is set, as a browser's.
     get(this: Document) {
-      return adopted.get(this) ?? [];
+      let sheets = adopted.get(this);
+      if (!sheets) adopted.set(this, (sheets = []));
+      return sheets;
     },
     set(this: Document, sheets: CSSStyleSheet[]) {
       adopted.set(this, [...sheets]);
+    },
+  });
+}
+
+// The boxes of a range, which jsdom's `Range` has not: none, as jsdom's
+// elements answer, in a DOM that lays nothing out. React asks for them for
+// a fragment's, as Next's router does as it scrolls to a new page.
+if (!("getClientRects" in Range.prototype)) {
+  Object.defineProperties(Range.prototype, {
+    getClientRects: {
+      configurable: true,
+      writable: true,
+      value: () => [],
+    },
+    getBoundingClientRect: {
+      configurable: true,
+      writable: true,
+      value: () => new DOMRect(),
     },
   });
 }

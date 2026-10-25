@@ -13,7 +13,7 @@ import { chai, expect } from "vitest";
 import { defaultTimeout } from "./environment.ts";
 import { DomLocator } from "./locator.ts";
 
-type Options = { timeout?: number; interval?: number };
+type Options = { timeout?: number; interval?: number; message?: string };
 type Subject = Element | DomLocator | null | undefined;
 
 // The test's own `performance` may be fake.

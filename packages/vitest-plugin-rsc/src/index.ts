@@ -102,7 +102,10 @@ export function vitestPluginRSC(): Plugin[] {
         // Vitest keeps what it compiled on disk for the next run, by a key
         // without the version of the optimizer's pre-bundles, which it has
         // turned off without Browser Mode: a module that imports one has
-        // that version in its URL.
+        // that version in its URL. The key of a module is made once in a
+        // run: a module that imports a pre-bundle that the optimizer bundles
+        // again mid-run, as it finds a dependency, keeps the old version in
+        // its URL until the next run.
         defineCacheKeyGenerator?.(
           ({ environment }) => environment.depsOptimizer?.metadata.browserHash ?? "",
         );
@@ -360,15 +363,7 @@ function workerPlugins(): Plugin[] {
               .flat()
               .filter((file) => !normalizePath(file).startsWith(ownDir)),
           ];
-          // And no environment bundles Vitest into a dependency that
-          // imports it, like the matchers of `@testing-library/jest-dom`,
-          // which would extend another `expect` than the test's: the worker
-          // has the one Vitest, as Vitest's own optimizer has it.
-          return {
-            cacheDir,
-            optimizeDeps: { exclude: ["vitest"] },
-            environments: { client: { optimizeDeps: { entries } } },
-          };
+          return { cacheDir, environments: { client: { optimizeDeps: { entries } } } };
         },
       },
     },
@@ -389,8 +384,13 @@ function workerPlugins(): Plugin[] {
       configEnvironment: {
         order: "post",
         handler(name, config) {
-          if (!before.has(name) || config.optimizeDeps === before.get(name)) return;
-          config.optimizeDeps = before.get(name) as typeof config.optimizeDeps;
+          if (!before.has(name)) return;
+          // But for Vitest, which the worker has one of, as Vitest's own
+          // optimizer has it: bundled into a dependency that imports it,
+          // like the matchers of `@testing-library/jest-dom`, it would be
+          // another `expect` than the test's.
+          const own = before.get(name) as typeof config.optimizeDeps;
+          config.optimizeDeps = { ...own, exclude: [...(own?.exclude ?? []), "vitest"] };
         },
       },
     },

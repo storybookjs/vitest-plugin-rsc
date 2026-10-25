@@ -21,7 +21,8 @@ if (dom !== undefined && dom !== "happy-dom" && dom !== "jsdom") {
 
 // What a DOM of Node.js does otherwise than Chromium, by the tests of the
 // column that it fails for it: skipped in that DOM. See "The Node host" in
-// docs/internals/architecture.md.
+// docs/internals/architecture.md. By the whole name of a test, which is its
+// own for a test outside a `describe()`.
 const knownGaps: Record<"happy-dom" | "jsdom", string[]> = {
   // The `<output>` of happy-dom 21 has a default value of its own, "", where
   // the HTML spec's is its text: the reset of a form after its action, which
