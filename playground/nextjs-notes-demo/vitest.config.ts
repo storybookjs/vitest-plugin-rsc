@@ -101,9 +101,8 @@ const browserProject = (name: string, mode: Mode) =>
 // and with happy-dom in fast mode too, as the benchmark's columns of a DOM of
 // Node.js run. The same plugins: without Browser Mode the plugin is the
 // page's host itself (SB-2419). Its server runs on Node.js itself, with
-// Node's `AsyncLocalStorage`: the probes of Next's caches and of a Server
-// Action, components/next-*.test.tsx, run here too, with `page` of
-// dom-locators for the one of `vitest/browser`.
+// Node's `AsyncLocalStorage`, which components/async-context.node.test.tsx
+// probes, with `page` of dom-locators for the one of `vitest/browser`.
 //
 // A `.tcp.node.test` file is the TCP project's: the app's own `lib/db.ts`, on
 // node-postgres, without the mock, reaches Postgres over TCP: PGlite, served
@@ -112,7 +111,11 @@ const browserProject = (name: string, mode: Mode) =>
 const nodeProject = (
   name: string,
   environment: "happy-dom" | "jsdom",
-  { overTcp = false, mode = "fidelity" }: { overTcp?: boolean; mode?: Mode } = {},
+  {
+    overTcp = false,
+    mode = "fidelity",
+    files,
+  }: { overTcp?: boolean; mode?: Mode; files?: string[] } = {},
 ) =>
   defineProject({
     root,
@@ -145,13 +148,7 @@ const nodeProject = (
     ],
     test: {
       name,
-      include: overTcp
-        ? ["**/*.tcp.node.test.{ts,tsx}"]
-        : [
-            "**/*.node.test.{ts,tsx}",
-            "components/next-cache.test.tsx",
-            "components/next-action-protocol.test.tsx",
-          ],
+      include: files ?? [overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}"],
       exclude: ["e2e/**", "node_modules", ...(overTcp ? [] : ["**/*.tcp.node.test.{ts,tsx}"])],
       environment,
       isolate: false,
@@ -168,7 +165,14 @@ const nodeProject = (
 
 export const nextjsNotesProjects = [
   nodeProject("nextjs-notes-demo-happy-dom", "happy-dom"),
-  nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", { mode: "fast" }),
+  // In fast mode the probes of the stores, not yet the pages: with `keepApp`,
+  // PGlite, the test's database, arms a timer as long as the real time is
+  // ahead of the clock that the setup file sets, 172 days, which Node.js
+  // clamps to 1 ms, again and again, and the test hangs.
+  nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", {
+    mode: "fast",
+    files: ["components/async-context.node.test.tsx"],
+  }),
   nodeProject("nextjs-notes-demo-jsdom", "jsdom"),
   nodeProject("nextjs-notes-demo-tcp", "happy-dom", { overTcp: true }),
   browserProject("nextjs-notes-demo-browser", "fidelity"),

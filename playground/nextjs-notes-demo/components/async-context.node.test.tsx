@@ -8,7 +8,11 @@ import { AsyncContextProbe, cookieReads } from "./async-context-probe.tsx";
 // The stores of a request, carried by Node's own `AsyncLocalStorage`, in the
 // node projects of vitest.config.ts: in fidelity mode and in fast mode, whose
 // speed feature `immediates` runs a timer of no delay as a task of the page's
-// host.
+// host. Each probe renders in the layouts of `/`, whose document has its
+// `<html>` and `<body>`: happy-dom drops the comments of a Suspense boundary
+// at the top of a document without them, as a node's is.
+
+const inLayouts = { layouts: true } as const;
 
 const setProbeCookie = (value: string) =>
   runInServerAction(async () => {
@@ -18,7 +22,7 @@ const setProbeCookie = (value: string) =>
 test("an async Server Component reads the cookies of its request after an await", async () => {
   await setProbeCookie("kept");
 
-  await renderServer(<AsyncContextProbe label="after an await" />);
+  await renderServer(<AsyncContextProbe label="after an await" />, inLayouts);
 
   await expect.element(page.getByText("after an await: kept")).toBeVisible();
 });
@@ -42,7 +46,7 @@ test("after() reads the stores of the Server Action that left it, after an await
 test("work of a render that outlives its test reads that test's request", async () => {
   await setProbeCookie("first");
 
-  await renderServer(<AsyncContextProbe label="first test" outlive={100} />);
+  await renderServer(<AsyncContextProbe label="first test" outlive={100} />, inLayouts);
 
   await expect.element(page.getByText("first test: first")).toBeVisible();
 });
@@ -50,7 +54,7 @@ test("work of a render that outlives its test reads that test's request", async 
 test("the next test reads its own request, while that work goes on", async () => {
   await setProbeCookie("second");
 
-  await renderServer(<AsyncContextProbe label="second test" />);
+  await renderServer(<AsyncContextProbe label="second test" />, inLayouts);
 
   await expect.element(page.getByText("second test: second")).toBeVisible();
   await expect
