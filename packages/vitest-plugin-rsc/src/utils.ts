@@ -257,14 +257,20 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
   return fetchedModulesOf.get(environment) ?? askForModules(environment);
 }
 
+/**
+ * The version of the modules of `environment` that the dev server has: when
+ * Vite last invalidated one of them, see `versionOf()` in module-versions.ts.
+ */
+export function versionOfModules(environment: string): Promise<number> {
+  return requestOverWebSocket(versionEvent, { environment }) as Promise<number>;
+}
+
 // The modules that were fetched, when the server still has that version of
 // its modules.
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
-  const fetched = requestOverWebSocket(versionEvent, { environment }).then(
+  const fetched = versionOfModules(environment).then(
     (version): FetchedModules =>
-      known && known.version === version
-        ? known
-        : { version: version as number, results: new Map() },
+      known && known.version === version ? known : { version, results: new Map() },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and
@@ -279,16 +285,59 @@ function askForModules(environment: string, known?: FetchedModules): Promise<Fet
 }
 
 /**
- * Asks the server whether the modules that were fetched are still its modules,
- * for the runners of `createEnvironmentRunner()`. Before a page load: a file
- * can change while the tests run.
+ * The environments that the page keeps answers of the dev server about,
+ * besides those of the runners that fetched modules: the document's own,
+ * Vite's `client`, and the browser layer's, whose modules the stylesheets of
+ * a route are read off with it. None for a static build, which has no dev
+ * server, and whose modules do not change.
  */
-export async function checkFetchedModules(): Promise<void> {
-  await Promise.all(
-    [...fetchedModulesOf].map(async ([environment, fetched]) =>
-      askForModules(environment, await fetched.catch(() => undefined)),
-    ),
+export const answeredEnvironments = builtLayers ? [] : ["client", "react_client"];
+// The versions of the modules of those, and of the runners' environments, as
+// the page last checked them: see `checkedVersions()`.
+let checked: Promise<string> | undefined;
+
+/**
+ * Asks the server whether the modules that were fetched are still its modules,
+ * for the runners of `createEnvironmentRunner()`, and for the answers about
+ * its modules that the page keeps: see `checkedVersions()`. Before a page
+ * load: a file can change while the tests run.
+ */
+export function checkFetchedModules(): Promise<void> {
+  const fetched = new Map(
+    Array.from(fetchedModulesOf, ([environment, modules]) => [
+      environment,
+      modules
+        .catch(() => undefined)
+        .then((known) => askForModules(environment, known))
+        .then(({ version }) => version),
+    ]),
   );
+  const environments = [...new Set([...answeredEnvironments, ...fetched.keys()])].sort();
+  const versions = Promise.all(
+    environments.map(
+      async (environment) =>
+        `${environment}:${await (fetched.get(environment) ?? versionOfModules(environment))}`,
+    ),
+  ).then((all) => all.join(" "));
+  checked = versions;
+  // A check that failed is no version: the next asks again.
+  versions.catch(() => {
+    if (checked === versions) checked = undefined;
+  });
+  return versions.then(() => {});
+}
+
+/**
+ * The versions of the dev server's modules as the page last checked them,
+ * before its latest page load (`checkFetchedModules()`), or now when it has
+ * not: what the page keeps of an answer about them, like the stylesheets of a
+ * route, holds for as long as this stays. A change of a file invalidates its
+ * modules, on a server with a watcher of its own and on one whose host's
+ * watcher does it, a project's under Vitest.
+ */
+export function checkedVersions(): Promise<string> {
+  if (!checked) void checkFetchedModules().catch(() => {});
+  return checked!;
 }
 
 type FetchModulePayload = { data: { name: string; data: [string?, string?, FetchOptions?] } };
