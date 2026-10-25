@@ -1,0 +1,43 @@
+dom-locators
+Copyright (c) Kasper Peulen and contributors. MIT License, but for the files
+named below.
+
+This package contains code ported from Playwright
+(https://github.com/microsoft/playwright), Copyright (c) Microsoft
+Corporation, licensed under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0), as forked in ivya 1.8.2
+(https://github.com/vitest-dev/ivya/tree/v1.8.2, MIT License, Copyright (c)
+2024 the Vitest team), the locator engine that Vitest 5's browser mode runs.
+The upstream version is Playwright at commit
+4554372e456154d7365b6902ef9f3e1e7de76e94 with ivya 1.8.2's changes.
+
+The ported files keep the Apache License 2.0 header and say what changed:
+
+- src/role-utils.ts: packages/playwright-core/src/server/injected/roleUtils.ts
+  (ivya src/roleUtils.ts). Changed: the imports; a DOM that does not render,
+  of Node.js, has no content of pseudo-elements; `isElementHiddenForAria()`
+  and `getAriaDisabled()` skip a walk up the tree whose answer is known;
+  `getAriaRoleCandidates()`, `getPlainTextAccessibleName()` and
+  `getPlainTextContent()` are added.
+- src/dom-utils.ts: packages/playwright-core/src/server/injected/domUtils.ts
+  (ivya src/domUtils.ts), and `sortInDOMOrder()` of selectorEvaluator.ts.
+  Changed: WebKit is detected by the user agent instead of an option; in a
+  DOM that does not render, of Node.js, a style without a visibility is
+  visible.
+- src/text-match.ts: `normalizeWhiteSpace()` of
+  packages/playwright-core/src/utils/isomorphic/stringUtils.ts,
+  `matchesAttributePart()`, `elementText()`, `elementMatchesText()` and
+  `getElementLabels()` of packages/playwright-core/src/server/injected/selectorUtils.ts,
+  and `createTextMatcher()` of injectedScript.ts (ivya src/ivya.ts).
+  Changed: the matchers take a locator's arguments instead of a selector.
+- src/selectors.ts: the role engine of roleSelectorEngine.ts; the text,
+  label and attribute engines of injectedScript.ts (ivya src/ivya.ts); the
+  selectors of packages/playwright-core/src/utils/isomorphic/locatorUtils.ts
+  and the escapes of stringUtils.ts; the printing of locatorGenerators.ts.
+  Changed: the engines take a locator's arguments instead of a selector
+  string; the role engine looks at the candidates of a role only.
+
+Also from Vitest (https://github.com/vitest-dev/vitest, MIT License,
+Copyright (c) 2021-Present VoidZero Inc. and Vitest contributors): the CSS
+path of `elementLocator()` in src/locator.ts, after
+packages/browser/src/client/tester/tester-utils.ts.

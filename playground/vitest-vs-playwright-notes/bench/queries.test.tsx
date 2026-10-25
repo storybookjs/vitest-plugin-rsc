@@ -1,4 +1,5 @@
 import { getByLabelText, getByRole, getByText } from "@testing-library/dom";
+import { page as domPage } from "dom-locators";
 import { test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
@@ -6,8 +7,9 @@ import { seedApp } from "./app.ts";
 import { measure } from "./harness.ts";
 
 // One query of the /notes page with 20 notes: Vitest's locators, by their
-// selector engine (Playwright's injected script, in the page), and Testing
-// Library's queries, which user-event brings into the page.
+// selector engine (Playwright's injected script, in the page), the same
+// locators of dom-locators, and Testing Library's queries, which user-event
+// brings into the page.
 
 test("queries of the /notes page", async () => {
   await seedApp();
@@ -31,6 +33,21 @@ test("queries of the /notes page", async () => {
   await measure(
     "Query › page.getByText('20 notes').elements()",
     () => check(page.getByText("20 notes").elements()),
+    batch,
+  );
+  await measure(
+    "Query › dom-locators getByRole('link', { name }).elements()",
+    () => check(domPage.getByRole("link", { name: "Note 07", exact: true }).elements()),
+    batch,
+  );
+  await measure(
+    "Query › dom-locators getByLabelText('Search').elements()",
+    () => check(domPage.getByLabelText("Search").elements()),
+    batch,
+  );
+  await measure(
+    "Query › dom-locators getByText('20 notes').elements()",
+    () => check(domPage.getByText("20 notes").elements()),
     batch,
   );
   await measure(
