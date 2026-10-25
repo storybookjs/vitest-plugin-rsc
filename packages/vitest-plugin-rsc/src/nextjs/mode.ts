@@ -13,11 +13,12 @@
 export type Mode = "fidelity" | "fast";
 
 // A new speed feature is an option here, with what it changes and gives up,
-// and a line in `featureSet` below.
+// and a line in `inFidelityMode` below.
 /**
  * The speed features, each an option of `vitestPluginNext()` of its own:
  * `true` is the faster behavior, `false` the faithful one. One that is not
- * set follows `mode`.
+ * set follows `mode`, but for `watchDom`, which gives up nothing and is on
+ * in both modes.
  */
 export type SpeedOptions = {
   /**
@@ -94,10 +95,14 @@ export type SpeedOptions = {
    * change of the DOM, not after a growing wait, and `expect.poll()` every
    * 5 ms unless the config sets `expect.poll.interval`.
    *
-   * Gives up: Vitest's own waits between the looks, after 0, 20, 50, 100
-   * and then every 500 ms.
+   * Gives up nothing: it changes when an assertion looks at the DOM, not
+   * what it sees. Without it, Vitest waits between the looks, after 0, 20,
+   * 50, 100 and then every 500 ms, and a test sees most changes tens of
+   * milliseconds late. On an M1 Pro, the 500 tests of the notes benchmark
+   * take 60 s without it and 26 s with it in fidelity mode, and 53 s and
+   * 18 s in fast mode.
    *
-   * Default: `true` in fast mode, `false` in fidelity mode.
+   * Default: `true` in both modes.
    */
   watchDom?: boolean;
   /**
@@ -136,19 +141,20 @@ export type SpeedFeature = keyof SpeedOptions;
 /** Which speed features are on: `mode` and the options of the features, resolved. */
 export type SpeedFeatures = Required<SpeedOptions>;
 
-// Every speed feature: the type has the compiler list each one here.
-const featureSet: Record<SpeedFeature, true> = {
-  keepApp: true,
-  flightLoads: true,
-  skipPrefetch: true,
-  immediates: true,
+// Every speed feature, and whether it is on in fidelity mode too: only one
+// that gives up nothing is. The type has the compiler list each one here.
+const inFidelityMode: Record<SpeedFeature, boolean> = {
+  keepApp: false,
+  flightLoads: false,
+  skipPrefetch: false,
+  immediates: false,
   watchDom: true,
-  cacheDevServer: true,
-  fastCrypto: true,
+  cacheDevServer: false,
+  fastCrypto: false,
 };
 
 /** Every speed feature, in the order of `SpeedOptions`. */
-const features = Object.keys(featureSet) as SpeedFeature[];
+const features = Object.keys(inFidelityMode) as SpeedFeature[];
 
 const modes: readonly Mode[] = ["fidelity", "fast"];
 
@@ -157,7 +163,7 @@ export type ModeOptions = SpeedOptions & {
   /**
    * Experimental. `"fidelity"`, a test run that gives up nothing for speed,
    * or `"fast"`, every speed feature on: see `Mode`. An option of a feature,
-   * like `fastCrypto: false` or `watchDom: true`, overrides the mode.
+   * like `fastCrypto: false` or `skipPrefetch: true`, overrides the mode.
    *
    * @default in a test run of Vitest the environment variable
    * `VITEST_PLUGIN_RSC_MODE`, `fast` or `fidelity`, else `"fidelity"`
@@ -167,10 +173,10 @@ export type ModeOptions = SpeedOptions & {
 
 /**
  * The speed features that `options` turn on: every one that is set as it is
- * set, and the others as `mode` has them, all on for `"fast"` and all off
- * for `"fidelity"`. Without `mode`, `VITEST_PLUGIN_RSC_MODE` of `env`
- * chooses it in a test run of Vitest, else it is `"fidelity"`. Throws for an
- * unknown mode.
+ * set, and the others as `mode` has them, all on for `"fast"` and all but
+ * `watchDom` off for `"fidelity"`. Without `mode`, `VITEST_PLUGIN_RSC_MODE`
+ * of `env` chooses it in a test run of Vitest, else it is `"fidelity"`.
+ * Throws for an unknown mode.
  */
 export function resolveSpeedFeatures(
   options: ModeOptions,
@@ -187,6 +193,9 @@ export function resolveSpeedFeatures(
     );
   }
   return Object.fromEntries(
-    features.map((feature) => [feature, options[feature] ?? mode === "fast"]),
+    features.map((feature) => [
+      feature,
+      options[feature] ?? (mode === "fast" || inFidelityMode[feature]),
+    ]),
   ) as SpeedFeatures;
 }

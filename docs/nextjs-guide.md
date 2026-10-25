@@ -821,7 +821,7 @@ See [Development or production](internals/next-routes.md#development-or-producti
 
 ## Fast mode
 
-The plugin runs in one of two modes. Fidelity mode, the default, gives up nothing for speed: a test sees what a browser shows of your app, as CI should run it. Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run takes well under half the time on the same machine (2.6× faster in production, 2.2× in development, on one CI runner), and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in fidelity mode:
+The plugin runs in one of two modes. Fidelity mode, the default, gives up nothing for speed: a test sees what a browser shows of your app, as CI should run it. Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run in production takes 18 s instead of 26 s on an M1 Pro, and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in fidelity mode:
 
 ```ts
 vitestPluginNext({ mode: "fast" });
@@ -831,13 +831,13 @@ vitestPluginNext({ mode: "fast" });
 VITEST_PLUGIN_RSC_MODE=fast npx vitest
 ```
 
-Fast mode turns on every speed feature. Each is an option of its own, which defaults to `true` in fast mode and `false` in fidelity mode:
+Fast mode turns on every speed feature. Each is an option of its own, which defaults to `true` in fast mode and `false` in fidelity mode, but for `watchDom`, which gives up nothing and is on in both:
 
 - **One app per test file** (`keepApp`). The first page of a test file starts the app, and every `renderServer({ url })` after it renders its page in that app, from its Flight payload, without loading the page. Each page gets a React tree and a router of its own, so the state of a component doesn't carry over from one test to the next. The state of a module does, as in an app that never reloads: a module that keeps a value from the test before has it in the next one. So does what the code of the app added to the `<head>`, like the stylesheets of the pages before, as after a navigation of the app. The page renders on the client, as with `ssr: false`, and so does a page that the app loads itself from it, like after a `<form>` without a Server Action, so a test doesn't see the server's HTML or a hydration mismatch. A test that asserts on them passes `renderServer({ url, ssr: true })` and gets a page load of its own. In development, the page has no dev overlay.
 - **Page loads without a document** (`flightLoads`). A page of the kept app loads with the request Next's router sends for a page, for its Flight payload alone, so the server renders no HTML for it. Its `response` in what `renderServer()` returns is that one: `text/x-component`, not the document. The head has no `<meta name="next-size-adjust">` of `next/font`, and a page that the test leaves while it loads stops rendering on the server: a test of a render that outlives its page passes `ssr: true`. The server handles each page once. A page whose render calls `redirect()`, Suspense or not, loads as its target, as a browser follows the 307 of a document: its `response` is the target's Flight response, with `redirected` and the final URL, and a redirect to another origin throws, as in fidelity mode. A `notFound()` or an error renders its boundary from the payload, with the status 200 of the Flight response: the 404 or the 500 of a render that fails before any of the document is out is not there, as it is not with `keepApp` alone.
 - **No prefetching** (`skipPrefetch`). `<Link>` and `<Form>` don't prefetch.
 - **No delay for a timeout of the server** (`immediates`). A `setTimeout(work, 0)` of the server's code runs at once, without the millisecond or more a timeout waits, unless the test fakes the timers. React's renderers don't wait between the steps of a render in either mode, as on Node.js.
-- **Less waiting for the DOM** (`watchDom`). `expect.element()` looks for an element again on every change of the DOM, and `expect.poll()` every 5 ms, unless your config sets `expect.poll.interval`.
+- **Less waiting for the DOM** (`watchDom`), in both modes. `expect.element()` looks for an element again on every change of the DOM, and `expect.poll()` every 5 ms, unless your config sets `expect.poll.interval`. It changes when an assertion looks at the DOM, not what it sees: without it, Vitest waits 20, 50, 100 and then 500 ms between the looks, and a test sees most changes tens of milliseconds late. On an M1 Pro, the 500 tests take 60 s without it and 26 s with it in fidelity mode, and 53 s and 18 s in fast mode. `watchDom: false` turns it off.
 - **One answer of the dev server per test file** (`cacheDevServer`). What the dev server says about the stylesheets and the modules of a test file is asked once per test file, not for every page.
 - **Password hashes that cost microseconds** (`fastCrypto`). Password hashes and key derivation of `bcryptjs`, `node:crypto` and Web Crypto cost microseconds, with the same API, so a hash a test makes verifies in the app. See [Fast crypto](nodejs-in-the-browser.md#fast-crypto).
 
@@ -845,7 +845,7 @@ An option you set overrides the mode, in either direction. Fast mode with the re
 
 ```ts
 vitestPluginNext({ mode: "fast", fastCrypto: false });
-vitestPluginNext({ mode: "fidelity", watchDom: true });
+vitestPluginNext({ mode: "fidelity", skipPrefetch: true });
 ```
 
 A suite that passes in fast mode should pass in fidelity mode too. CI tells you when it doesn't.

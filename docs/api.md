@@ -109,11 +109,11 @@ The Vite plugin for Next.js. **It must come after `vitestPluginRSC()`** in `plug
 | `flightLoads`    | Experimental speed feature. A page of the kept app loads by its Flight payload alone, without a document.                                                                                                                                                                  |
 | `skipPrefetch`   | Experimental speed feature. `<Link>` and `<Form>` prefetch nothing.                                                                                                                                                                                                        |
 | `immediates`     | Experimental speed feature. A timeout of no delay on the server runs at once.                                                                                                                                                                                              |
-| `watchDom`       | Experimental speed feature. `expect.element()` looks again on every change of the DOM.                                                                                                                                                                                     |
+| `watchDom`       | Experimental speed feature, on in both modes. `expect.element()` looks again on every change of the DOM.                                                                                                                                                                   |
 | `cacheDevServer` | Experimental speed feature. The dev server is asked about a test file's files once per file.                                                                                                                                                                               |
 | `fastCrypto`     | Experimental speed feature. Password hashes cost microseconds. See [Fast crypto](nodejs-in-the-browser.md#fast-crypto).                                                                                                                                                    |
 
-A speed feature you set, `true` or `false`, overrides the mode, like `{ mode: "fast", fastCrypto: false }`. One you don't set is on in fast mode and off in fidelity mode. See [Fast mode](nextjs-guide.md#fast-mode).
+A speed feature you set, `true` or `false`, overrides the mode, like `{ mode: "fast", fastCrypto: false }`. One you don't set is on in fast mode and off in fidelity mode, but for `watchDom`, which is on in both. See [Fast mode](nextjs-guide.md#fast-mode).
 
 ## For hosts other than Vitest
 
