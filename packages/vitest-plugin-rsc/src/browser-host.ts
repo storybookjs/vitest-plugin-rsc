@@ -45,8 +45,26 @@ const browserHost: PageHost = {
   serverWebApis: globalThis,
   // One realm: the page's are the server's.
   fromPage: (init) => init,
+  serverDir: "",
+  serverImmediate,
 };
 export default browserHost;
+
+// A task each, by a message of one channel, in the order they were asked for.
+const immediates = new Map<symbol, () => void>();
+const channel = new MessageChannel();
+channel.port1.onmessage = () => {
+  const [id, run] = immediates.entries().next().value ?? [];
+  if (id === undefined) return;
+  immediates.delete(id);
+  run!();
+};
+function serverImmediate(callback: () => void): () => void {
+  const id = Symbol("immediate");
+  immediates.set(id, callback);
+  channel.port2.postMessage(null);
+  return () => immediates.delete(id);
+}
 
 // Rejects once the server has sent nothing for `invokeTimeout`, unless the
 // request does not `expire`.

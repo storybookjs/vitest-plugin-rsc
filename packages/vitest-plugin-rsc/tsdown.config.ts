@@ -113,6 +113,8 @@ export default defineConfig([
       // Loaded by Node.js with `--import`: see src/worker-web-apis.ts.
       "src/worker-web-apis.ts",
       "src/async-hooks.ts",
+      // Under the `node` condition of its export: see the file.
+      "src/async-hooks-node.ts",
       "src/testing-library.tsx",
       "src/testing-library-client.tsx",
       "src/nextjs/index.ts",
