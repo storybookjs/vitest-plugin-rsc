@@ -3,12 +3,16 @@
 // costs microseconds where the real one costs a tenth of a second or more.
 
 import nodeCrypto from "node:crypto";
+import { sha1 } from "@noble/hashes/legacy.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { expect, test } from "vitest";
 import {
   argon2,
   bcrypt,
   derive,
   installWebCrypto,
+  nobleArgon2,
+  noblePbkdf2,
   nobleScrypt,
   nodeCrypto as fastNodeCrypto,
   nodeRsArgon2,
@@ -250,4 +254,76 @@ test("Web Crypto's PBKDF2: deriveBits and deriveKey of a key it imported, in mic
   await expect(subtle.deriveBits({ ...params, iterations: 0 }, key, 256)).rejects.toThrow();
   await expect(subtle.deriveBits(params, other, null)).rejects.toThrow();
   expect(await derived(hkdf, hkdfKey, 256)).toEqual(realHkdf);
+});
+
+test("PBKDF2 derives one key through node:crypto, Web Crypto and @noble/hashes, as the real one does", async () => {
+  const { subtle } = globalThis.crypto;
+  installWebCrypto(subtle);
+  const salt = new Uint8Array(nodeCrypto.randomBytes(16));
+  const key = await subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
+    "deriveBits",
+  ]);
+  const { pbkdf2 } = noblePbkdf2();
+  for (const [digest, hash, noble] of [
+    ["sha256", "SHA-256", sha256],
+    ["SHA-512", "SHA-512", sha512],
+    ["RSA-SHA1", "SHA-1", sha1],
+  ] as const) {
+    const node = new Uint8Array(fast.pbkdf2Sync(password, salt, 1000, 32, digest));
+    const params = { name: "PBKDF2", hash, salt, iterations: 1000 };
+    expect(new Uint8Array(await subtle.deriveBits(params, key, 256)), hash).toEqual(node);
+    expect(pbkdf2(noble, password, salt, { c: 1000, dkLen: 32 }), hash).toEqual(node);
+  }
+  expect(fast.pbkdf2Sync(password, salt, 1000, 32, "sha512")).not.toEqual(
+    fast.pbkdf2Sync(password, salt, 1000, 32, "sha256"),
+  );
+});
+
+test("argon2: a hash with associated data has it in its PHC string, and verifies", async () => {
+  const lib = argon2();
+  const hash = String(await lib.hash(password, { associatedData: Buffer.from("user 42") }));
+  // As the package writes it: a parameter `data`, in base64 without padding.
+  expect(hash).toMatch(
+    /^\$argon2id\$v=19\$m=65536,t=3,p=4,data=dXNlciA0Mg\$[A-Za-z0-9+/]{22}\$[A-Za-z0-9+/]{43}$/,
+  );
+  expect(await lib.verify(hash, password)).toBe(true);
+  expect(nodeRsArgon2().verifySync(hash, password)).toBe(true);
+  expect(await lib.verify(hash, "wrong")).toBe(false);
+  // Other data, another hash: "user 43".
+  expect(await lib.verify(hash.replace("data=dXNlciA0Mg", "data=dXNlciA0Mw"), password)).toBe(
+    false,
+  );
+  // No data is data of no bytes, as in Argon2.
+  const salt = new Uint8Array(16);
+  expect(await lib.hash(password, { salt, associatedData: new Uint8Array() })).toBe(
+    await lib.hash(password, { salt }),
+  );
+});
+
+test("Argon2's bytes are the same through argon2, @node-rs/argon2, @noble/hashes and node:crypto, as the real ones", async () => {
+  const salt = new Uint8Array(nodeCrypto.randomBytes(16));
+  const secret = Buffer.from("pepper");
+  // @node-rs/argon2's defaults: Argon2id, 19 MiB, 2 passes, 1 lane, 32 bytes.
+  const node = new Uint8Array(
+    fast.argon2Sync("argon2id", {
+      message: password,
+      nonce: salt,
+      parallelism: 1,
+      tagLength: 32,
+      memory: 19456,
+      passes: 2,
+      secret,
+    }),
+  );
+  const options = { salt, secret, memoryCost: 19456, timeCost: 2, parallelism: 1 };
+  expect(
+    new Uint8Array((await argon2().hash(password, { ...options, raw: true })) as Uint8Array),
+  ).toEqual(node);
+  expect(new Uint8Array(nodeRsArgon2().hashRawSync(password, { salt, secret }))).toEqual(node);
+  expect(nobleArgon2().argon2id(password, salt, { m: 19456, t: 2, p: 1, key: secret })).toEqual(
+    node,
+  );
+  // The hash of a PHC string is those bytes.
+  const encoded = String(await argon2().hash(password, options));
+  expect(encoded.split("$").at(-1)).toBe(Buffer.from(node).toString("base64").replace(/=+$/, ""));
 });
