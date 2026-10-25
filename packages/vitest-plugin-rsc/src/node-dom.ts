@@ -59,3 +59,18 @@ if (!("getClientRects" in Range.prototype)) {
     },
   });
 }
+
+// The media queries of the window, which jsdom has not: a query matches
+// nothing, as in a window that lays nothing out, and never changes. A library
+// asks as it renders, like next-themes for `prefers-color-scheme`.
+if (typeof scope.matchMedia !== "function") {
+  scope.matchMedia = (query: string): MediaQueryList =>
+    Object.assign(new EventTarget(), {
+      media: String(query),
+      matches: false,
+      onchange: null,
+      // The listeners of before `addEventListener()`, which libraries still use.
+      addListener: () => {},
+      removeListener: () => {},
+    }) as unknown as MediaQueryList;
+}
