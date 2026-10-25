@@ -6,7 +6,8 @@ How to get the quickest feedback loop for the end-to-end scenarios of a Next.js 
 > **Status, 25 October 2026.** None of this is released yet. Fast mode and its speed features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), the pull request of fast mode, and so is everything below unless it names a draft pull request on top of it:
 >
 > - On #251: both modes and every speed feature, `watchDom` in both modes, the wait for the next change of the document (#266), the data layer of the notes apps (#262), one CommonJS object per ES module in the pre-bundles (#264), the patch of `@vitest/mocker` (#258), the profile config at any number of workers (#271), the stylesheets of a route asked once per run (#268), the server layer compiled while Chromium launches (#275), the benchmark's signed-in user from a signed cookie (#276), the `import.meta` of a module once per file (#277), and the benchmark on Bun.
-> - On draft pull requests: `dom-locators` (#255) and the host of the page in Node.js without a browser (#261, and #267 for the benchmark in happy-dom and jsdom). Without a pull request: a preload of the app's client during the setup files (`wip/lifecycle-3-preload`).
+> - On #251 since 25 October: `dom-locators` (#255).
+> - On draft pull requests: the host of the page in Node.js without a browser (#261, and #267 for the benchmark in happy-dom and jsdom). Without a pull request: a preload of the app's client during the setup files (`wip/lifecycle-3-preload`).
 >
 > The headline numbers come from one build, **#251 after #276, before #277, with `dom-locators` (#255) and the host in Node.js merged in**: the walls of a run with 1 and 4 workers, and the time of each kind of request. Both columns of the benchmark sign in through one helper, with the signed cookie of #276. The host in Node.js also changes the browser's side of the plugin; what that does to a run in Chromium isn't measured on its own. A section that uses an earlier build says which.
 
@@ -29,7 +30,7 @@ On the 500 tests of the notes benchmark, on an M1 Pro:
 - **Wait with `expect.element()` and `expect.poll()`, without an `interval`.** With `watchDom`, on in both modes, they look again on the next change of the page: a run of fidelity mode takes about 26 s instead of 60. See [Waiting for the page](#waiting-for-the-page).
 - **Fast mode for the loop, fidelity mode in CI.** Its features took about 16 ms off each test of fidelity mode before #284: on an earlier build, a run of 24.5 s took about 16.6 s. Since #284, fidelity mode is faster, and the gap is about 8–9 ms: see [Fast testing patterns](fast-testing-patterns.md#fast-mode-for-the-loop-fidelity-mode-in-ci). See [The two modes](#the-two-modes).
 - **4 workers.** 6.85 s instead of 14.21 s, with `dom-locators`. See [Workers](#workers).
-- **Clicks and queries in the page.** A click of Vitest's goes to Playwright and back, about 50 ms; one of `user-event` takes 0.1 ms. `dom-locators` (draft #255) takes another 2.0 ms off a test. See [The test's own code](#the-tests-own-code).
+- **Clicks and queries in the page.** A click of Vitest's goes to Playwright and back, about 50 ms; one of `user-event` takes 0.1 ms. `dom-locators` (#255) takes another 2.0 ms off a test. See [The test's own code](#the-tests-own-code).
 - **Vitest on Bun.** A run of one test file starts its first test 0.88 s sooner than on Node.js with `pnpm exec`. See [The start of a run](#the-start-of-a-run).
 - **A warm dependency cache, and a `cacheDir` per config.** Without a cache, one file takes about 1 s longer. See [A cold cache](#a-cold-cache).
 - **Fewer queries, prepared once.** The signed-in user from a signed cookie took 1.4 ms off a test (#276), Drizzle's prepared statements 0.7 ms. See [The data layer](#the-data-layer).
@@ -195,7 +196,7 @@ Of a click of `dom-locators`, 30–32 µs are its events: the pointer and mouse 
 
 ### `dom-locators`
 
-`dom-locators`, on draft [#255](https://github.com/storybookjs/vitest-plugin-rsc/pull/255), is `page` of `vitest/browser` answered inside the document: the same locators, the same elements in the same order, its waits and its actions, without a round trip to Playwright and without Testing Library. A test of `vitest/browser` changes one import:
+`dom-locators`, of [#255](https://github.com/storybookjs/vitest-plugin-rsc/pull/255), on #251, is `page` of `vitest/browser` answered inside the document: the same locators, the same elements in the same order, its waits and its actions, without a round trip to Playwright and without Testing Library. A test of `vitest/browser` changes one import:
 
 ```diff
 - import { page } from "vitest/browser";
