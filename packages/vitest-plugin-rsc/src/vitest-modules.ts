@@ -11,8 +11,9 @@ import { builtinsKey, workerRun, type ProvidedBuiltins, type WorkerRun } from ".
 // in the order the runner asks. Their versions are the dev server's, which
 // the page asks on the worker's channel: see `versionOfModules()` in utils.ts.
 
-// Not an import, which the rsc layer would resolve as a module of the app's.
+// Not imports, which the rsc layer would resolve as modules of the app's.
 const fs = process.getBuiltinModule("node:fs");
+const { isBuiltin } = process.getBuiltinModule("node:module");
 
 type FetchArgs = [url: string, importer?: string, options?: { cached?: boolean }];
 type Fetched = Awaited<ReturnType<WorkerRun["rpc"]["fetch"]>>;
@@ -48,6 +49,8 @@ async function invoke(
     }
     if (name !== "fetchModule") throw new Error(`no answer for ${name}`);
     const [url, importer, options] = data as FetchArgs;
+    const builtin = nodeBuiltinOf(url);
+    if (builtin) return { result: { externalize: builtin, type: "builtin" } };
     const fetched = await rpc.fetch(url, importer, environment, options);
     // Vitest leaves a file of a dependency to Node.js, as `server.deps` of the
     // project says for every environment: in a layer of the page that would
@@ -71,4 +74,15 @@ function answerOf(fetched: Fetched) {
     return { ...module, code: fs.readFileSync(tmp, "utf8") };
   }
   return fetched;
+}
+
+// A module of Node.js that a layer leaves to the runner to import, which in a
+// worker of Node.js is Node's own (nextjs/node-builtins.ts). Vite's import
+// analysis names it `/@id/node:fs` in an environment of a browser, and its
+// `fetchModule()` takes that for a module of the environment. Vitest's runner
+// of the `client` environment takes it for Node's module itself, and so does
+// the runner of the page by this answer, which `import()`s it.
+function nodeBuiltinOf(url: string): string | undefined {
+  const id = url.replace(/^\/@id\//, "");
+  return id.startsWith("node:") && isBuiltin(id) ? id : undefined;
 }

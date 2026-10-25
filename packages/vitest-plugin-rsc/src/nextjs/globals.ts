@@ -1,6 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Buffer } from "node:buffer";
 import env from "virtual:vitest-plugin-rsc/next-env";
 import pageHost from "virtual:vitest-plugin-rsc/page-host";
+import { runtimeRequestInit } from "../runtime-request-init.ts";
 import {
   asyncFunctionHooks,
   enterAmbientScope,
@@ -33,7 +35,16 @@ class ServerRequest extends NativeRequest {
   #headers: Headers;
 
   constructor(input: RequestInfo | URL, init?: RequestInit) {
-    init = pageHost.fromPage(init);
+    // A request of the DOM's, like one that a test makes with happy-dom's
+    // `Request` for `handleRequest()`: what it is, as the server's.
+    if (input instanceof Request && !(input instanceof NativeRequest)) {
+      const { url, method, headers, body, signal, redirect, credentials } = input;
+      init = { method, headers: [...headers], body, signal, redirect, credentials, ...init };
+      input = url;
+    }
+    // A body or a signal of the DOM's, like a form or the signal of a page
+    // load that a test gives a request of the server's.
+    init = runtimeRequestInit(init, pageHost.serverWebApis);
     // A browser wants `duplex` for a streamed body. Server runtimes, which
     // Next's code is written for, do not.
     // Node's `Request` also takes a Node.js stream for a body, and Next's
@@ -134,6 +145,9 @@ class ServerResponse extends NativeResponse {
 
 registry.Request = ServerRequest;
 registry.Response = ServerResponse;
+registry.Headers = Headers;
+// The directory of the server's own files, which is the host's: see page-host.ts.
+registry.serverDir = () => pageHost.serverDir;
 // Of the same web APIs as the server's streams, which Next's server pipes
 // with a signal of its own: in a DOM of Node.js the global ones are the
 // DOM's, which Node's streams take and Bun's native `pipeTo()` does not.
@@ -166,7 +180,11 @@ registry.performWork = (request, performWork) => {
 // be the `fetch` of the page, which is the browser's.
 const nativeFetch = pageHost.serverWebApis.fetch;
 registry.fetch = (input, init) => nativeFetch(input, init);
-registry.network = (input, init) => nativeFetch(input, init);
+// With a body or a signal of the DOM's as the runtime's: what the server
+// sends on may be the page's, like the signal of its request on a rewrite to
+// another origin, or a form that a Server Action got.
+registry.network = (input, init) =>
+  nativeFetch(input, runtimeRequestInit(init, pageHost.serverWebApis));
 
 // Node.js has these as globals. A browser has none of them.
 const scope = globalThis as Record<string, any>;
@@ -181,8 +199,16 @@ scope.global.process ??= scope.process;
 scope.Buffer ??= Buffer;
 
 // Node's `Buffer#indexOf` takes any Uint8Array, and Next's stream code relies
-// on it. The polyfill only takes a Buffer.
-for (const method of ["indexOf", "lastIndexOf"] as const) {
+// on it. The polyfill only takes a Buffer. Node's own, which the server layers
+// have in a worker of Node.js (node-builtins.ts), is left as it is.
+const takesUint8Array = (() => {
+  try {
+    return Buffer.from([0, 1]).indexOf(new Uint8Array([1])) === 1;
+  } catch {
+    return false;
+  }
+})();
+for (const method of takesUint8Array ? [] : (["indexOf", "lastIndexOf"] as const)) {
   const original = Buffer.prototype[method] as (...args: unknown[]) => number;
   Buffer.prototype[method] = function (this: Buffer, value: unknown, ...rest: unknown[]) {
     if (value instanceof Uint8Array && !Buffer.isBuffer(value)) {
@@ -193,8 +219,9 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
 }
 // base64url, which Node.js has since 15 and the polyfill does not: Prisma's
 // client reads its query plans with it. It is base64 with `-` and `_`, and
-// without padding. An encoding's name is any case, as in Node.js.
-{
+// without padding. An encoding's name is any case, as in Node.js. Node's own
+// `Buffer` has it.
+if (!Buffer.isEncoding("base64url")) {
   const isBase64url = (encoding: unknown) =>
     typeof encoding === "string" && encoding.toLowerCase() === "base64url";
   const base64 = (text: string) => text.replaceAll("-", "+").replaceAll("_", "/");
@@ -233,24 +260,26 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
     return write.apply(this, [base64(text), ...args]);
   };
 }
-scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
+// The platform's: the page's own in a browser, and Node's in a worker of
+// Node.js, by the package's `async-hooks` that `node:async_hooks` is.
+scope.AsyncLocalStorage ??= AsyncLocalStorage;
 
-// Immediates of the speed feature `immediates`: a task each, by a message of one
-// channel, which no browser delays as it does a timeout. Each by a symbol of
-// its own, which is no id of a timer.
+// Immediates of the speed feature `immediates`: a task each, after the
+// microtasks, which the host runs (`serverImmediate()` of page-host.ts). Each
+// by a symbol of its own, which is no id of a timer, with what cancels it.
 const immediates = new Map<symbol, () => void>();
-const channel = new MessageChannel();
-channel.port1.onmessage = () => {
-  const [id, run] = immediates.entries().next().value ?? [];
-  if (id === undefined) return;
-  immediates.delete(id);
-  run!();
-};
 function immediate(callback: (...args: unknown[]) => void, args: unknown[]): symbol {
   const id = Symbol("immediate");
-  immediates.set(id, () => callback(...args));
-  channel.port2.postMessage(null);
+  const cancel = pageHost.serverImmediate(() => {
+    immediates.delete(id);
+    callback(...args);
+  });
+  immediates.set(id, cancel);
   return id;
+}
+function clearImmediateOf(id: symbol): boolean {
+  immediates.get(id)?.();
+  return immediates.delete(id);
 }
 
 // What Next's Node.js server asks of its process. The `process` is the page's
@@ -278,7 +307,7 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
       ? immediate(callback, args)
       : nativeSetTimeout(callback, 0, ...args);
   registry.clearImmediate = (id) =>
-    typeof id === "symbol" ? immediates.delete(id) : nativeClearTimeout(id as number);
+    typeof id === "symbol" ? clearImmediateOf(id) : nativeClearTimeout(id as number);
 
   // Server code's `setTimeout` (server-code.ts), the global as the code calls
   // it, also a fake one of the test. React renders Flight and HTML for the
@@ -296,7 +325,7 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
       : // As Node.js, which takes no code in a string.
         globalThis.setTimeout(callback as (...args: unknown[]) => void, delay, ...args);
   registry.clearTimeout = (id) =>
-    typeof id === "symbol" ? immediates.delete(id) : globalThis.clearTimeout(id as number);
+    typeof id === "symbol" ? clearImmediateOf(id) : globalThis.clearTimeout(id as number);
 
   // Node's own `Buffer` has these, and busboy reads the parts of a form with
   // them. Every layer has its own copy of the `Buffer` polyfill, and each is a

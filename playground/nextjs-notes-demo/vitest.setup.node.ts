@@ -1,6 +1,7 @@
+import "@testing-library/jest-dom/vitest";
+import "dom-locators/expect-element";
 import { vi, beforeAll, beforeEach, afterEach, afterAll, expect, type MockInstance } from "vitest";
 import { setupServer } from "msw/node";
-import * as dbModule from "#lib/db.ts";
 import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
 import { TEST_NOW } from "#test/now.ts";
 
@@ -9,7 +10,12 @@ import { TEST_NOW } from "#test/now.ts";
 // worker does.
 vi.mock("#lib/db.ts");
 
-const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
+// The clock stopped at TEST_NOW before the database does any work, and kept
+// stopped: see vitest.setup.ts. Between files too, where Browser Mode needs
+// the real clock, and Node.js does not.
+vi.setSystemTime(new Date(TEST_NOW));
+
+const { resetDb } = (await import("#lib/db.ts")) as typeof import("#lib/__mocks__/db.ts");
 
 const server = setupServer(...nextCacheProbeFetchHandler);
 
@@ -19,15 +25,15 @@ beforeAll(() => {
 
 let consoleError: MockInstance<typeof console.error>;
 
-beforeEach(async () => {
+beforeEach(async ({ onTestFinished }) => {
   consoleError = vi.spyOn(console, "error");
   consoleError.mockClear();
   server.resetHandlers();
   await resetDb();
-  vi.setSystemTime(new Date(TEST_NOW));
-  return () => {
+  onTestFinished(() => {
     vi.useRealTimers();
-  };
+    vi.setSystemTime(new Date(TEST_NOW));
+  });
 });
 
 afterEach(() => {
