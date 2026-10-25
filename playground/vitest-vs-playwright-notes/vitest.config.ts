@@ -7,6 +7,7 @@ import {
   type NextBuild,
   type SpeedOptions,
 } from "vitest-plugin-rsc/nextjs/plugin";
+import { server } from "../test-helpers/browser-server.ts";
 import { cacheDir } from "../test-helpers/vite-cache.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
@@ -60,6 +61,9 @@ export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
   // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
   cacheDir,
+  // The browser server on 127.0.0.1, which Bun needs: see
+  // ../test-helpers/browser-server.ts.
+  server,
   // What lib/__mocks__/db.ts imports, which no file that Vite scans imports.
   // In Node.js, PGlite runs as on Node.js, which imports it itself, with its
   // files from its package.
