@@ -30,19 +30,19 @@ export type SpeedOptions = {
    * are now.
    *
    * Gives up: a fresh page per test. Each page gets a tree, a router and
-   * caches of the router of its own, so no state of a component carries
-   * over from one test to the next. What does is the state of the modules
-   * of the app, of a package and of Next and React, as in a single-page app
-   * that never reloads. The server renders no HTML (`ssr: false`), also not
-   * of a page that the app loads itself from one of these, like after a
-   * `<form>` without a Server Action: a test that asserts on it passes
-   * `ssr: true`, and gets a page load of its own. In development the page
-   * has no dev overlay. The status of the `response` is the one Next sets as
-   * it renders the HTML, read from the error in the Flight payload, and a
-   * page whose payload redirects loads as its target, as a browser follows
-   * the 307 of a document: but for a page that fails under a Suspense
-   * boundary, which gets the error's status, where Next has sent the 200 of
-   * its document before the error.
+   * caches of the router of its own, so no state of a component carries over
+   * from one test to the next. What does is the state of the modules of the
+   * app, of a package and of Next and React, as in a single-page app that
+   * never reloads. The server renders no HTML (`ssr: false`), also not of a
+   * page that the app loads itself from one of these, like after a `<form>`
+   * without a Server Action, so no preload of the HTML or its `Link` header:
+   * a test that asserts on it passes `ssr: true`, and gets a page load of its
+   * own. In development the page has no dev overlay. The status of the
+   * `response` is the one Next sets as it renders the HTML, read from the
+   * error in the Flight payload, and a page whose payload redirects loads as
+   * its target, as a browser follows the 307 of a document: but for a page
+   * that fails under a Suspense boundary, which gets the error's status,
+   * where Next has sent the 200 of its document before the error.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */
@@ -55,9 +55,7 @@ export type SpeedOptions = {
    * `keepApp` it changes nothing.
    *
    * Gives up: the `response` of `renderServer()` is the one of Flight,
-   * `text/x-component`, not the document's. The head has no
-   * `<meta name="next-size-adjust">` of `next/font`, and no preload of a
-   * font that no page before it preloaded. A route handler on the way, like
+   * `text/x-component`, not the document's. A route handler on the way, like
    * one that redirects to the page, sees `RSC: 1` in its request. A page
    * that the test leaves while it loads stops rendering on the server, where
    * the render of a document would go on: a test of a render that outlives
@@ -77,18 +75,20 @@ export type SpeedOptions = {
    * `<Form>`, nor for a `router.prefetch()` of the app.
    *
    * Gives up: a test sees no prefetch: no request of one, and no route
-   * that renders from what one got.
+   * that renders from what one got. Next prefetches in production only, so
+   * in development it gives up nothing.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */
   skipPrefetch?: boolean;
   /**
-   * Experimental. The server runs the steps of a render, which React
-   * separates with `setTimeout(work, 0)`, as immediates, unless the test has
-   * faked the timers.
+   * Experimental. The server's code runs a timeout of 0 as an immediate,
+   * like those that React separates the steps of a render with, unless the
+   * test has faked the timers.
    *
    * Gives up: the delay a browser adds to a timeout, at least 4 ms for one
-   * that a timeout started, five deep.
+   * that a timeout started, five deep: also for a timeout of 0 of the app's
+   * own server code.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */

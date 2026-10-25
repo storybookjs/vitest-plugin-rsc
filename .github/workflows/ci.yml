@@ -73,7 +73,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-  # The projects of the root vitest.config.ts, in five parts. The Storybook
+  # The projects of the root vitest.config.ts, in six parts. The Storybook
   # tests of the demos run `storybook dev`, `storybook build` and Chromium at
   # once; on one runner with the other projects they need more memory than it
   # has, and GitHub stops the runner. The longest test file of each demo, the
@@ -95,8 +95,12 @@ jobs:
             projects: --project nextjs-notes-demo-storybook
           - part: notes demo Storybook build and changes
             projects: --project 'nextjs-notes-demo-storybook*' --project '!nextjs-notes-demo-storybook'
+          # The tests of the speed features: a browser per project, which
+          # next to the others would take longer to connect than Vitest waits.
+          - part: speed features
+            projects: --project 'nextjs-notes-demo-speed-*'
           - part: other projects
-            projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*'
+            projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*' --project '!nextjs-notes-demo-speed-*'
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -139,6 +143,13 @@ jobs:
         env:
           VITEST_PLUGIN_RSC_BUILD: production
         run: pnpm test:dist --project nextjs-e2e-demo --project nextjs-notes-demo-browser --project nextjs-notes-demo-fast --project nextjs-notes-demo-stories --project nextjs-db-recipes
+      # Next prefetches in production only. A step of its own: a browser per
+      # project, which next to the others would take longer to connect than
+      # Vitest waits.
+      - name: Test the speed features
+        env:
+          VITEST_PLUGIN_RSC_BUILD: production
+        run: pnpm test:dist --project 'nextjs-notes-demo-speed-*'
 
   next:
     name: Next.js ${{ matrix.next }}, ${{ matrix.build }}
