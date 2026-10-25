@@ -67,7 +67,8 @@ const standInHttp: ServerHttp = (request, respond) => {
   let finished = false;
   let cancelled = false;
   let sendHead!: () => void;
-  // Resolves when the status and the headers are final: at the first byte.
+  // Resolves when the status and the headers are final: at the first byte,
+  // or at an `end()` without one.
   const head = new Promise<void>((resolve) => (sendHead = resolve)).then(() => (headSent = true));
   const encoder = new TextEncoder();
   let ended!: () => void;
@@ -109,17 +110,31 @@ const standInHttp: ServerHttp = (request, respond) => {
     name.toLowerCase() === "location" && res.getHeader(name) === value
       ? res
       : appendHeader(name, value);
+  // A response without a body is out at its `end()`, head and all, as
+  // Node's `headersSent` says then: a redirect, a 204, the answer to a
+  // `HEAD`. Not at `finish`, which Next's stand-in emits a `nextTick` later:
+  // on Node.js, after Next's handler is done with the request, which would
+  // then fail as one that was left before its head.
+  const end = res.end.bind(res);
+  res.end = ((...args: Parameters<typeof end>) => {
+    end(...args);
+    // A response that is destroyed has no head to take: a page that left.
+    if (res.destroyed) return res;
+    if (!wrote) finished = true;
+    headSent = res.headersSent = true;
+    sendHead();
+    return res;
+  }) as typeof res.end;
   // A `Writable` of Node.js 14+ destroys itself as it finishes, and so does
   // the package's stream: not this one, which closes on the timer below.
   (res as unknown as { _writableState: { autoDestroy: boolean } })._writableState.autoDestroy =
     false;
   res.on("finish", () => {
-    finished = headSent = true;
+    finished = true;
     // Node's stream says so itself; the older one of the polyfill does not.
     // Next takes a `close` without it for a client that left, and aborts
     // the signal of the request.
     Object.defineProperty(res, "writableFinished", { value: true, configurable: true });
-    sendHead();
     controller.close();
     ended();
     // A socket closes after the response has gone out: what Next runs then,
