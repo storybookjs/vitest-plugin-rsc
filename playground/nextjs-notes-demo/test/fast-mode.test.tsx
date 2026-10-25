@@ -127,3 +127,20 @@ test("removes without an error a `<style>` that the app removes a moment after i
 
   expect(style.isConnected).toBe(false);
 });
+
+test("advances the fake timers of the test between the looks of `expect.element()`", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const status = document.createElement("output");
+  status.dataset.testid = "status";
+  status.textContent = "Saving";
+  document.body.append(status);
+  onTestFinished(() => {
+    status.remove();
+    vi.useRealTimers();
+  });
+  setTimeout(() => {
+    status.textContent = "Saved";
+  }, 100);
+
+  await expect.element(page.getByTestId("status")).toHaveTextContent("Saved");
+});

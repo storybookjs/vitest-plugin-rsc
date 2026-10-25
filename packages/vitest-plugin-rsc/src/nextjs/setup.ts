@@ -1,8 +1,8 @@
-import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { page, server } from "vitest/browser";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
-import { findOnEveryChange, forgetTestFileAnswers } from "./speed-features.ts";
+import { findOnEveryChange, forgetTestFileAnswers, pollOnEveryChange } from "./speed-features.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
 import { leaveKeptAppWithPage, preloadClient } from "./page.ts";
 import { registry } from "./registry.ts";
@@ -82,6 +82,7 @@ beforeEach(async () => {
   await linkStylesheetsOf(nodeFiles);
 });
 
-// The speed feature `watchDom` looks for an element on every change of the DOM:
-// see speed-features.ts.
+// The speed feature `watchDom` looks for an element, and polls again, on the
+// next change of the document: see speed-features.ts.
 findOnEveryChange(page.getByText(""));
+pollOnEveryChange(expect, () => vi.isFakeTimers());
