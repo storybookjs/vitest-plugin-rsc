@@ -21,7 +21,9 @@
 // `elementText()`, `elementMatchesText()` and `getElementLabels()` of
 // src/selectorUtils.ts, and `createTextMatcher()` of src/ivya.ts. Changed:
 // the matchers take the text and `exact` of a locator, where Playwright's
-// parse them from a selector string. See NOTICE.
+// parse them from a selector string; the text of an element normalizes
+// when it is asked, and an exact matcher first compares the count of its
+// solid characters, `solidLength()`, which is added. See NOTICE.
 
 import { getAriaLabelledByElements } from "./role-utils.ts";
 
@@ -32,10 +34,61 @@ export function normalizeWhiteSpace(text: string): string {
     .replace(/\s+/g, " ");
 }
 
-export interface ElementText {
-  full: string;
-  normalized: string;
-  immediate: string[];
+/**
+ * The text of an element: all of it, the runs of its own text nodes, and
+ * the count of the characters normalizing keeps that are no white space.
+ * The text normalized is worked out the first time a matcher asks, as most
+ * elements of a query are ruled out by that count. Not in Playwright,
+ * whose text has `normalized` at once.
+ */
+export class ElementText {
+  #normalized: string | undefined;
+  constructor(
+    readonly full: string,
+    readonly immediate: string[],
+    readonly solidLength: number,
+  ) {}
+
+  get normalized(): string {
+    this.#normalized ??= this.full ? normalizeWhiteSpace(this.full) : "";
+    return this.#normalized;
+  }
+}
+
+/** The text of a string alone, as of an attribute. */
+export const textOf = (text: string) => new ElementText(text, [text], solidLength(text));
+
+/**
+ * How many characters of `text` normalizing keeps that are no white space:
+ * the same for two texts that normalize alike, as normalizing changes white
+ * space alone. Not in Playwright.
+ */
+export function solidLength(text: string): number {
+  let length = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (!isSpaceOrDropped(text.charCodeAt(i))) length++;
+  }
+  return length;
+}
+
+// The characters of `\s` and of the zero-width space and the soft hyphen,
+// which `normalizeWhiteSpace()` drops.
+function isSpaceOrDropped(code: number): boolean {
+  if (code > 0x20 && code < 0x7f) return false;
+  return (
+    (code >= 0x09 && code <= 0x0d) ||
+    code === 0x20 ||
+    code === 0xa0 ||
+    code === 0xad ||
+    code === 0x1680 ||
+    (code >= 0x2000 && code <= 0x200b) ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    code === 0x202f ||
+    code === 0x205f ||
+    code === 0x3000 ||
+    code === 0xfeff
+  );
 }
 export type TextMatcher = (text: ElementText) => boolean;
 /** The text of each element, for one query: the DOM does not change in it. */
@@ -58,7 +111,13 @@ export function createTextMatcher(
   }
   const normalized = normalizeWhiteSpace(text);
   if (exact) {
-    return { matcher: (elementText) => elementText.normalized === normalized, kind: "strict" };
+    // A text of another count of solid characters normalizes to another text.
+    const length = solidLength(normalized);
+    return {
+      matcher: (elementText) =>
+        elementText.solidLength === length && elementText.normalized === normalized,
+      kind: "strict",
+    };
   }
   const lower = normalized.toLowerCase();
   return {
@@ -110,33 +169,38 @@ export function shouldSkipForTextMatching(element: Element | ShadowRoot) {
 export function elementText(cache: TextCache, root: Element | ShadowRoot): ElementText {
   let value = cache.get(root);
   if (value === undefined) {
-    value = { full: "", normalized: "", immediate: [] };
+    value = new ElementText("", [], 0);
     if (!shouldSkipForTextMatching(root)) {
-      let currentImmediate = "";
       if (root instanceof HTMLInputElement && (root.type === "submit" || root.type === "button")) {
-        value = {
-          full: root.value,
-          normalized: normalizeWhiteSpace(root.value),
-          immediate: [root.value],
-        };
+        value = textOf(root.value);
       } else {
+        let full = "";
+        let length = 0;
+        const immediate: string[] = [];
+        let currentImmediate = "";
         for (let child = root.firstChild; child; child = child.nextSibling) {
           if (child.nodeType === Node.TEXT_NODE) {
-            value.full += child.nodeValue || "";
-            currentImmediate += child.nodeValue || "";
+            const text = child.nodeValue || "";
+            full += text;
+            length += solidLength(text);
+            currentImmediate += text;
           } else {
-            if (currentImmediate) value.immediate.push(currentImmediate);
+            if (currentImmediate) immediate.push(currentImmediate);
             currentImmediate = "";
             if (child.nodeType === Node.ELEMENT_NODE) {
-              value.full += elementText(cache, child as Element).full;
+              const text = elementText(cache, child as Element);
+              full += text.full;
+              length += text.solidLength;
             }
           }
         }
-        if (currentImmediate) value.immediate.push(currentImmediate);
+        if (currentImmediate) immediate.push(currentImmediate);
         if ((root as Element).shadowRoot) {
-          value.full += elementText(cache, (root as Element).shadowRoot!).full;
+          const text = elementText(cache, (root as Element).shadowRoot!);
+          full += text.full;
+          length += text.solidLength;
         }
-        if (value.full) value.normalized = normalizeWhiteSpace(value.full);
+        value = new ElementText(full, immediate, length);
       }
     }
     cache.set(root, value);
@@ -167,9 +231,7 @@ export function getElementLabels(textCache: TextCache, element: Element): Elemen
   if (labels) return labels.map((label) => elementText(textCache, label));
   const ariaLabel = element.getAttribute("aria-label");
   if (ariaLabel !== null && !!ariaLabel.trim()) {
-    return [
-      { full: ariaLabel, normalized: normalizeWhiteSpace(ariaLabel), immediate: [ariaLabel] },
-    ];
+    return [textOf(ariaLabel)];
   }
 
   // https://html.spec.whatwg.org/multipage/forms.html#category-label
