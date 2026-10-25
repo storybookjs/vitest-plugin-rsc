@@ -74,3 +74,38 @@ if (typeof scope.matchMedia !== "function") {
       removeListener: () => {},
     }) as unknown as MediaQueryList;
 }
+
+// A browser's answer to a stylesheet of the page and to its preload, which a
+// DOM of Node.js, that loads none (`loadsStylesheets` of node-host.ts), does
+// not always give: `load`, as if its bytes came, also for one that the
+// server would fail. happy-dom answers a stylesheet itself, also one it
+// does not load (with `handleDisabledFileLoadingAsSuccess`, which the plugin
+// sets), but never a preload; jsdom answers neither without
+// `resources: "usable"`, which the plugin does not set. React commits a tree that it renders on
+// the client, as Next does a page without HTML, only once the stylesheets of
+// `precedence` in the `<head>` and their preloads have loaded, or after a
+// minute. So a link of the `<head>` that the DOM leaves unanswered gets
+// `load` once, in a task after it is in the document: of Node's
+// `setImmediate` as this module loads, before a test's fake timers replace it.
+const { setImmediate: nodeSetImmediate } = process.getBuiltinModule("node:timers");
+const answersStylesheets = "happyDOM" in window;
+const answered = new WeakSet<Node>();
+const unansweredByDom = (node: Node): node is Element => {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const link = node as Element;
+  if (link.localName !== "link" || !link.getAttribute("href")) return false;
+  const rel = (link.getAttribute("rel") ?? "").toLowerCase().split(/\s+/);
+  if (rel.includes("stylesheet")) return !answersStylesheets;
+  return rel.includes("preload") && link.getAttribute("as")?.toLowerCase() === "style";
+};
+new MutationObserver((records) => {
+  for (const record of records) {
+    for (const link of Array.from(record.addedNodes).filter(unansweredByDom)) {
+      nodeSetImmediate(() => {
+        if (answered.has(link) || !link.isConnected) return;
+        answered.add(link);
+        link.dispatchEvent(new Event("load"));
+      });
+    }
+  }
+}).observe(document.head, { childList: true });
