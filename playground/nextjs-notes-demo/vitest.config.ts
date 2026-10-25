@@ -38,11 +38,11 @@ buildStorybookFramework();
 // oxlint-disable-next-line no-process-env
 process.env.STORYBOOK_DISABLE_TELEMETRY ??= "1";
 
-// A provider of its own for each project.
-const browserMode = () => ({
+// A provider of its own for each project, which starts Chromium with `args`.
+const browserMode = (args: string[] = []) => ({
   enabled: true,
   headless: true,
-  provider: playwright(),
+  provider: playwright({ launchOptions: { args } }),
   instances: [{ browser: "chromium" as const }],
 });
 
@@ -81,12 +81,9 @@ const browserProject = (name: string, mode: Mode) =>
       // file is the node project's.
       exclude: ["e2e/**", "node_modules", "**/*.node.test.{ts,tsx}"],
       browser: {
-        ...browserMode(),
         // A collection of the heap and its precise size, which
         // test/page-leaks.test.tsx asks for.
-        provider: playwright({
-          launchOptions: { args: ["--js-flags=--expose-gc", "--enable-precise-memory-info"] },
-        }),
+        ...browserMode(["--js-flags=--expose-gc", "--enable-precise-memory-info"]),
         viewport: { width: 390, height: 844 },
       },
       // Browser workers each own their browser state and run in parallel.
