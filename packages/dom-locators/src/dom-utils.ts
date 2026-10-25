@@ -20,7 +20,8 @@
 // code that Vitest 5's locators run, with `sortInDOMOrder()` of its
 // src/selectorEvaluator.ts. Changed: WebKit is told by the user agent, where
 // ivya has an option of the browser; in a DOM that does not render, a style
-// without a visibility is visible. See NOTICE.
+// without a visibility is visible; added, which ivya does not have:
+// `hasVisibleBox()`. See NOTICE.
 
 import { isRendered } from "./environment.ts";
 
@@ -182,6 +183,19 @@ export const checksVisibility =
   typeof Element !== "undefined" &&
   !!(Element.prototype as Partial<Element>).checkVisibility &&
   !isWebKit;
+
+/**
+ * Not in Playwright: whether `checkVisibility()` finds `element` rendered,
+ * with a box, so neither `display: contents` nor `display: none` on it or
+ * above it, and of `visibility: visible`, without its computed style.
+ * `false` where it cannot tell, in WebKit and in a DOM without it.
+ */
+export function hasVisibleBox(element: Element): boolean {
+  return checksVisibility && element.checkVisibility(visibleBox);
+}
+
+// `checkVisibilityCSS` is the name of `visibilityProperty` before Chrome 121.
+const visibleBox = { visibilityProperty: true, checkVisibilityCSS: true };
 
 // From src/selectorEvaluator.ts of ivya 1.8.2, Playwright's at the same commit.
 export function sortInDOMOrder(elements: Iterable<Element>): Element[] {

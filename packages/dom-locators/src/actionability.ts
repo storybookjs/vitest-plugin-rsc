@@ -6,6 +6,7 @@ import { defaultTimeout, isRendered } from "./environment.ts";
 import { elementNotFound, notActionable, strictModeViolation } from "./errors.ts";
 import {
   getElementComputedStyle,
+  hasVisibleBox,
   isElementVisible,
   parentElementOrShadowHost,
 } from "./dom-utils.ts";
@@ -101,7 +102,12 @@ function failedCheck(element: Element, checks: Check[]): string | undefined {
  * through the hosts of shadow roots, and no `visibility: hidden`.
  */
 export function isVisible(element: Element): boolean {
-  if (isRendered(element.ownerDocument)) return isElementVisible(element);
+  if (isRendered(element.ownerDocument)) {
+    // Playwright's answer, without the computed style where a visible box tells it.
+    if (!hasVisibleBox(element)) return isElementVisible(element);
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
   const style = getElementComputedStyle(element);
   if (style && style.visibility !== "" && style.visibility !== "visible") return false;
   for (let node: Element | undefined = element; node; node = parentElementOrShadowHost(node)) {
