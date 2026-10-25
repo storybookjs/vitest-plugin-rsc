@@ -89,7 +89,7 @@ const browserProject = (name: string, mode: Mode, speed?: SpeedOptions) =>
     ],
     test: {
       name,
-      // For components/changing-probe.test.tsx, test/page-leaks.test.tsx and
+      // For components/changing-probe.test.tsx and
       // test/speed-features.test.tsx.
       provide: { mode, build },
       include: speed ? [speedFeaturesTest] : ["**/*.test.{ts,tsx}"],
