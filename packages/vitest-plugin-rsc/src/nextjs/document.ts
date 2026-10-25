@@ -140,14 +140,31 @@ function isGraphStylesheet(node: Node): boolean {
   return node instanceof HTMLLinkElement && node.hasAttribute(graphStylesheetAttribute);
 }
 
-// The stylesheets in `parent` that the server serves itself, which the page
-// waits for. One of another server may never answer. One that the browser
-// does not ask for has no `load` and no `error`.
-function stylesheetsOf(parent: ParentNode, url: string): HTMLLinkElement[] {
-  return Array.from(
-    parent.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"][href]'),
-  ).filter(
+// The elements of a parsed page, found by their tag, not by a selector: in
+// jsdom a selector of a document builds an engine of selectors for that
+// document, which adds listeners to the window that it never takes back,
+// 9 for every page load, and every event that reaches the window runs
+// through all of them. So does a URL of an element of it, like `src`, which
+// jsdom resolves against the document's `<base>`, which it finds with a
+// selector: the page reads the attribute.
+function elementsOf<Tag extends keyof HTMLElementTagNameMap>(
+  parent: Document | Element,
+  tag: Tag,
+): HTMLElementTagNameMap[Tag][] {
+  return Array.from(parent.getElementsByTagName(tag));
+}
+
+// Whether `rel` of `link` has `keyword`, which HTML compares in any case.
+const hasRel = (link: HTMLLinkElement, keyword: string) =>
+  link.rel.toLowerCase().split(/\s+/).includes(keyword);
+
+// The stylesheets in `parent` of a parsed page that the server serves itself,
+// which the page waits for. One of another server may never answer. One that
+// the browser does not ask for has no `load` and no `error`.
+function stylesheetsOf(parent: Element, url: string): HTMLLinkElement[] {
+  return elementsOf(parent, "link").filter(
     (link) =>
+      hasRel(link, "stylesheet") &&
       !link.relList.contains("alternate") &&
       link.getAttribute("href") &&
       (!link.type || link.type === "text/css") &&
@@ -332,17 +349,22 @@ export async function loadDocument(
   // page. This document stays, so the refresh would come due a second later,
   // in whatever page is there by then. The tag stays for the router, without
   // what makes it a refresh.
-  for (const redirect of page.querySelectorAll('[id="__next-page-redirect"]')) {
-    redirect.removeAttribute("http-equiv");
+  for (const redirect of elementsOf(page, "meta")) {
+    if (redirect.id === "__next-page-redirect") redirect.removeAttribute("http-equiv");
   }
   // A script with a `src` does not run here: see below. React has the browser
   // preload the one that starts the app, and in a static build a preload is a
   // request for a file that is not there.
-  const sources = new Set(
-    Array.from(page.querySelectorAll<HTMLScriptElement>("script[src]"), (script) => script.src),
-  );
-  for (const link of page.querySelectorAll<HTMLLinkElement>('link[rel="preload"][as="script"]')) {
-    if (sources.has(link.href)) link.remove();
+  const urlOf = (element: Element, name: string) => {
+    const value = element.getAttribute(name);
+    return value === null ? undefined : URL.parse(value, url)?.href;
+  };
+  const sources = new Set(elementsOf(page, "script").map((script) => urlOf(script, "src")));
+  sources.delete(undefined);
+  for (const link of elementsOf(page, "link")) {
+    if (link.rel.toLowerCase() === "preload" && link.getAttribute("as") === "script") {
+      if (sources.has(urlOf(link, "href"))) link.remove();
+    }
   }
   const stylesheetsOfHead = stylesheetsOf(page.head, url);
   const stylesheetsOfBody = stylesheetsOf(page.body, url);
