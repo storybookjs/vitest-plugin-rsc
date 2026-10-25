@@ -151,7 +151,7 @@ let current: Page | undefined;
 
 type Client = typeof import("./client.tsx");
 // The app's client entry, which every page load runs: see client.tsx.
-const clientModule = environmentModule("react_client", "vitest-plugin-rsc/nextjs/client");
+const clientModule = () => environmentModule("react_client", "vitest-plugin-rsc/nextjs/client");
 
 /**
  * Fetches the modules of the app's client entry, which the next page load
@@ -160,7 +160,7 @@ const clientModule = environmentModule("react_client", "vitest-plugin-rsc/nextjs
  * browser's cache before a page runs it.
  */
 export function preloadClient(): Promise<void> {
-  return preloadModules("react_client", clientModule);
+  return preloadModules("react_client", clientModule());
 }
 
 // The kept app of `keepApp`: the one the first page of a test file started,
@@ -430,7 +430,7 @@ async function openPage(
   const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   const started = (async () => {
     try {
-      const client = await runner.import<Client>(clientModule);
+      const client = await runner.import<Client>(clientModule());
       superseded();
       const { unmount, leaveApp } = await client.start(
         loaded,

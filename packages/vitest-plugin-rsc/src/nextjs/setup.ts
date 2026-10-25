@@ -4,7 +4,7 @@ import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
 import { findOnEveryChange, forgetTestFileAnswers } from "./speed-features.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
-import { leaveKeptAppWithPage } from "./page.ts";
+import { leaveKeptAppWithPage, preloadClient } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
 // With the speed feature `fastCrypto`, PBKDF2 of the page's `crypto.subtle` is
@@ -44,6 +44,10 @@ beforeAll(async ({}, suite) => {
   nodeFiles = [...server.config.setupFiles, suite.file.filepath];
   clientFile = loadedAsClientFile(suite.file.filepath);
   if (clientFile) keptDocument = keepHostDocument((url) => reportError(noRouter(url)));
+  // The modules of the app's client, which its pages run, come while the
+  // hooks of the file run, like a database that starts. A page load that
+  // needs one that failed gets its error.
+  else preloadClient().catch(() => {});
   // Their stylesheets, which every test of the file uses, its `beforeAll`
   // hooks too.
   await linkStylesheetsOf(nodeFiles);

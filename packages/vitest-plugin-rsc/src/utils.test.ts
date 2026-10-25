@@ -66,11 +66,11 @@ vi.stubGlobal("fetch", async () => Response.json({ token: "t", path: "/socket" }
 const { createEnvironmentRunner, preloadModules } = await import("./utils.ts");
 
 test("preloads a module and its imports for the runner of the next page load", async () => {
-  await preloadModules("react_client", "/entry.js");
+  await preloadModules("next_ssr", "/entry.js");
   // The imports are on their way once the module has come.
   await vi.waitFor(() => expect([...asked].sort()).toEqual(["/a.js", "/b.js", "/entry.js"]));
 
-  const runner = createEnvironmentRunner("react_client");
+  const runner = createEnvironmentRunner("next_ssr");
   await runner.import("/entry.js");
   expect(runner.evaluatedModules.getModuleById("/b.js")?.evaluated).toBe(true);
   // From what the tab fetched: the server is asked for none of them again.
