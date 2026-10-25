@@ -390,7 +390,7 @@ test("loads a module of Next's build where it is first read, and says there that
   const next = nextWith({
     "next/dist/build/webpack/loaders/next-font-loader/index.js": new Error("Cannot find module"),
   });
-  // An app without `next/font` starts without it.
+  // The project loads without it: nothing has run the font loader yet.
   const project = await loadNextProject(root, next);
   const compiled = await project.compile(
     sourceOf("fonts/fonts.ts"),

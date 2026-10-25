@@ -2,12 +2,12 @@ import type { AppLoaderContext } from "../project/entries.ts";
 import type { Loader, LoaderContext } from "../project/loaders.ts";
 
 // The build side of Next, in Node.js: every module of Next's build that the
-// plugin calls. Each is loaded with `load()` where the plugin first reads
-// it, so that a run loads only what it uses: the modules for the alias
-// tables and the routes are read as a run starts, and pull in most of
-// Next's build with them, webpack too. A module that is gone fails where it
-// is read, and so does an export that is gone. project/context.ts loads
-// them for a project.
+// plugin calls. `load()` requires a module where it is first read. One whose
+// exports are taken here is read here, as a run starts; one kept whole, like
+// the image optimizer or a webpack loader, where the plugin first uses it, so
+// that an app without `next/font`, `next/image` or CSS modules does not load
+// them. A module that is gone fails where it is read, and so does an export
+// that is gone. project/context.ts loads them for a project.
 
 /**
  * The build code of the `next` that `projectRequire` finds. `fail` stops the
@@ -38,14 +38,12 @@ export function loadNextBuild(
         Reflect.apply(required() as (...input: unknown[]) => unknown, self, input),
     });
   };
-  // A webpack loader of Next, required where it first runs: an app without
-  // `next/font` never loads next-font-loader.
-  const loader = <T = Loader>(id: string): T => {
-    const loaded = load<{ default: Loader }>(id);
-    return function (this: LoaderContext, ...input: unknown[]) {
-      return loaded.default.apply(this, input);
+  // A webpack loader of Next, of a module of `load()`: its `default` is read
+  // where the loader first runs.
+  const loader = <T = Loader>(module: { default: unknown }): T =>
+    function (this: LoaderContext, ...input: unknown[]) {
+      return (module.default as Loader).apply(this, input);
     } as unknown as T;
-  };
 
   const loadConfig =
     load<typeof import("next/dist/server/config.js")>("next/dist/server/config").default;
@@ -111,7 +109,9 @@ export function loadNextBuild(
     "next/dist/build/load-entrypoint",
   );
   const nextAppLoader = loader<(this: AppLoaderContext) => Promise<string>>(
-    "next/dist/build/webpack/loaders/next-app-loader/index",
+    load<typeof import("next/dist/build/webpack/loaders/next-app-loader/index.js")>(
+      "next/dist/build/webpack/loaders/next-app-loader/index",
+    ),
   );
   const { IncrementalCache } = load<
     typeof import("next/dist/server/lib/incremental-cache/index.js")
@@ -129,7 +129,11 @@ export function loadNextBuild(
   const { nextImageLoaderRegex } = load<typeof import("next/dist/build/webpack-config.js")>(
     "next/dist/build/webpack-config",
   );
-  const nextImageLoader = loader("next/dist/build/webpack/loaders/next-image-loader/index");
+  const nextImageLoader = loader(
+    load<typeof import("next/dist/build/webpack/loaders/next-image-loader/index.js")>(
+      "next/dist/build/webpack/loaders/next-image-loader/index",
+    ),
+  );
   const { getNextFontLoader } = load<
     typeof import("next/dist/build/webpack/config/blocks/css/loaders/next-font.js")
   >("next/dist/build/webpack/config/blocks/css/loaders/next-font");
@@ -149,8 +153,16 @@ export function loadNextBuild(
   const { getSupportedBrowsers } = load<typeof import("next/dist/build/get-supported-browsers.js")>(
     "next/dist/build/get-supported-browsers",
   );
-  const nextFontLoader = loader("next/dist/build/webpack/loaders/next-font-loader/index");
-  const nextRootParamsLoader = loader("next/dist/build/webpack/loaders/next-root-params-loader");
+  const nextFontLoader = loader(
+    load<typeof import("next/dist/build/webpack/loaders/next-font-loader/index.js")>(
+      "next/dist/build/webpack/loaders/next-font-loader/index",
+    ),
+  );
+  const nextRootParamsLoader = loader(
+    load<typeof import("next/dist/build/webpack/loaders/next-root-params-loader.js")>(
+      "next/dist/build/webpack/loaders/next-root-params-loader",
+    ),
+  );
   const imageOptimizer = load<typeof import("next/dist/server/image-optimizer.js")>(
     "next/dist/server/image-optimizer",
   );
@@ -186,15 +198,23 @@ export function loadNextBuild(
   const { getNamedMiddlewareRegex } = load<
     typeof import("next/dist/shared/lib/router/utils/route-regex.js")
   >("next/dist/shared/lib/router/utils/route-regex");
-  const nextMiddlewareLoader = loader("next/dist/build/webpack/loaders/next-middleware-loader");
+  const nextMiddlewareLoader = loader(
+    load<typeof import("next/dist/build/webpack/loaders/next-middleware-loader.js")>(
+      "next/dist/build/webpack/loaders/next-middleware-loader",
+    ),
+  );
   const { getContentType, getExtension } = load<typeof import("next/dist/server/serve-static.js")>(
     "next/dist/server/serve-static",
   );
   const nextMetadataImageLoader = loader(
-    "next/dist/build/webpack/loaders/next-metadata-image-loader",
+    load<typeof import("next/dist/build/webpack/loaders/next-metadata-image-loader.js")>(
+      "next/dist/build/webpack/loaders/next-metadata-image-loader",
+    ),
   );
   const nextMetadataRouteLoader = loader(
-    "next/dist/build/webpack/loaders/next-metadata-route-loader",
+    load<typeof import("next/dist/build/webpack/loaders/next-metadata-route-loader.js")>(
+      "next/dist/build/webpack/loaders/next-metadata-route-loader",
+    ),
   );
 
   return {
