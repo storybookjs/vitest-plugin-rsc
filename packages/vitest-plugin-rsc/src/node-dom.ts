@@ -74,3 +74,41 @@ if (typeof scope.matchMedia !== "function") {
       removeListener: () => {},
     }) as unknown as MediaQueryList;
 }
+
+// A browser's answer to a stylesheet of the page and to its preload, which a
+// DOM of Node.js, that loads none, may never give: `load`, as if its bytes
+// came. happy-dom answers a stylesheet itself (with
+// `handleDisabledFileLoadingAsSuccess`, which the plugin sets), but not a
+// preload; jsdom answers neither. React holds the commit of a tree it renders
+// on the client, as Next does a page without HTML, until the stylesheets of
+// `precedence` and their preloads have loaded. So a link of either that the
+// DOM leaves unanswered gets `load` once, in a task after it is in the
+// document: of Node's own `setImmediate`, which a test's fake timers leave.
+const { setImmediate: nodeSetImmediate } = process.getBuiltinModule("node:timers");
+const answered = new WeakSet<EventTarget>();
+for (const type of ["load", "error"]) {
+  document.addEventListener(type, (event) => answered.add(event.target!), true);
+}
+const loadsStyle = (link: Element) => {
+  const rel = (link.getAttribute("rel") ?? "").toLowerCase().split(/\s+/);
+  return (
+    !!link.getAttribute("href") &&
+    (rel.includes("stylesheet") ||
+      (rel.includes("preload") && link.getAttribute("as")?.toLowerCase() === "style"))
+  );
+};
+new MutationObserver((records) => {
+  for (const node of records.flatMap((record) => Array.from(record.addedNodes))) {
+    if (!(node instanceof Element)) continue;
+    const links = [node, ...node.querySelectorAll("link")];
+    for (const link of links.filter(
+      (element) => element.localName === "link" && loadsStyle(element),
+    )) {
+      nodeSetImmediate(() => {
+        if (answered.has(link) || !link.isConnected) return;
+        answered.add(link);
+        link.dispatchEvent(new Event("load"));
+      });
+    }
+  }
+}).observe(document, { childList: true, subtree: true });

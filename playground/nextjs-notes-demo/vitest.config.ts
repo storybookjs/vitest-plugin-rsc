@@ -128,8 +128,7 @@ const nodeProject = (
     overTcp = false,
     mode = "fidelity",
     cacheDevServer = mode === "fast",
-    files,
-  }: { overTcp?: boolean; mode?: Mode; cacheDevServer?: boolean; files?: string[] } = {},
+  }: { overTcp?: boolean; mode?: Mode; cacheDevServer?: boolean } = {},
 ) =>
   defineProject({
     root,
@@ -167,7 +166,7 @@ const nodeProject = (
       name,
       provide: { cacheDevServer },
       // test/page-leaks.test.tsx runs in Chromium and here alike.
-      include: files ?? [
+      include: [
         overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}",
         ...(overTcp ? [] : ["test/page-leaks.test.tsx"]),
       ],
@@ -187,13 +186,7 @@ const nodeProject = (
 
 export const nextjsNotesProjects = [
   nodeProject("nextjs-notes-demo-happy-dom", "happy-dom", { cacheDevServer: true }),
-  // In fast mode the probes of the stores, not yet the pages: the pages of
-  // app/notes/page.node.test.tsx time out in fast mode. Not because of the
-  // database's timers, which vitest.setup.node.ts keeps on one clock.
-  nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", {
-    mode: "fast",
-    files: ["components/async-context.node.test.tsx"],
-  }),
+  nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", { mode: "fast" }),
   nodeProject("nextjs-notes-demo-jsdom", "jsdom"),
   nodeProject("nextjs-notes-demo-tcp", "happy-dom", { overTcp: true }),
   browserProject("nextjs-notes-demo-browser", "fidelity"),

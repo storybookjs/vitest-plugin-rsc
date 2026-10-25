@@ -18,3 +18,21 @@ test("the boxes of a range: none", () => {
   expect(Array.from(range.getClientRects())).toEqual([]);
   expect(range.getBoundingClientRect().width).toBe(0);
 });
+
+test("a stylesheet and its preload load once, which jsdom never answers itself", async () => {
+  const events: string[] = [];
+  const links = [
+    { rel: "preload", as: "style", href: "/a.css" },
+    { rel: "stylesheet", href: "/a.css" },
+  ].map((attributes) => {
+    const link = document.createElement("link");
+    for (const [name, value] of Object.entries(attributes)) link.setAttribute(name, value);
+    link.addEventListener("load", () => events.push(`load ${link.rel}`));
+    link.addEventListener("error", () => events.push(`error ${link.rel}`));
+    return link;
+  });
+  document.head.append(...links);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  for (const link of links) link.remove();
+  expect(events).toEqual(["load preload", "load stylesheet"]);
+});

@@ -104,3 +104,45 @@ test("ends happy-dom's task of a request that is aborted while the app answers i
   await ended;
   await happyDOM.waitUntilComplete();
 });
+
+// The events of a link of the page, from when it is in the document until
+// a task after happy-dom answers it, or the host would.
+async function eventsOf(attributes: Record<string, string>): Promise<string[]> {
+  const link = document.createElement("link");
+  const events: string[] = [];
+  for (const type of ["load", "error"]) link.addEventListener(type, () => events.push(type));
+  for (const [name, value] of Object.entries(attributes)) link.setAttribute(name, value);
+  document.head.append(link);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  link.remove();
+  return events;
+}
+
+test("a preload of a stylesheet loads once, which happy-dom never answers itself", async () => {
+  expect(await eventsOf({ rel: "preload", as: "style", href: "/a.css" })).toEqual(["load"]);
+});
+
+test("a stylesheet loads once: happy-dom answers it itself, as the plugin sets it to", async () => {
+  settings.handleDisabledFileLoadingAsSuccess = true;
+  expect(await eventsOf({ rel: "stylesheet", href: "/b.css" })).toEqual(["load"]);
+});
+
+test("a preload of a stylesheet loads also under a test's fake timers", async () => {
+  vi.useFakeTimers();
+  try {
+    const link = document.createElement("link");
+    const loaded = new Promise((resolve) => link.addEventListener("load", resolve));
+    for (const [name, value] of Object.entries({ rel: "preload", as: "style", href: "/c.css" })) {
+      link.setAttribute(name, value);
+    }
+    document.head.append(link);
+    await loaded;
+    link.remove();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a preload of anything else gets no answer of the host", async () => {
+  expect(await eventsOf({ rel: "preload", as: "font", href: "/d.woff2" })).toEqual([]);
+});
