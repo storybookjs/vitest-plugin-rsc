@@ -70,7 +70,8 @@ export type SpeedOptions = {
    */
   flightLoads?: boolean;
   /**
-   * Experimental. Next's `<Link>` and `<Form>` prefetch nothing.
+   * Experimental. Next's router prefetches nothing: not for a `<Link>` or a
+   * `<Form>`, nor for a `router.prefetch()` of the app.
    *
    * Gives up: a test sees no prefetch: no request of one, and no route
    * that renders from what one got.
