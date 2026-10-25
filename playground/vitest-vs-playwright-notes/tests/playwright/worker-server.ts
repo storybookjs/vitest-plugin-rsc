@@ -45,9 +45,13 @@ export const serverPerWorker: typeof base = base.extend<
   // worker stops while its server starts.
   database: [
     // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
-    async ({}, use) => {
+    async ({}, use, workerInfo) => {
       const database = new URL(env.DATABASE_URL!);
       const name = database.pathname.slice(1);
+      // The drop below forces: never on a database the config did not name.
+      if (name !== `notes_w${workerInfo.parallelIndex}`) {
+        throw new Error(`DATABASE_URL names ${name}, not notes_w${workerInfo.parallelIndex}`);
+      }
       const postgres = new URL(database);
       postgres.pathname = "/postgres";
       const drop = `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`;
