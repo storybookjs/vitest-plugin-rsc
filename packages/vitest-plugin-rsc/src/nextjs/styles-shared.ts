@@ -24,14 +24,6 @@ export const stylesheetsEvent = "vitest-plugin-rsc:next-stylesheets";
  */
 export const stylesheetsChangedEvent = "vitest-plugin-rsc:next-stylesheets-changed";
 
-/**
- * What the dev server tells the page as its watcher sees a file added,
- * changed or removed: the stylesheets of a route that it answered at
- * `stylesheetsEvent` may be others now. Nothing else changes them. A run
- * without a watcher, `vitest run`, hears none.
- */
-export const filesChangedEvent = "vitest-plugin-rsc:next-files-changed";
-
 /** Where Next's build puts the CSS of an app, under `/_next/`. */
 export const cssDirectory = "static/css";
 /**

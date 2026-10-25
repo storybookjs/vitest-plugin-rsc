@@ -105,8 +105,6 @@ export type NextRegistry = {
   speedFeatures?: SpeedFeatures;
   /** The caches of `oncePerTestFile()` in speed-features.ts, which a test file ends with. */
   testFileCaches?: Set<Map<string, Promise<unknown>>>;
-  /** The caches of `untilFilesChange()` in speed-features.ts, which a change of a file empties. */
-  fileChangeCaches?: Set<Map<string, Promise<unknown>>>;
   /**
    * For a profile of a test run: set to an array, the server adds the timing
    * of each request of the page to it, in the order they reached it.

@@ -12,9 +12,9 @@ import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { NoFallbackError } from "./compat/rsc/handlers.ts";
 import { preloadPage } from "./document.ts";
-import { untilFilesChange } from "./speed-features.ts";
+import { whileVersionStays } from "./speed-features.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { askDevServer } from "../utils.ts";
+import { askDevServer, versionOfModules } from "../utils.ts";
 // By the package, so that it stays a module of its own with its "use client"
 // in the build of the package, and in the one of the app it is a client
 // reference: see node-rendered.tsx.
@@ -187,11 +187,13 @@ if (directory) {
   };
 } else {
   // Every request of a page asks: with the speed feature `cacheDevServer` once,
-  // until the dev server says that a file changed, which in a run without a
-  // watcher it never does.
+  // for as long as the modules that the dev server reads them off stay: those
+  // of this layer and of the layer of the browser, with Client Components, by
+  // the version of each, which the page asks for once per test file.
   const stylesheets = new Map<string, Promise<Stylesheets>>();
+  const version = () => Promise.all(["client", "react_client"].map(versionOfModules)).then(String);
   registry.loadStylesheets = (entry, inline, files) =>
-    untilFilesChange(stylesheets, JSON.stringify([entry, inline, files]), () =>
+    whileVersionStays(stylesheets, JSON.stringify([entry, inline, files]), version, () =>
       askDevServer<Stylesheets>(stylesheetsEvent, {
         entry,
         inline,

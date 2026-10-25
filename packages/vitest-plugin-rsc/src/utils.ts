@@ -257,14 +257,20 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
   return fetchedModulesOf.get(environment) ?? askForModules(environment);
 }
 
+/**
+ * The version of the modules of `environment` that the dev server has: when
+ * Vite last invalidated one of them, see `versionOf()` in module-versions.ts.
+ */
+export function versionOfModules(environment: string): Promise<number> {
+  return requestOverWebSocket(versionEvent, { environment }) as Promise<number>;
+}
+
 // The modules that were fetched, when the server still has that version of
 // its modules.
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
-  const fetched = requestOverWebSocket(versionEvent, { environment }).then(
+  const fetched = versionOfModules(environment).then(
     (version): FetchedModules =>
-      known && known.version === version
-        ? known
-        : { version: version as number, results: new Map() },
+      known && known.version === version ? known : { version, results: new Map() },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and

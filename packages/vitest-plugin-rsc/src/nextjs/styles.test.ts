@@ -13,7 +13,7 @@ import {
 } from "vite";
 import { expect, onTestFinished, test } from "vitest";
 import type { NextProject } from "./project.ts";
-import { componentPagePath, filesChangedEvent, type BuiltFiles } from "./styles-shared.ts";
+import { componentPagePath, type BuiltFiles } from "./styles-shared.ts";
 import {
   builtHostFileKey,
   createStyles,
@@ -522,37 +522,4 @@ test("lists the modules of every route in a static build, without what a segment
   for (const file of ["lazy.js", "shared.js", "list.js"]) {
     expect(listed).not.toContain(chunkOf(file));
   }
-});
-
-// The page keeps the stylesheets of a route until the dev server says that a
-// file changed: see `untilFilesChange()` in speed-features.ts.
-test("tells the page as its watcher sees a file change", async () => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-watch-")));
-  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
-  const styles = createStyles({
-    getProject: () => ({ root, assetPath: "/_next/", config: {} }) as unknown as NextProject,
-    environments: { rsc: "client", ssr: "ssr", browser: "react_client" },
-    isServerCode: () => true,
-    isHostFile: () => false,
-    pageRoutes: () => new Map(),
-    entryIdOf: () => "\0virtual:vitest-plugin-rsc/next-route/0",
-    lists: [],
-  });
-  const server = await createServer({
-    root,
-    configFile: false,
-    logLevel: "silent",
-    server: { middlewareMode: true, ws: false },
-    plugins: styles.plugins,
-  });
-  onTestFinished(() => server.close());
-  const sent: unknown[] = [];
-  server.environments.client.hot.send = (payload: unknown) => void sent.push(payload);
-  // As chokidar emits every event of a file.
-  for (const event of ["add", "change", "unlink"]) {
-    server.watcher.emit("all", event, path.join(root, "app/page.tsx"));
-  }
-  expect(sent).toEqual(
-    Array.from({ length: 3 }, () => ({ type: "custom", event: filesChangedEvent })),
-  );
 });
