@@ -95,9 +95,17 @@ export function vitestPluginRSC(): Plugin[] {
     {
       name: "rsc:run-in-browser",
       // Vitest's hook, which awaits what it returns.
-      configureVitest: (async ({ project }: { project: VitestProject }) => {
+      configureVitest: (async ({ project, defineCacheKeyGenerator }: VitestPluginContext) => {
         inNode = hostsPageInNode(project.config);
-        if (inNode) await startWorkerPage(project);
+        if (!inNode) return;
+        await startWorkerPage(project);
+        // Vitest keeps what it compiled on disk for the next run, by a key
+        // without the version of the optimizer's pre-bundles, which it has
+        // turned off without Browser Mode: a module that imports one has
+        // that version in its URL.
+        defineCacheKeyGenerator?.(
+          ({ environment }) => environment.depsOptimizer?.metadata.browserHash ?? "",
+        );
       }) as unknown as () => void,
       resolveId(source) {
         if (source === pageHostId) return `\0${pageHostId}`;
@@ -233,6 +241,13 @@ type VitestProject = {
   };
   vite: ViteDevServer;
 };
+// What Vitest gives `configureVitest`.
+type VitestPluginContext = {
+  project: VitestProject;
+  defineCacheKeyGenerator?: (
+    generate: (context: { environment: DevEnvironment }) => string,
+  ) => void;
+};
 
 // What the page has from its host in a worker of Node.js, before the worker
 // starts. The page's origin is the dev server's, as in a browser: what the
@@ -345,7 +360,15 @@ function workerPlugins(): Plugin[] {
               .flat()
               .filter((file) => !normalizePath(file).startsWith(ownDir)),
           ];
-          return { cacheDir, environments: { client: { optimizeDeps: { entries } } } };
+          // And no environment bundles Vitest into a dependency that
+          // imports it, like the matchers of `@testing-library/jest-dom`,
+          // which would extend another `expect` than the test's: the worker
+          // has the one Vitest, as Vitest's own optimizer has it.
+          return {
+            cacheDir,
+            optimizeDeps: { exclude: ["vitest"] },
+            environments: { client: { optimizeDeps: { entries } } },
+          };
         },
       },
     },

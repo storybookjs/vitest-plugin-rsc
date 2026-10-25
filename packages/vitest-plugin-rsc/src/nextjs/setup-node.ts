@@ -1,11 +1,10 @@
+import { inject } from "vitest";
 import { setUpTestFiles } from "./setup.ts";
 
 // The setup file of a run in a worker of Node.js, with a DOM of happy-dom or
 // jsdom, which `vitestPluginNext()` registers without Browser Mode. See
-// setup.ts.
+// setup.ts. The setup files of the run are what `vitestPluginNext()`
+// provides (provided-context.d.ts), where Browser Mode has them as
+// `server.config` of `vitest/browser`.
 
-// The config of the run, as Vitest gives it to its worker: Browser Mode has
-// it as `server.config` of `vitest/browser`.
-type Worker = { __vitest_worker__?: { config?: { setupFiles?: string[] } } };
-
-await setUpTestFiles((globalThis as Worker).__vitest_worker__?.config?.setupFiles ?? []);
+await setUpTestFiles(inject("vitest-plugin-rsc:setup-files"));

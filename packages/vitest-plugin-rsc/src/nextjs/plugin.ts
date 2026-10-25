@@ -1340,11 +1340,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         });
         serverCode.addTestFiles((file) => isSetupFile(file) || isIncluded(file));
         // Without Browser Mode the tests run in a worker of Node.js, which
-        // has no `vitest/browser`. As the `config` hook put it, first.
+        // has no `vitest/browser`. As the `config` hook put it, first. And
+        // the worker gets the setup files from here: see setup-node.ts.
         if (!test.browser.enabled) {
           test.setupFiles = test.setupFiles.map((file) =>
             normalizePath(file) === setupFile ? nodeSetupFile : file,
           );
+          testProject.provide("vitest-plugin-rsc:setup-files", test.setupFiles);
         }
       },
       // Without Vitest, a page of the host has the rsc layer's modules as the
