@@ -11,6 +11,7 @@ import {
   bcrypt,
   derive,
   installWebCrypto,
+  nobleArgon2,
   noblePbkdf2,
   nobleScrypt,
   nodeCrypto as fastNodeCrypto,
@@ -297,4 +298,32 @@ test("argon2: a hash with associated data has it in its PHC string, and verifies
   expect(await lib.hash(password, { salt, associatedData: new Uint8Array() })).toBe(
     await lib.hash(password, { salt }),
   );
+});
+
+test("Argon2's bytes are the same through argon2, @node-rs/argon2, @noble/hashes and node:crypto, as the real ones", async () => {
+  const salt = new Uint8Array(nodeCrypto.randomBytes(16));
+  const secret = Buffer.from("pepper");
+  // @node-rs/argon2's defaults: Argon2id, 19 MiB, 2 passes, 1 lane, 32 bytes.
+  const node = new Uint8Array(
+    fast.argon2Sync("argon2id", {
+      message: password,
+      nonce: salt,
+      parallelism: 1,
+      tagLength: 32,
+      memory: 19456,
+      passes: 2,
+      secret,
+    }),
+  );
+  const options = { salt, secret, memoryCost: 19456, timeCost: 2, parallelism: 1 };
+  expect(
+    new Uint8Array((await argon2().hash(password, { ...options, raw: true })) as Uint8Array),
+  ).toEqual(node);
+  expect(new Uint8Array(nodeRsArgon2().hashRawSync(password, { salt, secret }))).toEqual(node);
+  expect(nobleArgon2().argon2id(password, salt, { m: 19456, t: 2, p: 1, key: secret })).toEqual(
+    node,
+  );
+  // The hash of a PHC string is those bytes.
+  const encoded = String(await argon2().hash(password, options));
+  expect(encoded.split("$").at(-1)).toBe(Buffer.from(node).toString("base64").replace(/=+$/, ""));
 });

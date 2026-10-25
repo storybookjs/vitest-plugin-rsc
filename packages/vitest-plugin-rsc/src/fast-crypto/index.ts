@@ -299,6 +299,8 @@ function argon2Raw(password: Input, salt: Input, params: Argon2Params): Bytes {
     length,
   );
   // The mark, where the hash is long enough to keep 16 bytes of the digest.
+  // In the bytes of every API, which the real Argon2 gives the same for the
+  // same inputs, and so in the hash of a PHC string, which is those bytes.
   if (length >= argon2Mark.length + 16) digest.set(argon2Mark);
   return digest;
 }
@@ -681,22 +683,18 @@ export function nodeCrypto(Buffer: { from(bytes: ArrayBuffer): Uint8Array }) {
     nodeInteger("parameters.tagLength", tagLength, 4);
     nodeInteger("parameters.memory", memory, 8 * parallelism);
     nodeInteger("parameters.passes", passes, 1);
-    // No mark: Node.js returns the bytes, and the app compares them.
+    // The bytes of the other APIs of Argon2, as the real ones give the same.
     return buffer(
-      derive(
-        algorithm,
-        [
-          message,
-          nonce,
-          0x13,
-          memory,
-          passes,
-          parallelism,
-          parameters.secret,
-          parameters.associatedData,
-        ],
-        tagLength,
-      ),
+      argon2Raw(message, nonce, {
+        type,
+        version: 0x13,
+        memory,
+        passes,
+        parallelism,
+        length: tagLength,
+        secret: parameters.secret,
+        associatedData: parameters.associatedData,
+      }),
     );
   };
 
