@@ -90,16 +90,19 @@ export type SpeedOptions = {
    */
   immediates?: boolean;
   /**
-   * Experimental. `expect.element()` looks for an element again on every
-   * change of the DOM, not after a growing wait, and `expect.poll()` every
-   * 5 ms unless the config sets `expect.poll.interval`.
+   * Experimental. `expect.element()` and `expect.poll()` look again on the
+   * next change of the document, not after a growing wait: a mutation of the
+   * DOM, or an event of what changes without one, like `input` or the `load`
+   * of a stylesheet; after 5 ms for what a script sets on a property. Not
+   * with an interval of the poll's own, nor while the test's timers are fake;
+   * an `expect.poll.interval` of the config does not count.
    *
    * Gives up nothing: it changes when an assertion looks at the DOM, not
    * what it sees. Without it, Vitest waits between the looks, after 0, 20,
-   * 50, 100 and then every 500 ms, and a test sees most changes tens of
+   * 50, 100, 100 and then every 500 ms, and a test sees most changes tens of
    * milliseconds late. On an M1 Pro, the 500 tests of the notes benchmark
-   * take 60 s without it and 26 s with it in fidelity mode, and 53 s and
-   * 18 s in fast mode.
+   * took about 60 s without it and 26 s with it in fidelity mode, and 52 s
+   * and 17 s in fast mode.
    *
    * Default: `true` in both modes.
    */
