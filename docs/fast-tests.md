@@ -5,8 +5,8 @@ How to get the quickest feedback loop for the end-to-end scenarios of a Next.js 
 > [!NOTE]
 > **Status, 25 October 2026.** None of this is released yet. Fast mode and its speed features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), the pull request of fast mode, and so is everything below unless it names a draft pull request on top of it:
 >
-> - On #251: both modes and every speed feature, `watchDom` in both modes, the wait for the next change of the document (#266), the data layer of the notes apps (#262), one CommonJS object per ES module in the pre-bundles (#264), the patch of `@vitest/mocker` (#258), the profile config at any number of workers (#271), and the benchmark on Bun.
-> - On draft pull requests: `dom-locators` (#255), the stylesheets of a route asked once per run (#268), the warmup of the server layer (#263), and a session and its user in one query (#272).
+> - On #251: both modes and every speed feature, `watchDom` in both modes, the wait for the next change of the document (#266), the data layer of the notes apps (#262), one CommonJS object per ES module in the pre-bundles (#264), the patch of `@vitest/mocker` (#258), the profile config at any number of workers (#271), the stylesheets of a route asked once per run (#268), the warmup of the ssr layer (#275), and the benchmark on Bun.
+> - On a draft pull request: `dom-locators` (#255).
 >
 > Most numbers were measured on earlier states of #251, and each section says which. The CPU profiles, the runs with several workers and the `dom-locators` column ran on #251 with #255 merged in, which adds the benchmark's `dom-locators` tests and changes nothing in the plugin.
 
@@ -95,7 +95,7 @@ The fidelity column turns one feature on over fidelity mode with `watchDom` off,
 What the table says:
 
 - **`watchDom` is most of the difference, and gives up nothing.** That's why it's on in both modes. Its 74 ms here and the 68 ms of [Waiting for the page](#waiting-for-the-page) come from two series of runs.
-- **`cacheDevServer` is next.** A request of the page asks the dev server about the stylesheets and modules of its route: with the answers kept, a Server Action costs 1.3 ms less, a navigation 0.7, a page load 0.5. On draft #268, a page asks for the stylesheets of a route once per run in both modes, which takes 2.9 ms per test off fidelity mode with `watchDom` (23.55 → 22.08 s, 5 runs each, σ ≤ 0.5 s). What `cacheDevServer` saves on top of that isn't measured yet.
+- **`cacheDevServer` is next.** A request of the page asks the dev server about the stylesheets and modules of its route: with the answers kept, a Server Action costs 1.3 ms less, a navigation 0.7, a page load 0.5. Since #268, a page asks for the stylesheets of a route once per run in both modes, which took 2.9 ms per test off fidelity mode with `watchDom`, measured on its draft (23.55 → 22.08 s, 5 runs each, σ ≤ 0.5 s). What `cacheDevServer` saves on top of that isn't measured yet.
 - **`keepApp` and `flightLoads` remove the HTML of a page load:** reading it to the end costs 0.7–1.2 ms per page load, and what follows the Flight payload 0.6 ms.
 - **Prefetches run beside the test.** With `watchDom` off, fidelity mode sends 3,357 prefetches in a run, 10 s of request time, but they take only 0.4 s of the tests' time. With `watchDom` on, it sends 1,240–1,410, as the tests end sooner.
 - **`immediates` measures nothing**, in either mode: no phase of a request and no wait moves.
@@ -196,7 +196,7 @@ And two that the notes apps have, with what they cost:
 - **The signed-in user once per render**, with React's `cache()`. The layout and the page both ask for the user; a render looks it up once. With Better Auth, that's two queries where it was four. A Server Action isn't a render, so it looks the user up itself.
 - **A reset in one round trip.** `resetDb()` before each test takes 0.28 ms.
 
-What a well-built app doesn't do per request: build the same SQL again, query for what an earlier query of the same render has, or look up the session in every component that needs it. Draft #272 also reads a session and its user in one query, by Better Auth's joins.
+What a well-built app doesn't do per request: build the same SQL again, query for what an earlier query of the same render has, or look up the session in every component that needs it.
 
 With several workers, the database slows the most of any part of a page's work: with 4 workers, Postgres in WebAssembly takes 1.81× as long per test, against 1.52× for the whole page. See [Workers](#workers). A query less pays more there.
 
@@ -223,12 +223,12 @@ In a run of 500 tests, about 2.2 s is outside the test files: 0.88 s to the firs
 ### What else shortens it
 
 - **The patch of `@vitest/mocker`**, in [A faster start, until Vitest has it](nextjs-guide.md#a-faster-start-until-vitest-has-it), takes 0.27–0.42 s off a one-file run of about 4 s on CI.
-- **A warmup of the server layer** (draft #263) has Vite transform Next's server layers before the page asks for them: the first test of one file starts 63 ms sooner on Bun and 114 ms sooner on Node.js, which takes 91 ms off the wall on Node.js and nothing measurable on Bun (4 runs each).
+- **The warmup of the ssr layer** (#275) has Vite compile Next's ssr layer as the browser launches, before the page asks for it: on one file of the benchmark, warm, the first test starts 53–56 ms sooner, and the wall is 43 ms shorter on Bun and 105 ms on Node.js (3 interleaved runs per side, on its draft).
 - **The first route's modules.** Fetching them before the first test took that test from 522 to 142 ms in a run where they were fetched in time, but not in the others, so it isn't on #251.
 
 ### A cold cache
 
-Vite pre-bundles your dependencies once, into its dependency cache. Without that cache, one file takes 3.3–3.4 s on Bun, where it takes 2.3–2.4 s warm, and 4.5–4.6 s on Node.js, where it takes 3.2–3.3 s (3 and 4 runs each, on the builds of draft #263).
+Vite pre-bundles your dependencies once, into its dependency cache. Without that cache, one file takes 3.3–3.4 s on Bun, where it takes 2.3–2.4 s warm, and 4.5–4.6 s on Node.js, where it takes 3.2–3.3 s (3 and 4 runs each, on the builds of draft #263, which #275 superseded).
 
 The cache is optimized again when your config, your dependencies or the plugin's code change. The next run of the 500 tests then takes 1.5 s longer on Bun and 3.5 s longer on Node.js. Vitest's `Duration` line shows it as a `worker` share: 5–10% of a run of 500 tests, where it's otherwise 2% or less, and 36–52% of a run of one file, where it's otherwise 3–4%. A few things keep a cache of their own, so switching between them doesn't optimize again:
 
