@@ -7,12 +7,26 @@ name: Vitest vs Playwright
 # playground/vitest-vs-playwright-notes a notes app with accounts and 500
 # tests: see their README.md. Each job writes what its steps took to the
 # summary of the run, and every test with its time to its log.
+#
+# A pull request runs it when it changes what the numbers or the tests
+# depend on: the two apps, dom-locators, the plugin's runtime (its source, not
+# its unit tests; its package.json), the dependencies, or this workflow. Not
+# for a change of docs, of a README.md or of another playground: a run takes
+# about 40 minutes of runners. Any other change can run it by hand.
 on:
   pull_request:
     paths:
       - playground/vitest-vs-playwright/**
       - playground/vitest-vs-playwright-notes/**
-      - packages/vitest-plugin-rsc/**
+      - "!playground/vitest-vs-playwright*/**/*.md"
+      - packages/dom-locators/**
+      - "!packages/dom-locators/**/*.md"
+      - packages/vitest-plugin-rsc/src/**
+      - "!packages/vitest-plugin-rsc/src/**/*.test.ts"
+      - "!packages/vitest-plugin-rsc/src/**/*.test.tsx"
+      - packages/vitest-plugin-rsc/package.json
+      - pnpm-lock.yaml
+      - patches/**
       - .github/workflows/vitest-vs-playwright.yml
   workflow_dispatch:
 
