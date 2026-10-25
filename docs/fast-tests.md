@@ -321,7 +321,7 @@ npx vitest run --maxWorkers 4
 
 Each worker loads Next's runtime before its first test, so many workers on few cores can time out the first test. The notes demo sets `maxWorkers: 4`. Test files of about the same length, rather than one long one, let more workers help.
 
-The benchmark compares Vitest with Playwright on 1 worker. Playwright's tests share one database there, Postgres in Docker, so they can't run in parallel; every worker of Vitest has a database of its own. A run of Vitest with 4 workers is a different comparison, not the same benchmark faster.
+The benchmark compares Vitest with Playwright at 1 and at 4 workers. Each test has a user and notes of its own, so Playwright's workers share one `next start` and one Postgres, `fullyParallel`, as a project's suite runs; every worker of Vitest is a page with a database of its own. At 1 worker the two compare test by test; at 4, what each needs to run the suite on one machine. The [benchmark's README](../playground/vitest-vs-playwright-notes/README.md) has the numbers.
 
 ## Without a browser
 
