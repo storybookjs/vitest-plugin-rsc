@@ -13,6 +13,10 @@ type PendingInvoke = {
 };
 type SocketMessage = { type?: string; event?: string; data?: unknown };
 
+const AsyncFunction = async function () {}.constructor as new (
+  ...args: string[]
+) => (...args: unknown[]) => Promise<unknown>;
+
 // Before anything replaces it, like a mock of the network.
 const nativeFetch = globalThis.fetch;
 let webSocket: WebSocket | undefined;
@@ -42,7 +46,7 @@ const browserHost: PageHost = {
   },
   navigation: (window as { navigation?: EventTarget }).navigation,
   loadsStylesheets: true,
-  serverWebApis: globalThis,
+  compileInPage: (params, body) => new AsyncFunction(...params, body),
   // No browser hands over what a page sends.
   interceptRequests: () => false,
   serverDir: "",

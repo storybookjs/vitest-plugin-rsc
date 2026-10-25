@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { isBuiltin } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { normalizePath, type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
@@ -369,10 +369,9 @@ function workerPlugins(): Plugin[] {
               /\/node_modules\/@vitejs\/plugin-rsc\//,
             ];
           }
-          // Node's own web APIs, kept for the server's layers before the DOM
-          // replaces them: see worker-web-apis.ts.
-          const webApis = pathToFileURL(ownFile("worker-web-apis")).href;
-          test.execArgv = [...(test.execArgv ?? []), "--import", webApis];
+          // The page in a realm of its own, and Node's web APIs on the
+          // worker's global for the server: see happy-dom-environment.ts.
+          if (test.environment === "happy-dom") test.environment = ownFile("happy-dom-environment");
           // What the optimizer of the rsc layer scans: the test files and the
           // setup files, which Vitest names with Browser Mode only. Without
           // them it finds their dependencies as a test imports them, and

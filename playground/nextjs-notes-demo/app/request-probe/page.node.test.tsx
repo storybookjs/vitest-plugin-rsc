@@ -30,6 +30,21 @@ test("handleRequest() takes a Request of the page's, for a route that fetches wi
   expect(await response.json()).toEqual({ network: "from the network" });
 });
 
+// With happy-dom the page is a realm of its own, and the server has Node's
+// `Blob`; jsdom's window is the worker's global, whose `Blob` is jsdom's.
+test.runIf(happyDom)(
+  "a route handler answers with a Blob, and copies the headers of its request",
+  async () => {
+    const url = new URL("/api/echo/blob", location.href);
+    const response = await handleRequest(new Request(url, { headers: { accept: "text/x-probe" } }));
+    expect({
+      type: response.headers.get("content-type"),
+      accept: response.headers.get("x-accept"),
+      text: await response.text(),
+    }).toEqual({ type: "text/plain", accept: "text/x-probe", text: "a blob" });
+  },
+);
+
 test("a fetch follows a redirect of the app", async () => {
   await renderServer({ url: "/request-probe" });
   await userEvent.click(await screen().findByRole("button", { name: "redirect" }));
@@ -54,9 +69,10 @@ test.runIf(happyDom)(
     await userEvent.type(await screen().findByLabelText("title"), "a note");
     // The files that a file chooser gives the input. Not `userEvent.upload()`,
     // which sets `files` on the element itself, where happy-dom's `FormData`
-    // does not read them.
+    // does not read them. The page's `File`: the test's global has Node's,
+    // the server's.
     const chosen = new DataTransfer();
-    chosen.items.add(new File(["hello"], "hello.txt", { type: "text/plain" }));
+    chosen.items.add(new window.File(["hello"], "hello.txt", { type: "text/plain" }));
     (await screen().findByLabelText<HTMLInputElement>("file")).files = chosen.files;
     await userEvent.click(await screen().findByRole("button", { name: "upload" }));
     expect(await answer("a note hello.txt hello read=hello")).toBeTruthy();

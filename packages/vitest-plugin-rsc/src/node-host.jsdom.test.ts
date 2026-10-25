@@ -3,8 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
-// What a worker of the Node host loads with `--import`, before the DOM.
-import "./worker-web-apis.ts";
 
 const { nodeHost } = await import("./node-host.ts");
 

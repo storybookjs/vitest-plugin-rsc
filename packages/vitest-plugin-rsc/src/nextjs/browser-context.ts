@@ -1,6 +1,7 @@
 import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import { pageFetch } from "./app-requests.ts";
 import { followNavigation } from "./document-loads.ts";
+import { fromPage } from "./from-page.ts";
 import { streamedContentQueue } from "./document.ts";
 import { appHasNavigations } from "./host-document.ts";
 import { PageStore } from "./page-store.ts";
@@ -86,33 +87,35 @@ const interceptedFetch = pageFetch<undefined>(
   () => async () => undefined,
 );
 const handsOver = pageHost.interceptRequests(async (request) =>
-  leftToDocument.has(request) ? undefined : interceptedFetch(request),
+  leftToDocument.has(request) ? undefined : interceptedFetch(...fromPage(request)),
 );
 
 // A request of the page that is not the app's goes to the `fetch` the
 // document had: the browser's, or one of the host's, like a mock of the
-// network. Where the DOM hands requests over, as one `Request`, which is what
-// it gives its interceptor, and which keeps `init` where happy-dom's `fetch`
-// drops it for a `Request`.
+// network. Where the DOM hands requests over, with what the page asked for,
+// as one `Request`, which is what it gives its interceptor, and which keeps
+// `init` where happy-dom's `fetch` drops it for a `Request`. The app gets the
+// request as the server's (from-page.ts).
+const toDocument =
+  (input: RequestInfo | URL, init: RequestInit | undefined) => (): typeof fetch => {
+    const documentFetch = savedValue<typeof fetch>(fetchBinding) ?? registry.network;
+    // One realm: the request as the app was asked, a copy of a body it read.
+    if (!handsOver) return documentFetch;
+    return () => {
+      const request = new window.Request(input, init);
+      leftToDocument.add(request);
+      return documentFetch(request);
+    };
+  };
 const fetchBinding: Binding = {
-  target: globalThis,
+  target: window,
   name: "fetch",
   own: {
     configurable: true,
     enumerable: true,
     writable: true,
-    value: pageFetch(
-      () => opened?.store,
-      () => {
-        const documentFetch = savedValue<typeof fetch>(fetchBinding) ?? registry.network;
-        if (!handsOver) return documentFetch;
-        return (input, init) => {
-          const request = new Request(input, init);
-          leftToDocument.add(request);
-          return documentFetch(request);
-        };
-      },
-    ),
+    value: (input: RequestInfo | URL, init?: RequestInit) =>
+      pageFetch(() => opened?.store, toDocument(input, init))(...fromPage(input, init)),
   },
 };
 

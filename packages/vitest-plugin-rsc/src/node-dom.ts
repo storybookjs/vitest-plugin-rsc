@@ -4,24 +4,6 @@
 // Node.js does otherwise and cannot be given is in "The Node host" of
 // docs/internals/architecture.md.
 
-const scope = globalThis as unknown as Record<PropertyKey, unknown>;
-
-// The typed arrays and `ArrayBuffer` of the worker's realm, as
-// worker-web-apis.ts kept them: Vitest's environment of jsdom puts those of
-// jsdom's realm on the global, where Node's `Buffer`, `TextEncoder` and
-// `crypto` make the worker's, which then fail an `instanceof Uint8Array`, as
-// Next's server code and its hashes check. In a browser, the page and the
-// server have one realm; with happy-dom too. Vitest's global writes through
-// to jsdom's window, so what jsdom makes has the worker's too. A module that
-// ran before this one keeps jsdom's: node-host.ts, which imports it, is
-// among the first of the page.
-const typedArrays = scope[Symbol.for("vitest-plugin-rsc:worker-typed-arrays")] as
-  | Record<string, unknown>
-  | undefined;
-for (const [name, value] of Object.entries(typedArrays ?? {})) {
-  if (scope[name] !== value) scope[name] = value;
-}
-
 // A document's constructed stylesheets, which jsdom has none of: a list that
 // keeps what it is given, as a document that adopts nothing in a browser.
 // The page puts back the list of the host's document after a page
@@ -63,6 +45,7 @@ if (!("getClientRects" in Range.prototype)) {
 // The media queries of the window, which jsdom has not: a query matches
 // nothing, as in a window that lays nothing out, and never changes. A library
 // asks as it renders, like next-themes for `prefers-color-scheme`.
+const scope = globalThis as unknown as Record<PropertyKey, unknown>;
 if (typeof scope.matchMedia !== "function") {
   scope.matchMedia = (query: string): MediaQueryList =>
     Object.assign(new EventTarget(), {

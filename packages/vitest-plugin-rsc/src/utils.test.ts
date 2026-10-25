@@ -68,6 +68,9 @@ vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
       return new Promise((resolve) => setTimeout(() => resolve(result)));
     },
     listen: (listener: PageNews) => (news = listener),
+    // One realm, as in a browser.
+    compileInPage: (params: string[], body: string) =>
+      new (async function () {}.constructor as FunctionConstructor)(...params, body),
   },
 }));
 

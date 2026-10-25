@@ -137,7 +137,7 @@ function createRunner(
       // The timers its code calls: see timers.ts.
       createImportMeta: (file) => ({ ...importMetaOf(environment, file), [timersKey]: timers }),
     },
-    droppingImportsOnceClosed(isClosed),
+    droppingImportsOnceClosed(isClosed, evaluatorOf(environment)),
   );
   return runner;
 }
@@ -487,53 +487,80 @@ const strict = '"use strict";';
 // load gets its modules from what the tab has fetched, and a module that was
 // fetched once is the same code for every page. What a module is, its exports
 // and its state, is in what it is called with, so every page still gets its
-// own. The code follows `"use strict";` on its line, as in coverage.ts.
-const compiledModules = new WeakMap<object, (...args: unknown[]) => Promise<unknown>>();
+// own. The code follows `"use strict";` on its line, as in coverage.ts. The
+// browser layer's in the page's realm, and the server's in this one: see
+// `compileInPage()` of page-host.ts.
+type Compile = (
+  params: readonly string[],
+  body: string,
+) => (...args: unknown[]) => Promise<unknown>;
 
-const pageLoadEvaluator: ModuleEvaluator = {
-  // The lines of the function before the code of the module.
-  startOffset: (() => {
-    const source = String(new AsyncFunction("a", "b", `${strict}/*code*/`));
-    return source.slice(0, source.indexOf("/*code*/")).split("\n").length - 1;
-  })(),
-  async runInlinedModule(context, code, module) {
-    // The answer of the server, which the pages share.
-    const fetched = module.meta as { code?: string } | undefined;
-    const shared = fetched?.code === code ? fetched : undefined;
-    let run = shared && compiledModules.get(shared);
-    if (!run) {
-      // The server names a module in its source map, and a dependency comes
-      // without one: see `dependencySourceMapPlugin()` in index.ts.
-      // On a line of its own: React and Next have it in a string.
-      if (!sourceUrlLineRE.test(code)) code += `\n//# sourceURL=${module.id}`;
-      run = new AsyncFunction(...contextKeys, strict + code);
-      if (shared) compiledModules.set(shared, run);
-    }
-    await run(...contextKeys.map((key) => context[key]));
-    Object.seal(context[ssrModuleExportsKey]);
-  },
-  async runExternalModule(file) {
-    if (!isHostModule(file)) return import(/* @vite-ignore */ file);
-    // What the page serves for a module of its own has that module as its
-    // default export: see host-module.ts. A static build has it in the
-    // host's build, which the list imports it from.
-    const load = hostModules ? hostModules[file] : () => import(/* @vite-ignore */ file);
-    if (!load) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
-    return ((await load()) as { default?: unknown }).default;
-  },
-};
+const compileHere: Compile = (params, body) => new AsyncFunction(...params, body);
+
+// The lines of the function before the code of the module.
+const startOffset = (() => {
+  const source = String(new AsyncFunction("a", "b", `${strict}/*code*/`));
+  return source.slice(0, source.indexOf("/*code*/")).split("\n").length - 1;
+})();
+
+function pageLoadEvaluator(compile: Compile): ModuleEvaluator {
+  const compiledModules = new WeakMap<object, (...args: unknown[]) => Promise<unknown>>();
+  return {
+    startOffset,
+    async runInlinedModule(context, code, module) {
+      // The answer of the server, which the pages share.
+      const fetched = module.meta as { code?: string } | undefined;
+      const shared = fetched?.code === code ? fetched : undefined;
+      let run = shared && compiledModules.get(shared);
+      if (!run) {
+        // The server names a module in its source map, and a dependency comes
+        // without one: see `dependencySourceMapPlugin()` in index.ts.
+        // On a line of its own: React and Next have it in a string.
+        if (!sourceUrlLineRE.test(code)) code += `\n//# sourceURL=${module.id}`;
+        run = compile(contextKeys, strict + code);
+        if (shared) compiledModules.set(shared, run);
+      }
+      await run(...contextKeys.map((key) => context[key]));
+      Object.seal(context[ssrModuleExportsKey]);
+    },
+    runExternalModule,
+  };
+}
+
+const evaluators = new Map<string, ModuleEvaluator>();
+function evaluatorOf(environment: string): ModuleEvaluator {
+  let evaluator = evaluators.get(environment);
+  if (!evaluator) {
+    const compile = environment === "react_client" ? pageHost.compileInPage : compileHere;
+    evaluators.set(environment, (evaluator = pageLoadEvaluator(compile)));
+  }
+  return evaluator;
+}
+
+async function runExternalModule(file: string) {
+  if (!isHostModule(file)) return import(/* @vite-ignore */ file);
+  // What the page serves for a module of its own has that module as its
+  // default export: see host-module.ts. A static build has it in the
+  // host's build, which the list imports it from.
+  const load = hostModules ? hostModules[file] : () => import(/* @vite-ignore */ file);
+  if (!load) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
+  return ((await load()) as { default?: unknown }).default;
+}
 
 // A runner that is closed, like the one of a page that has been left, settles
 // no more `import()` of its modules, as a browser drops what a page loads once
 // the page has gone: also one that it started before, and one that fails
 // because the runner is closed.
-function droppingImportsOnceClosed(isClosed: () => boolean): ModuleEvaluator {
+function droppingImportsOnceClosed(
+  isClosed: () => boolean,
+  evaluator: ModuleEvaluator,
+): ModuleEvaluator {
   const dropped = () => new Promise<never>(() => {});
   return {
-    ...pageLoadEvaluator,
+    ...evaluator,
     runInlinedModule(context, code, module) {
       const load = context[ssrDynamicImportKey];
-      return pageLoadEvaluator.runInlinedModule(
+      return evaluator.runInlinedModule(
         {
           ...context,
           [ssrDynamicImportKey]: (...args) =>
