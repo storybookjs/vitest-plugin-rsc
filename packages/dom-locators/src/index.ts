@@ -15,6 +15,7 @@ export {
   type DomLocator as Locator,
   type ClickOptions,
   type DoubleClickOptions,
+  type DropOptions,
   type FillOptions,
   type FilterOptions,
   type FindOptions,

@@ -23,7 +23,7 @@ import { isInsideScope, sortInDOMOrder } from "./dom-utils.ts";
 import { fill, selectOptions, setInputFiles, type SelectValue } from "./form-controls.ts";
 import { focusForPress, press, pressSequentially, type Key } from "./keyboard.ts";
 import { holdOnly, isModifier, type Modifier } from "./modifiers.ts";
-import { click, hover, wheel, type MouseButton, type Position } from "./pointer.ts";
+import { click, drag, hover, wheel, type MouseButton, type Position } from "./pointer.ts";
 import { beginAriaCaches, endAriaCaches } from "./role-utils.ts";
 import {
   byAltText,
@@ -77,6 +77,20 @@ export interface ClickOptions extends DoubleClickOptions {
   /** How many presses of the button in a row. Default: 1. */
   clickCount?: number;
 }
+
+/** The options of `dropTo()`, of Playwright's `dragTo()` that the page models. */
+export interface DropOptions extends ForceOptions {
+  /** Where the mouse presses in the element, from the top left corner of its padding box. Default: its middle. */
+  sourcePosition?: Position;
+  /** Where it lets go in the target. Default: its middle. */
+  targetPosition?: Position;
+  /** Whether to wait for both elements and their checks, and not to act. */
+  trial?: boolean;
+  /** No effect, as in Playwright. */
+  noWaitAfter?: boolean;
+}
+
+const dropKeys = ["timeout", "force", "sourcePosition", "targetPosition", "trial", "noWaitAfter"];
 
 /** The options of `fill()`, `clear()` and `selectOptions()`, of Playwright's that the page models. */
 export interface FillOptions extends ForceOptions {
@@ -647,8 +661,29 @@ export class DomLocator {
     pressSequentially(element, text);
   }
 
-  dropTo(_target: unknown, _options?: unknown): Promise<void> {
-    return deferred("dropTo()");
+  /**
+   * Drags the element onto `target` once both are visible, as Playwright's
+   * `dragTo()`: the mouse presses on it, moves onto the target and lets go
+   * there. For what the page drags with the events of the mouse; an
+   * element the browser drags itself, `draggable`, throws.
+   */
+  async dropTo(target: DomLocator, options: DropOptions = {}): Promise<void> {
+    checkActionOptions("dropTo()", options, dropKeys);
+    if (!(target instanceof DomLocator)) {
+      throw new UnsupportedError(
+        `dropTo() takes a locator of dom-locators, not ${String(target)}: ${escapeHatch}.`,
+      );
+    }
+    for (const option of ["sourcePosition", "targetPosition"] as const) {
+      const position = options[option];
+      if (position !== undefined && !(Number.isFinite(position.x) && Number.isFinite(position.y))) {
+        throw new TypeError(`dropTo() has an invalid ${option}: ${JSON.stringify(position)}.`);
+      }
+    }
+    const source = await actionable(this.#target(), "dropTo()", ["visible"], options);
+    const element = await actionable(target.#target(), "dropTo()", ["visible"], options);
+    if (options.trial) return;
+    drag(source, element, options);
   }
   screenshot(_options?: unknown): Promise<never> {
     return deferred("screenshot()");

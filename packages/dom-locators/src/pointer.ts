@@ -1,10 +1,11 @@
-// The mouse: where it is, and the events of its moves and its presses, as
-// Chrome dispatches them for Playwright's `click()`, `dblclick()` and
-// `hover()`, at the middle of the element or at a position in it, on what is
-// there.
+// The mouse: where it is, which button it holds, and the events of its
+// moves, presses and wheel, as Chrome dispatches them for Playwright's
+// `click()`, `dblclick()`, `hover()`, `dragAndDrop()` and `mouse.wheel()`,
+// at the middle of the element or at a position in it, on what is there.
 
 import { isInsideScope, parentElementOrShadowHost } from "./dom-utils.ts";
 import { eventView, isRendered } from "./environment.ts";
+import { UnsupportedError, escapeHatch, previewNode } from "./errors.ts";
 import { focusOnPress } from "./focus.ts";
 import { modifierState } from "./modifiers.ts";
 
@@ -27,6 +28,11 @@ const buttons: Record<MouseButton, [button: number, bit: number]> = {
 // The element the mouse is on, and the ones it is in, for the events of its
 // next move: what it leaves and what it enters.
 let pointerPath: (Element | Document)[] = [];
+
+// The button held down: what it was pressed on, for the target of its
+// click, and whether the mouse's own events follow the pointer's, which a
+// cancelled `pointerdown` cancels.
+let held: { button: MouseButton; target: Element; mouseEvents: boolean } | undefined;
 
 // The window's view of a point and what is at it.
 interface Point {
@@ -109,8 +115,15 @@ function moveTo({ x, y, target }: Point): void {
     ] as const) {
       const prefix = isPointer ? "pointer" : "mouse";
       const init = isPointer
-        ? { ...base, button: -1, buttons: 0, pointerId: 1, pointerType: "mouse", isPrimary: true }
-        : { ...base, button: 0, buttons: 0 };
+        ? {
+            ...base,
+            button: -1,
+            buttons: heldButtons(),
+            pointerId: 1,
+            pointerType: "mouse",
+            isPrimary: true,
+          }
+        : { ...base, button: 0, buttons: heldButtons() };
       const bubbling = { ...init, bubbles: true, cancelable: true };
       const entering = { ...init, bubbles: false, cancelable: false, composed: false };
       if (last) last.dispatchEvent(make(`${prefix}out`, { ...bubbling, relatedTarget: target }));
@@ -128,37 +141,44 @@ function moveTo({ x, y, target }: Point): void {
     pointerEventOf("pointermove", {
       ...move,
       button: -1,
-      buttons: 0,
+      buttons: heldButtons(),
       pointerId: 1,
       pointerType: "mouse",
       isPrimary: true,
     }),
   );
-  target.dispatchEvent(new MouseEvent("mousemove", { ...move, button: 0, buttons: 0 }));
+  target.dispatchEvent(new MouseEvent("mousemove", { ...move, button: 0, buttons: heldButtons() }));
 }
 
-/**
- * A press and a release of `button` at `point`, the `detail`th in a row:
- * a `click` of the left button, an `auxclick` of another, and the
- * `contextmenu` of the right one after its press, as Chrome on Linux and
- * macOS.
- */
-function pressAndRelease({ x, y, target }: Point, button: MouseButton, detail: number): void {
-  const view = eventView(target.ownerDocument);
-  const base = {
+const heldButtons = () => (held ? buttons[held.button][1] : 0);
+
+/** What every event of a press and a release has: the point, its window, and the modifiers. */
+function pressInit({ x, y, target }: Point) {
+  return {
     clientX: x,
     clientY: y,
-    view,
+    view: eventView(target.ownerDocument),
     bubbles: true,
     cancelable: true,
     composed: true,
     ...modifierState(),
   };
+}
+
+/**
+ * A press of `button` at `point`, the `detail`th in a row: `pointerdown`,
+ * `mousedown`, the focus, and the `contextmenu` of the right button, as
+ * Chrome on Linux and macOS.
+ */
+function pressAt(point: Point, button: MouseButton, detail: number): void {
+  const { target } = point;
+  const base = pressInit(point);
   const pointer = { ...base, pointerId: 1, pointerType: "mouse", isPrimary: true };
   const [number, bit] = buttons[button];
   const down = target.dispatchEvent(
     pointerEventOf("pointerdown", { ...pointer, button: number, buttons: bit, pressure: 0.5 }),
   );
+  held = { button, target, mouseEvents: down };
   // A `pointerdown` that is cancelled cancels the mouse's own events, not the click.
   if (
     down &&
@@ -173,14 +193,38 @@ function pressAndRelease({ x, y, target }: Point, button: MouseButton, detail: n
       pointerEventOf("contextmenu", { ...pointer, button: number, buttons: bit, detail }),
     );
   }
+}
+
+/**
+ * The release of the button held at `point`: `pointerup`, `mouseup`, and
+ * a `click` of the left button, an `auxclick` of another, on what it was
+ * pressed and released on, or on what is around both.
+ */
+function releaseAt(point: Point, detail: number): void {
+  if (!held) return;
+  const { button, target: pressedOn, mouseEvents } = held;
+  held = undefined;
+  const { target } = point;
+  const base = pressInit(point);
+  const pointer = { ...base, pointerId: 1, pointerType: "mouse", isPrimary: true };
+  const [number] = buttons[button];
   target.dispatchEvent(pointerEventOf("pointerup", { ...pointer, button: number, buttons: 0 }));
-  if (down) {
+  if (mouseEvents) {
     target.dispatchEvent(
       new MouseEvent("mouseup", { ...base, button: number, buttons: 0, detail }),
     );
   }
+  const clicked = commonAncestor(pressedOn, target);
+  if (!clicked) return;
   const click = button === "left" ? "click" : "auxclick";
-  target.dispatchEvent(pointerEventOf(click, { ...pointer, button: number, buttons: 0, detail }));
+  clicked.dispatchEvent(pointerEventOf(click, { ...pointer, button: number, buttons: 0, detail }));
+}
+
+/** The innermost element that has both in it, through the hosts of shadow roots. */
+function commonAncestor(a: Element, b: Element): Element | undefined {
+  if (a === b) return a;
+  const around = new Set(pathOf(a));
+  return pathOf(b).find((node): node is Element => node instanceof Element && around.has(node));
 }
 
 /** What a click of Playwright's takes, of what the page models. */
@@ -200,7 +244,8 @@ export function click(element: Element, options: ClickOptions = {}): void {
   const point = pointFor(element, position);
   moveTo(point);
   for (let detail = 1; detail <= clickCount; detail++) {
-    pressAndRelease(point, button, detail);
+    pressAt(point, button, detail);
+    releaseAt(point, detail);
     if (detail === 2 && button === "left") dblclick(point);
   }
 }
@@ -272,4 +317,33 @@ function scrollerOf(target: Element, delta: { x: number; y: number }): Element {
     }
   }
   return target.ownerDocument.scrollingElement ?? target.ownerDocument.documentElement;
+}
+
+/** What a drag of Playwright's takes, of what the page models. */
+export interface DragOptions {
+  sourcePosition?: Position;
+  targetPosition?: Position;
+}
+
+/**
+ * Playwright's `dragAndDrop()` of an element that the page drags with the
+ * events of the mouse: it moves onto `source`, presses the left button,
+ * moves onto `target` and lets go there. An element that the browser drags
+ * itself, `draggable` as a link or an image is, throws: Chrome's drag and
+ * drop of HTML is not in the package.
+ */
+export function drag(source: Element, target: Element, options: DragOptions = {}): void {
+  const from = pointFor(source, options.sourcePosition);
+  for (let node: Element | undefined = from.target; node; node = parentElementOrShadowHost(node)) {
+    if ((node as HTMLElement).draggable === true) {
+      throw new UnsupportedError(
+        `dropTo() of an element the browser drags, ${previewNode(node)}, is not in dom-locators yet: ${escapeHatch}.`,
+      );
+    }
+  }
+  moveTo(from);
+  pressAt(from, "left", 1);
+  const to = pointFor(target, options.targetPosition);
+  moveTo(to);
+  releaseAt(to, 1);
 }

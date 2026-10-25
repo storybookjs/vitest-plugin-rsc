@@ -134,3 +134,14 @@ test("wheel turns the wheel over the element", async () => {
   await page.getByRole("button", { name: "Save" }).wheel({ direction: "down", times: 2 });
   expect(log.map((entry) => entry.split(" ")[0])).toEqual(["wheel@button", "wheel@button"]);
 });
+
+test("dropTo presses on the element, moves onto the target, lets go there, and clicks what has both", async () => {
+  document.body.innerHTML = "<main><button>From</button><p>To</p></main>";
+  log.length = 0;
+  await page.getByRole("button").dropTo(page.getByText("To"));
+  expect(log).toEqual([
+    "mousedown@button button=0 detail=1",
+    "mouseup@p button=0 detail=1",
+    "click@main button=0 detail=1",
+  ]);
+});

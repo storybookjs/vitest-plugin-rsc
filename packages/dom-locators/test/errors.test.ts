@@ -112,6 +112,17 @@ test("an action's option the package does not model throws, and so does an inval
   await expect(cancel.wheel({ delta: { y: 1 }, direction: "up" })).rejects.toThrow(/either/);
 });
 
+test("dropTo() of what the browser drags itself, or onto a locator of vitest/browser, throws", async () => {
+  document.body.innerHTML += '<div draggable="true">Card</div><a href="#x">Link</a>';
+  const target = page.getByRole("button", { name: "Cancel" });
+  await expect(page.getByText("Card").dropTo(target)).rejects.toThrow(UnsupportedError);
+  await expect(page.getByRole("link").dropTo(target)).rejects.toThrow(UnsupportedError);
+  // @ts-expect-error a locator of vitest/browser.
+  await expect(page.getByText("Text").dropTo(vitestPage.getByText("Text"))).rejects.toThrow(
+    UnsupportedError,
+  );
+});
+
 test("upload() of a path throws: the page cannot read a file", async () => {
   await expect(page.getByText("Text").upload("file.txt")).rejects.toThrow(UnsupportedError);
 });
@@ -141,7 +152,6 @@ test("a locator of vitest/browser in filter, and or, throws", () => {
 test("a deferred method throws, naming the way out", () => {
   const locator = page.getByRole("button", { name: "Cancel" });
   for (const call of [
-    () => locator.dropTo(page.getByText("Text")),
     () => locator.screenshot(),
     () => locator.mark("step"),
     () => page.viewport(100, 100),

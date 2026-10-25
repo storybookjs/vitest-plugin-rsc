@@ -157,6 +157,13 @@ export const steps: Step[] = [
     run: ({ page }) => page.getByRole("link", { name: "Go" }).hover({ modifiers: ["Control"] }),
   },
   {
+    name: "drag a button onto another",
+    run: ({ page }) =>
+      page
+        .getByRole("button", { name: "Save" })
+        .dropTo(page.getByRole("button", { name: "Other" })),
+  },
+  {
     name: "upload files",
     run: ({ page }) =>
       page
