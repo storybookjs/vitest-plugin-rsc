@@ -2,6 +2,7 @@ import { createNavigation } from "./navigation-shim.ts";
 import { channelTo } from "./node-channel.ts";
 import "./node-dom.ts";
 import type { PageHost, WebApis } from "./page-host.ts";
+import { runtimeRequestInit } from "./runtime-request-init.ts";
 
 // The host of a page in a worker of Node.js, with a DOM of happy-dom or
 // jsdom: Vitest without Browser Mode, which has no WebSocket to the dev
@@ -32,87 +33,60 @@ function missingWebApis(): never {
   );
 }
 
-const isOf = (value: unknown, of: abstract new (...args: never[]) => unknown) =>
-  value instanceof of;
+// What happy-dom's window has of its own: the settings of its browser, which
+// its `Fetch` reads at every request, its interceptor among them.
+type Intercepted = { request: Request };
+type HappyDom = {
+  settings: {
+    fetch: {
+      interceptor: {
+        beforeAsyncRequest?: (context: Intercepted) => Promise<Response | void>;
+      } | null;
+    };
+  };
+};
+const happyDom = (window as unknown as { happyDOM?: HappyDom }).happyDOM;
 
-// The page's fetch API is Node's too, as it is with jsdom, which has none of
-// its own: happy-dom's is a browser's, which drops the headers that the
-// plugin keeps for the server, `cookie` and `set-cookie`, and takes no
-// `Headers` of Node's. What the page sends the plugin sends to the app or to
-// Node's `fetch`, as a browser's `fetch` would. The DOM keeps its own
-// `FormData`, which reads a form, and its `Blob`, `File` and
-// `AbortController`: see `fromPage()`.
-const scope = globalThis as unknown as Record<string, unknown>;
-// The DOM's, to read a body of the DOM's with.
-const DomResponse = scope.Response !== webApis.Response ? Response : undefined;
-const { Request: NodeRequest, fetch: nodeFetch } = webApis;
+// With happy-dom, the page's fetch API is the DOM's own, as a browser's is
+// the page's. The page's `fetch` is the context's, as in a browser
+// (browser-context.ts); its `XMLHttpRequest` and the resources it loads go
+// through happy-dom's `Fetch`, whose interceptor hands the app's requests to
+// the server too (`interceptRequests()`), and sends the rest to the network
+// itself.
+//
+// jsdom has none of its own: there the page's fetch API is Node's, which
+// sends what the page sends to the app or to Node's `fetch`. The DOM keeps
+// its own `FormData`, which reads a form, and its `Blob`, `File` and
+// `AbortController`: a request of the page takes them as Node's. A body that
+// the page's `Response` reads stays Node's: see "What a DOM of Node.js does
+// otherwise than a browser" in docs/internals/architecture.md.
+if (!happyDom) {
+  const scope = globalThis as unknown as Record<string, unknown>;
+  const { Request: NodeRequest, fetch: nodeFetch } = webApis;
 
-// A `Request` of the page, as a browser's: a relative URL is of the page,
-// and a body or a signal of the DOM's is one of Node's. Any request is one.
-class PageRequest extends NodeRequest {
-  constructor(input: RequestInfo | URL, init?: RequestInit) {
-    super(
-      input instanceof NodeRequest ? input : new URL(String(input), location.href),
-      fromPage(init),
-    );
-  }
-
-  static override [Symbol.hasInstance](value: unknown): boolean {
-    return Function.prototype[Symbol.hasInstance].call(
-      this === PageRequest ? NodeRequest : this,
-      value,
-    );
-  }
-}
-
-scope.Request = PageRequest;
-scope.Response = webApis.Response;
-scope.Headers = webApis.Headers;
-scope.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
-  nodeFetch(new PageRequest(input, init));
-
-// A body or a signal of the DOM's, as Node's: a signal that follows the
-// page's, and a body that has the page's bytes.
-function fromPage(init: RequestInit | undefined): RequestInit | undefined {
-  const signal: AbortSignal | null | undefined = init?.signal;
-  const body: unknown = init?.body;
-  if (signal && !isOf(signal, webApis.AbortSignal)) {
-    const controller = new webApis.AbortController();
-    if (signal.aborted) controller.abort(signal.reason);
-    else signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
-    init = { ...init, signal: controller.signal };
-  }
-  if (
-    (body instanceof FormData && !isOf(body, webApis.FormData)) ||
-    (body instanceof Blob && !isOf(body, webApis.Blob))
-  ) {
-    init = { ...init, ...bodyOf(body, new webApis.Headers(init!.headers)) };
-  }
-  return init;
-}
-
-// As the DOM's `Response` reads it, with the content type it gives it, or,
-// for a DOM without one, the fields of a form, as Node's `FormData`.
-function bodyOf(body: FormData | Blob, headers: Headers): RequestInit & { duplex: "half" } {
-  if (DomResponse) {
-    const read = new DomResponse(body);
-    const type = read.headers.get("content-type");
-    if (type && !headers.has("content-type")) headers.set("content-type", type);
-    return { body: read.body, headers, duplex: "half" };
-  }
-  if (!(body instanceof FormData)) {
-    throw new Error("vitest-plugin-rsc: a Blob of this DOM is not a body for the server yet.");
-  }
-  const form = new webApis.FormData();
-  for (const [name, value] of body) {
-    if (typeof value !== "string") {
-      throw new Error(
-        "vitest-plugin-rsc: a file of a form of this DOM is not a body for the server yet.",
+  // A `Request` of the page, as a browser's: a relative URL is of the page,
+  // and a body or a signal of the DOM's is one of Node's. Any request is one.
+  class PageRequest extends NodeRequest {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      super(
+        input instanceof NodeRequest ? input : new URL(String(input), location.href),
+        runtimeRequestInit(init, webApis),
       );
     }
-    form.append(name, value);
+
+    static override [Symbol.hasInstance](value: unknown): boolean {
+      return Function.prototype[Symbol.hasInstance].call(
+        this === PageRequest ? NodeRequest : this,
+        value,
+      );
+    }
   }
-  return { body: form, headers, duplex: "half" };
+
+  scope.Request = PageRequest;
+  scope.Response = webApis.Response;
+  scope.Headers = webApis.Headers;
+  scope.fetch = (input: RequestInfo | URL, init?: RequestInit) =>
+    nodeFetch(new PageRequest(input, init));
 }
 
 // The DOM has no Navigation API: see navigation-shim.ts.
@@ -139,7 +113,29 @@ export function nodeHost(origin: string, serverFiles: string): PageHost {
     navigation,
     loadsStylesheets: false,
     serverWebApis: webApis,
-    fromPage,
+    interceptRequests: (answer) => {
+      if (!happyDom) return false;
+      const { fetch } = happyDom.settings;
+      // Before an interceptor of the test's, which gets what the app does not answer.
+      const before = fetch.interceptor;
+      fetch.interceptor = {
+        ...before,
+        beforeAsyncRequest: async (context) => {
+          let answered: Response | undefined;
+          try {
+            answered = await answer(context.request);
+          } catch (error) {
+            // happy-dom ends its task of the request only once the
+            // interceptor resolves: for one that was aborted, it fails the
+            // request itself.
+            if (context.request.signal.aborted) return;
+            throw error;
+          }
+          return answered ?? before?.beforeAsyncRequest?.(context);
+        },
+      };
+      return true;
+    },
     get serverDir() {
       return serverDirOfWorker(serverFiles);
     },

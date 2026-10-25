@@ -34,15 +34,20 @@ export type PageHost = {
   /**
    * The web APIs of the server's layers, whose requests and responses keep
    * the headers that a browser's drop (nextjs/globals.ts): the page's own in
-   * a browser, and in Node.js its own, which a DOM there replaces.
+   * a browser, and in Node.js the runtime's own, which a DOM there replaces
+   * on the global the page and the server share.
    */
   readonly serverWebApis: WebApis;
   /**
-   * What a request of `serverWebApis` takes of the `init` of the page's: in
-   * a DOM of Node.js the page's body, like a `FormData` of a form, and its
-   * signal are the DOM's, which Node's `Request` does not take.
+   * Has `answer` answer the requests of the page that do not go through its
+   * `fetch`, which the page replaces (browser-context.ts), from now on: where
+   * the DOM hands them over, as happy-dom's interceptor does for its
+   * `XMLHttpRequest` and the resources it loads, and for what the page's
+   * `fetch` leaves to the DOM's. With a response of the page's web APIs, or
+   * with none, and the DOM sends the request itself. Whether the DOM hands
+   * them over: false for a browser's.
    */
-  fromPage(init: RequestInit | undefined): RequestInit | undefined;
+  interceptRequests(answer: (request: Request) => Promise<Response | undefined>): boolean;
   /**
    * The directory of the server's own files, like the cache of Next's build
    * in `.next/`: in a browser the root of the disk in memory, `""`, and in a

@@ -111,6 +111,8 @@ export type NextRegistry = {
   /** A `Request` and `Response` that keep the headers a browser drops. */
   Request: typeof Request;
   Response: typeof Response;
+  /** The `Headers` of those. */
+  Headers: typeof Headers;
   /** The server's `fetch`: its network, which is not the browser's. */
   fetch: typeof fetch;
   /** The network itself: no request of it is the app's, and Next caches none. */

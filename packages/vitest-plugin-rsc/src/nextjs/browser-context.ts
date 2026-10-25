@@ -72,9 +72,28 @@ function descriptorOf(target: object | null, name: string): PropertyDescriptor |
   }
 }
 
+// What the context's `fetch` left to the document's: where the DOM hands
+// the page's requests over, they are not the app's to ask again.
+const leftToDocument = new WeakSet<Request>();
+
+// The requests of the page that do not go through its `fetch`, where the DOM
+// hands them over, like happy-dom: those of its `XMLHttpRequest` and the
+// resources it loads go to the app as a request of the context's `fetch`
+// does. What is not the app's the DOM sends itself, as what the context's
+// `fetch` left to the document's.
+const interceptedFetch = pageFetch<undefined>(
+  () => opened?.store,
+  () => async () => undefined,
+);
+const handsOver = pageHost.interceptRequests(async (request) =>
+  leftToDocument.has(request) ? undefined : interceptedFetch(request),
+);
+
 // A request of the page that is not the app's goes to the `fetch` the
 // document had: the browser's, or one of the host's, like a mock of the
-// network.
+// network. Where the DOM hands requests over, as one `Request`, which is what
+// it gives its interceptor, and which keeps `init` where happy-dom's `fetch`
+// drops it for a `Request`.
 const fetchBinding: Binding = {
   target: globalThis,
   name: "fetch",
@@ -84,7 +103,15 @@ const fetchBinding: Binding = {
     writable: true,
     value: pageFetch(
       () => opened?.store,
-      () => savedValue<typeof fetch>(fetchBinding) ?? registry.network,
+      () => {
+        const documentFetch = savedValue<typeof fetch>(fetchBinding) ?? registry.network;
+        if (!handsOver) return documentFetch;
+        return (input, init) => {
+          const request = new Request(input, init);
+          leftToDocument.add(request);
+          return documentFetch(request);
+        };
+      },
     ),
   },
 };
