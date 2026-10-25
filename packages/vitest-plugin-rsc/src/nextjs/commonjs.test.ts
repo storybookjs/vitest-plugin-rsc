@@ -125,3 +125,16 @@ test("parses TypeScript", async () => {
 
   expect(code).toContain("const a: string = $$cjsRequire($$cjs0) as string;");
 });
+
+test("returns `module.exports` of a module of Node.js that is Node's own, its default export", async () => {
+  const code = (
+    await compileCommonJs(
+      `const EventEmitter = require("events");\nconst fs = require("fs");\nexport { EventEmitter, fs };`,
+      { requiresDefault: (source) => source === "events" || source === "fs" },
+    )
+  )?.code;
+
+  expect(code).toContain("const EventEmitter = $$cjs0.default;");
+  expect(code).toContain("const fs = $$cjs1.default;");
+  expect(code).not.toContain("$$cjsRequire");
+});

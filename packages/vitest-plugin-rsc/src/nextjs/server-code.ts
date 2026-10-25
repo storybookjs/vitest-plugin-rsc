@@ -13,8 +13,8 @@ import type { NextLayer } from "./project.ts";
 // The server layers run in a browser, which has a `window` and a `fetch`
 // of its own. A browser cannot lose its globals, but a module can be compiled
 // not to see them: `typeof window` becomes `"undefined"`, which is what Next's
-// build does to server code, and `fetch`, `Request` and `Response` become the
-// server's, which are in `registry` (globals.ts). See docs/internals/next-routes.md.
+// build does to server code, and `fetch`, `Request` and `Response` become
+// the server's, which are in `registry` (globals.ts). See docs/internals/next-routes.md.
 
 /** Globals of a browser that a server does not have. */
 const browserGlobals = ["window", "document", "location", "localStorage", "sessionStorage"];
@@ -266,7 +266,18 @@ function nextVersionOf(id: string): string {
   }
 }
 
+/**
+ * How the server carries the stores of `AsyncLocalStorage` across an `await`
+ * and from one step of a render to the next: `compiled`, in a browser, which
+ * carries nothing, so the async functions of the server and React's Flight
+ * server are compiled to (async-local-storage-transform.ts); or `native`, in
+ * a worker of Node.js, whose `AsyncLocalStorage` is Node's own (the package's
+ * `async-hooks` under the `node` condition), which needs none of it.
+ */
+export type AsyncContext = "compiled" | "native";
+
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
+  let asyncContext: AsyncContext = "compiled";
   const patterns = [options.browserModules ?? []].flat();
   const hostFiles = [options.host?.files ?? []].flat();
   const packages = options.host?.packages ?? [];
@@ -312,7 +323,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
 
   // The async functions of a file, compiled. A file that does not parse stays
   // as it is: its functions read the store of the request after an `await`.
+  // Nothing to compile where the platform carries the stores.
   function compileAsyncFunctions(context: Warns, code: string, file: string) {
+    if (asyncContext === "native") return;
     try {
       return transformAsyncFunctions(code, file, `${registry}.asyncFunctionHooks`);
     } catch (error) {
@@ -348,7 +361,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   // that waited, so what a cached component returns renders in its scope.
   // Here each step gets the stores of the first: see globals.ts.
   function flightServerOf(code: string, id: string) {
-    if (!flightServer.test(normalizePath(id))) return;
+    if (asyncContext === "native" || !flightServer.test(normalizePath(id))) return;
     if (!code.includes(performWork)) {
       throw new Error(
         `vitest-plugin-rsc: ${id}, React's Flight server of next@${nextVersionOf(id)}, has no ` +
@@ -396,14 +409,18 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       return knowsHostFiles() && isServerCode(file, layer);
     },
     /** For the `define` of the optimizer of a server layer, which Vite keys its cache on. */
-    cacheKey: {
-      __vitest_plugin_rsc_browser_modules__: JSON.stringify([
-        patterns.map(String),
-        hostFiles.map(String),
-        packages,
-      ]),
-      // The list above, so that a change to it pre-bundles its modules again.
-      __vitest_plugin_rsc_modules_with_stores__: JSON.stringify(nextModulesWithStores),
+    get cacheKey() {
+      return {
+        __vitest_plugin_rsc_browser_modules__: JSON.stringify([
+          patterns.map(String),
+          hostFiles.map(String),
+          packages,
+        ]),
+        // The list above, so that a change to it pre-bundles its modules again.
+        __vitest_plugin_rsc_modules_with_stores__: JSON.stringify(nextModulesWithStores),
+        // Whether those modules, and React's Flight server, are compiled.
+        __vitest_plugin_rsc_async_context__: JSON.stringify(asyncContext),
+      };
     },
     /**
      * The same for the browser layer, which pre-bundles the packages of the
@@ -414,8 +431,12 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     /** For a module this plugin generates, with the constants of its layer. */
     compile: async (code: string, id: string, define: Record<string, string>) =>
       (await compileServerCode(code, id, registry, define))?.code ?? code,
-    /** Call once the root of the project is known. */
-    configure(root: string): void {
+    /**
+     * Call once the root of the project is known, and where the server runs:
+     * see `AsyncContext`.
+     */
+    configure(root: string, carried: AsyncContext = "compiled"): void {
+      asyncContext = carried;
       if (patterns.length > 0) isBrowserModule = createFilter(patterns, null, { resolve: root });
       if (hostFiles.length > 0) isOwnFileOfHost = createFilter(hostFiles, null, { resolve: root });
       // Vitest pre-bundles its own runtime in the environment of the rsc layer.

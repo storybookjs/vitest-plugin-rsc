@@ -1,9 +1,12 @@
 // The modules of Node.js that the server layers import. A browser has none
-// of them, and Vite gives each a module without its exports.
+// of them, and Vite gives each a module without its exports. A worker of
+// Node.js has all of them: with the page there (../page-in-node.ts) the
+// server layers import Node's own, as on `next start`, see `NodeModules`.
 //
-// The package ships a module of its own for each, `vitest-plugin-rsc/node/<name>`
-// in src/node/, which scripts/node-modules.ts writes, built to one file of
-// its own in dist/node/ with memfs, unenv or another package in it:
+// For a browser the package ships a module of its own for each,
+// `vitest-plugin-rsc/node/<name>` in src/node/, which scripts/node-modules.ts
+// writes, built to one file of its own in dist/node/ with memfs, unenv or
+// another package in it:
 //
 // - `fs` and `fs/promises`: a disk in memory, memfs, that `cleanup()`
 //   empties. See disk.ts.
@@ -37,13 +40,14 @@
 // browser instead, in the `browser` field of its `package.json`, like PGlite,
 // which has no use for `fs` there: `false` is nothing, and a file of its own
 // is what Vite's resolution gives it. The app's own field is not one: Next's
-// server does not read it.
+// server does not read it. Node's own modules are every package's, the
+// `browser` field or not, as on Next's server.
 
 import fs from "node:fs";
-import { isBuiltin } from "node:module";
+import { builtinModules, isBuiltin } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizePath } from "vite";
+import { esmExternalRequirePlugin, normalizePath } from "vite";
 
 // Where the package's modules of Node.js are: dist/node/, the built files,
 // each with what it has in it, from the source in src/ as from dist/. The
@@ -59,19 +63,32 @@ const nodeDir =
   ) + "/";
 const extension = ".js";
 
-// The package's own `async_hooks`, which ../index.ts aliases in every layer.
+// The package's own `async_hooks`, which ../index.ts aliases in every layer:
+// in a worker of Node.js Node's own for the server layers, by the `node`
+// condition of its export (../async-hooks-node.ts).
 const notHere = new Set(["async_hooks"]);
 
 const files = new Map<string, string | undefined>();
 
 /**
- * The file of the package's module for `source`, a module of Node.js with or
- * without `node:`, if it has one: `.../node/fs.js` for `node:fs`.
+ * What the server layers import for a module of Node.js: the package's
+ * `stand-ins`, for a page in a browser, or Node's own, `native`, for a page in
+ * a worker of Node.js. A native module is no file: the layer leaves it to
+ * the runner to import, and so does a pre-bundle that imports it.
  */
-export function nodeModuleOf(source: string): string | undefined {
+export type NodeModules = "stand-ins" | "native";
+
+/**
+ * What a server layer imports for `source`, a module of Node.js with or
+ * without `node:`, if it imports another module for it: the file of the
+ * package's module, `.../node/fs.js` for `node:fs`, or, `native`, the module
+ * of Node.js by its `node:` name.
+ */
+export function nodeModuleOf(source: string, modules: NodeModules): string | undefined {
   if (!isBuiltin(source)) return;
   const name = source.replace(/^node:/, "");
   if (notHere.has(name)) return;
+  if (modules === "native") return `node:${name}`;
   if (!files.has(name)) {
     // Without a build the layer would get Vite's empty module, and nothing
     // would say why.
@@ -88,6 +105,25 @@ export function nodeModuleOf(source: string): string | undefined {
 
 /** Whether `id` is a file of the package's modules of Node.js. */
 export const isNodeModule = (id: string): boolean => id.startsWith(nodeDir);
+
+/** Whether `id` is a module of Node.js itself, which `nodeModuleOf()` gives for `native`. */
+export const isNativeNodeModule = (id: string): boolean => id.startsWith("node:");
+
+/**
+ * The plugin of a server layer's optimizer for `native` modules: in a
+ * pre-bundle, a `require()` of a module of Node.js is an import of it, which
+ * the runner imports, and `module.exports` its default export, as Node.js
+ * gives it. Rolldown's runtime for a browser has no `require` to call.
+ */
+export function nativeRequirePlugin(): ReturnType<typeof esmExternalRequirePlugin> {
+  const names = builtinModules.filter(
+    (name) => !name.startsWith("_") && nodeModuleOf(name, "native"),
+  );
+  const external = [
+    ...new Set([...names, ...names.map((name) => name.replace(/^(?!node:)/, "node:"))]),
+  ];
+  return esmExternalRequirePlugin({ external });
+}
 
 // What the `browser` field of the `package.json` closest to a file maps a
 // module to: `false` for none.

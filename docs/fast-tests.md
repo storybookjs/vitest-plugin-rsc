@@ -328,6 +328,8 @@ The benchmark compares Vitest with Playwright at 1 and at 4 workers. Each test h
 
 Draft #261 runs the page without Browser Mode, and #267 adds jsdom and the benchmark: in a project of Vitest with `environment: "happy-dom"` or `"jsdom"`, the page runs in a worker of Node.js with that DOM, and the plugin is its host. It's for a machine without a browser, like a container of CI without Chromium. It doesn't make a run faster.
 
+It runs like a jsdom test: your test and your app in one worker of Node.js, and Vite's dev server in Vitest's own process, which gives the worker its modules over Vitest's RPC, from Vitest's cache on disk where it has them. The plugin gives such a project a pool of its own, Vitest's forks with the plugin's entry for the worker, so leave `test.pool` out, or set it to `"forks"`. That entry uses `init()` of `vitest/worker` and Vitest's `ForksPoolWorker`, which Vitest marks experimental. In watch mode a change of a file reaches the page at its next page load, or with the speed feature `cacheDevServer` at the next test file. A file of a dependency that Vitest would leave to Node.js, the page's layer takes from the dev server, as in a browser: not a second copy of it, like a second React. With happy-dom the page is a realm of its own, a context of `node:vm` over happy-dom's window, and your test and your server keep Node's own `fetch`, `Request`, `Response`, `FormData` and `Blob`; the test has the document as a global, as with Vitest's environment.
+
 On the `dom-locators` column, fast mode, 1 worker, Vitest on Node.js, on #251 before #262 (3 interleaved runs each):
 
 | the page in |      wall, s | per test, against Chromium | memory of the process tree | tests                 |

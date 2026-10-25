@@ -158,3 +158,219 @@ test("has no writing for a response without a body", async () => {
   expect(response.body).toBe(null);
   expect(writingOf(response)).toBe(undefined);
 });
+
+// A request of the page, as Next's handlers of the probe of the notes demo
+// get one, with a body that it streams.
+const requestOf = (init: { method?: string; body?: ReadableStream<Uint8Array> } = {}) => ({
+  url: "http://localhost:3000/api/echo?probe=1",
+  method: init.method ?? "GET",
+  headers: new Headers({ cookie: "seen=1" }),
+  body: init.body,
+});
+
+// The part of an `http.ServerResponse` that Next's handler of a route writes.
+type RouteResponse = NodeResponse & {
+  statusCode: number;
+  appendHeader(name: string, value: string): void;
+  write(chunk: Uint8Array | string): void;
+  end(chunk?: string): void;
+};
+
+// What a route handler returns, written as Next's handler of a route writes
+// it (`sendResponse()` of `server/send-response.js`): the status, each
+// header, and the body, or `end()` without one, as for a `HEAD`.
+const route =
+  (answer: () => Response) =>
+  async (req: unknown, res: unknown): Promise<void> => {
+    const response = answer();
+    const out = res as RouteResponse;
+    out.statusCode = response.status;
+    response.headers.forEach((value, name) => out.appendHeader(name, value));
+    if (response.body && (req as { method: string }).method !== "HEAD") {
+      for await (const chunk of response.body) out.write(chunk);
+    }
+    out.end();
+  };
+
+test("Next's handler gets the request the page sent, with its body", async () => {
+  let got: { req: Record<string, unknown>; body: string } | undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("a "));
+      controller.enqueue(new TextEncoder().encode("note"));
+      controller.close();
+    },
+  });
+  const response = await handleRequest(
+    requestOf({ method: "POST", body }),
+    {},
+    async (req, res) => {
+      let sent = "";
+      for await (const chunk of req as AsyncIterable<Uint8Array>) sent += Buffer.from(chunk);
+      got = { req: req as Record<string, unknown>, body: sent };
+      (res as RouteResponse).end("ok");
+    },
+  );
+  expect(await response.text()).toBe("ok");
+  const { req } = got!;
+  const headers = req.headers as Record<string, string>;
+  expect([req.method, req.url, headers.host, headers.cookie]).toEqual([
+    "POST",
+    "/api/echo?probe=1",
+    "localhost:3000",
+    "seen=1",
+  ]);
+  expect(got!.body).toBe("a note");
+});
+
+test.each([
+  ["Response.redirect()", () => Response.redirect("http://localhost:3000/api/echo", 307), 307],
+  [
+    "a 302 without a body",
+    () => new Response(null, { status: 302, headers: { location: "/" } }),
+    302,
+  ],
+  ["a 200 without a body", () => new Response(null), 200],
+  ["a 204", () => new Response(null, { status: 204 }), 204],
+  ["a 304", () => new Response(null, { status: 304 }), 304],
+])("a route handler's %s reaches the page", async (_, answer, status) => {
+  const response = await handleRequest(requestOf(), {}, route(answer));
+  expect(response.status).toBe(status);
+  // Nothing was written: the stand-in's response has no body.
+  expect(response.body).toBe(null);
+  expect(writingOf(response)).toBe(undefined);
+});
+
+test("a redirect keeps its location", async () => {
+  const response = await handleRequest(
+    requestOf(),
+    {},
+    route(() => Response.redirect("http://localhost:3000/api/echo", 307)),
+  );
+  expect(response.headers.get("location")).toBe("http://localhost:3000/api/echo");
+});
+
+test("the response of a HEAD has no body", async () => {
+  const response = await handleRequest(
+    requestOf({ method: "HEAD" }),
+    {},
+    route(() => new Response("not sent")),
+  );
+  expect(response.status).toBe(200);
+  expect(response.body).toBe(null);
+});
+
+test("each Set-Cookie of a route handler is a header of its own", async () => {
+  const response = await handleRequest(
+    requestOf(),
+    {},
+    route(() => {
+      const headers = new Headers();
+      headers.append("set-cookie", "echo=seen; Path=/");
+      headers.append("set-cookie", "next=seen; Path=/; HttpOnly");
+      return Response.json({}, { headers });
+    }),
+  );
+  expect(response.headers.getSetCookie()).toEqual([
+    "echo=seen; Path=/",
+    "next=seen; Path=/; HttpOnly",
+  ]);
+});
+
+test("a body streams to the page as the route handler writes it", async () => {
+  let more!: () => void;
+  const later = new Promise<void>((resolve) => (more = resolve));
+  const encoder = new TextEncoder();
+  const response = await handleRequest(
+    requestOf(),
+    {},
+    route(
+      () =>
+        new Response(
+          new ReadableStream({
+            async start(controller) {
+              controller.enqueue(encoder.encode("first "));
+              await later;
+              controller.enqueue(encoder.encode("second"));
+              controller.close();
+            },
+          }),
+        ),
+    ),
+  );
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  // The first part is there before the handler writes the second.
+  expect((await reader.read()).value).toBe("first ");
+  more();
+  let rest = "";
+  for (let read = await reader.read(); !read.done; read = await reader.read()) rest += read.value;
+  expect(rest).toBe("second");
+});
+
+test("a body that the page cancels takes nothing more of what the handler writes", async () => {
+  let res!: RouteResponse & { write(chunk: string): boolean };
+  const response = await handleRequest(request(), {}, async (_, of) => {
+    res = of as typeof res;
+    res.write("<html>");
+  });
+  await response.body!.cancel();
+  expect(res.write("</html>")).toBe(false);
+  await writingOf(response)!.written;
+});
+
+test("a request that the page leaves before its head fails once Next's handler is done with it", async () => {
+  const page = new AbortController();
+  let done = false;
+  let started!: () => void;
+  const running = new Promise<void>((resolve) => (started = resolve));
+  const answer = handleRequest(request(page.signal), {}, async (_, res) => {
+    started();
+    await new Promise<void>((resolve) => (res as NodeResponse).once("close", resolve));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    done = true;
+  });
+  await running;
+  page.abort();
+  await expect(answer).rejects.toMatchObject({ name: "AbortError" });
+  // Its stores have to be there until then.
+  expect(done).toBe(true);
+});
+
+test("a request that the page leaves before its head has no head when Next's handler ends it later", async () => {
+  const page = new AbortController();
+  let started!: () => void;
+  const running = new Promise<void>((resolve) => (started = resolve));
+  const answer = handleRequest(request(page.signal), {}, async (_, of) => {
+    const res = of as RouteResponse;
+    started();
+    await new Promise<void>((resolve) => res.once("close", resolve));
+    res.end();
+  });
+  await running;
+  page.abort();
+  await expect(answer).rejects.toMatchObject({ name: "AbortError" });
+});
+
+test("an error that Next destroys a response with after its head reaches the page", async () => {
+  const response = await handleRequest(request(), {}, async (_, res) => {
+    const out = res as NodeResponse & { destroy(error: Error): void };
+    out.write("<html>");
+    setTimeout(() => out.destroy(new Error("the render failed")));
+  });
+  await expect(response.text()).rejects.toThrow("the render failed");
+});
+
+test("a head of many large Set-Cookie headers reaches the page", async () => {
+  const cookies = Array.from({ length: 5 }, (_, at) => `part${at}=${"x".repeat(4000)}`);
+  const response = await handleRequest(
+    requestOf(),
+    {},
+    route(() => {
+      const headers = new Headers();
+      for (const cookie of cookies) headers.append("set-cookie", cookie);
+      return new Response("ok", { headers });
+    }),
+  );
+  expect(response.headers.getSetCookie()).toEqual(cookies);
+  expect(await response.text()).toBe("ok");
+});

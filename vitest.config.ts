@@ -5,7 +5,7 @@ import { domLocatorsProjects } from "./packages/dom-locators/vitest.config.ts";
 import storybookNextjsViteRscProject from "./packages/storybook-nextjs-vite-rsc/vitest.config.ts";
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
 import nextjsCacheComponentsDemoBuildProject from "./playground/nextjs-cache-components-demo/vitest.build.config.ts";
-import nextjsCacheComponentsDemoProject from "./playground/nextjs-cache-components-demo/vitest.config.ts";
+import { nextjsCacheComponentsDemoProjects } from "./playground/nextjs-cache-components-demo/vitest.config.ts";
 import nextjsDbRecipesProject from "./playground/nextjs-db-recipes/vitest.config.ts";
 import nextjsE2eDemoBuildProject from "./playground/nextjs-e2e-demo/vitest.build.config.ts";
 import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
@@ -69,7 +69,7 @@ export default defineConfig({
       rscVitestDemoProject,
       rscVitestDemoBuildProject,
       nextjsE2eDemoProject,
-      nextjsCacheComponentsDemoProject,
+      ...nextjsCacheComponentsDemoProjects,
       nextjsCacheComponentsDemoBuildProject,
       nextjsDbRecipesProject,
       nextjsE2eDemoBuildProject,

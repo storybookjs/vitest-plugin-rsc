@@ -82,3 +82,9 @@ declare module "assert/build/assert.js" {
   const assert: typeof import("node:assert");
   export default assert;
 }
+
+declare module "virtual:vitest-plugin-rsc/page-host" {
+  /** The host the page runs in: see page-host.ts. */
+  const host: import("./page-host.ts").PageHost;
+  export default host;
+}
