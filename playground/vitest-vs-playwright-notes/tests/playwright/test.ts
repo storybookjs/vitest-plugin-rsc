@@ -1,6 +1,7 @@
 import { expect, test as base } from "@playwright/test";
 import { ada, createSession, createUser, resetDb } from "#test/db.ts";
 import type { User } from "#lib/schema.ts";
+import { sessionCookies } from "#lib/session-cookie.ts";
 
 // Playwright's `test` with the helpers of test/vitest.ts, and the database
 // emptied before each test, as vitest.setup.ts does for the Vitest tests.
@@ -31,8 +32,15 @@ export const test = base.extend<{
   signedIn: async ({ context, baseURL }, use) => {
     await use(async (person = ada) => {
       const user = await createUser(person);
-      const value = await createSession(user.id);
-      await context.addCookies([{ name: "session", value, url: baseURL! }]);
+      const cookies = await sessionCookies(await createSession(user.id), user);
+      await context.addCookies(
+        cookies.map(({ name, value, maxAge }) => ({
+          name,
+          value,
+          url: baseURL!,
+          ...(maxAge && { expires: Date.now() / 1000 + maxAge }),
+        })),
+      );
       return user;
     });
   },
