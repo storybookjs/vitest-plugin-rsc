@@ -49,6 +49,13 @@ test("the input the user gave stays as it is", () => {
   expect(input.parameters).toBe(parameters);
 });
 
+test("the project's preview stays the one of preview.tsx", () => {
+  const project = { beforeAll: () => {} } as typeof globalThis.globalProjectAnnotations;
+  globalThis.globalProjectAnnotations = project;
+  defineServerPreview({});
+  expect(globalThis.globalProjectAnnotations).toBe(project);
+});
+
 test("extend() and test() derive it again", () => {
   const page = preview.meta({}).story({ parameters: { nextjs: { url: "/" } } });
   expect(layoutOf(page.extend({ args: {} }))).toBe("document");
