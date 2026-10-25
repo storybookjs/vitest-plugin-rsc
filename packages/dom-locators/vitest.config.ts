@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { defineProject } from "vitest/config";
+import { playwrightPress, playwrightPressSequentially } from "./test/playwright-commands.ts";
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 
@@ -21,6 +22,7 @@ export const domLocatorsProjects = [
         provider: playwright(),
         screenshotFailures: false,
         instances: [{ browser: "chromium" }],
+        commands: { playwrightPress, playwrightPressSequentially },
       },
     },
   }),

@@ -210,6 +210,27 @@ export const steps: Step[] = [
     run: (driver) => driver.type(driver.page.getByLabelText("Notes"), "hi you"),
   },
   {
+    name: "click where pointerdown is cancelled",
+    run: ({ page }) => page.getByRole("button", { name: "Hold" }).click(),
+  },
+  {
+    name: "force-click a button",
+    run: ({ page }) => page.getByRole("button", { name: "Other" }).click({ force: true }),
+  },
+  {
+    name: "a key in a read-only input",
+    run: (driver) => driver.press(driver.page.getByLabelText("Locked"), "x"),
+  },
+  {
+    name: "digits into a number input",
+    run: (driver) => driver.type(driver.page.getByLabelText("Amount"), "12"),
+  },
+  {
+    name: "a shortcut on a button",
+    before: ({ page }) => page.getByRole("button", { name: "Other" }).click(),
+    run: (driver) => driver.press(driver.page.getByRole("button", { name: "Other" }), "Control+k"),
+  },
+  {
     name: "Escape",
     before: ({ page }) => page.getByRole("button", { name: "Other" }).click(),
     run: (driver) => driver.press(driver.page.getByRole("button", { name: "Other" }), "Escape"),
@@ -270,19 +291,33 @@ export async function logOf(
 export const unordered = (entry: string) =>
   /^(select|react:onSelect|scroll|react:onScroll)@/.test(entry);
 
+// Entries that come with a frame, as many as the frames of a scroll: they
+// count as there or not.
+const ofFrames = (entry: string) => /^(scroll|react:onScroll)@/.test(entry);
+
 /**
  * How a log of the package differs from Playwright's: the entries of
- * Playwright's it has not (`- entry`) and the ones it has that Playwright's
- * has not (`+ entry`), and whether the entries of both are in the same
- * order.
+ * Playwright's it has fewer of (`- entry`, once for each one fewer) and the
+ * ones it has more of than Playwright's (`+ entry`), and whether the entries
+ * of both are in the same order.
  */
 export function compareLogs(
   theirs: string[],
   our: string[],
 ): { differences: string[]; sameOrder: boolean } {
-  const missing = theirs.filter((entry) => !our.includes(entry)).map((entry) => `- ${entry}`);
-  const extra = our.filter((entry) => !theirs.includes(entry)).map((entry) => `+ ${entry}`);
-  const differences = [...new Set([...missing, ...extra])];
+  const counts = (entries: string[]) => {
+    const count = new Map<string, number>();
+    for (const entry of entries)
+      count.set(entry, ofFrames(entry) ? 1 : (count.get(entry) ?? 0) + 1);
+    return count;
+  };
+  const theirCount = counts(theirs);
+  const ourCount = counts(our);
+  const beyond = (count: Map<string, number>, other: Map<string, number>, sign: string) =>
+    [...count].flatMap(([entry, n]) =>
+      Array.from({ length: Math.max(0, n - (other.get(entry) ?? 0)) }, () => `${sign} ${entry}`),
+    );
+  const differences = [...beyond(theirCount, ourCount, "-"), ...beyond(ourCount, theirCount, "+")];
   const ordered = (entries: string[], other: string[]) =>
     entries.filter((entry) => other.includes(entry) && !unordered(entry));
   const sameOrder = JSON.stringify(ordered(theirs, our)) === JSON.stringify(ordered(our, theirs));

@@ -7,7 +7,7 @@
 // test holds the recording to them.
 
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { page as vitestPage, userEvent } from "vitest/browser";
+import { commands, page as vitestPage } from "vitest/browser";
 import { page } from "../src/index.ts";
 import {
   compareLogs,
@@ -19,22 +19,19 @@ import {
 } from "./fidelity-steps.tsx";
 import playwrightLogs from "./playwright-logs.json" with { type: "json" };
 
-/** A combination of `press()`, like "Shift+Tab", in the syntax of `userEvent.keyboard()`. */
-function keyboardSyntax(combination: string): string {
-  const keys = combination.split(/\+(?!$)/);
-  const key = keys.pop()!;
-  const name = (key: string) => (key === " " ? " " : `{${key}}`);
-  return `${keys.map((m) => `{${m}>}`).join("")}${name(key)}${keys
-    .reverse()
-    .map((m) => `{/${m}}`)
-    .join("")}`;
+declare module "vitest/browser" {
+  interface BrowserCommands {
+    playwrightPress(selector: string, key: string): Promise<void>;
+    playwrightPressSequentially(selector: string, text: string): Promise<void>;
+  }
 }
 
+// Vitest's locators press no key: Playwright's own `locator.press()` and
+// `locator.pressSequentially()`, by a command of the test's.
 const vitest: Driver = {
   page: vitestPage,
-  // Vitest's locators press no key: Playwright's keyboard, on the focused element.
-  press: (_locator, key) => userEvent.keyboard(keyboardSyntax(key)),
-  type: (locator, text) => userEvent.type(locator, text),
+  press: (locator, key) => commands.playwrightPress(locator.selector, key),
+  type: (locator, text) => commands.playwrightPressSequentially(locator.selector, text),
 };
 const ours: Driver = {
   page,
