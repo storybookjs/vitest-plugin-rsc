@@ -855,7 +855,7 @@ What each feature saves, and what else makes a test cheaper, is in [Fast tests](
 
 ## Start sooner on Bun
 
-A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On the notes app of `playground/vitest-vs-playwright-notes` (where `pnpm test:vitest` runs on Bun), a run of one file took about 3.2 s with `pnpm exec vitest run` and 2.3 s with `bun --bun vitest run` on an M1 Pro, and its first test started 0.86 s sooner on Bun; once the tests run, they take the same time. 0.25 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too. More in [Fast tests](fast-tests.md#the-start-of-a-run).
+A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On the notes app of `playground/vitest-vs-playwright-notes` (where `pnpm test:vitest` runs on Bun), a run of one file took about 3.3 s with `pnpm exec vitest run` and 2.3 s with `bun --bun vitest run` on an M1 Pro, and its first test started 0.88 s sooner on Bun, before the [patch of `@vitest/mocker`](#a-faster-start-until-vitest-has-it); once the tests run, they take the same time. About 0.25 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too. More in [Fast tests](fast-tests.md#the-start-of-a-run).
 
 ```bash
 bun --bun vitest run --configLoader native

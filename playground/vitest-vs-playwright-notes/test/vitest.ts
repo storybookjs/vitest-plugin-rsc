@@ -1,15 +1,9 @@
 import { expect } from "vitest";
 import { page, type Locator } from "vitest/browser";
-import { ada, createSession, createUser } from "./db.ts";
 
 // The helpers of tests/vitest/, which tests/playwright/test.ts has too.
 
-/** Signs a user in: their session, and its cookie in the page's requests. */
-export async function signedIn(person = ada) {
-  const user = await createUser(person);
-  document.cookie = `session=${await createSession(user.id)}; path=/`;
-  return user;
-}
+export { signedIn } from "./sign-in.ts";
 
 /** The titles of the list of notes, in order. */
 export async function expectTitles(titles: string[]): Promise<void> {
