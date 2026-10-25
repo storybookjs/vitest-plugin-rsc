@@ -419,16 +419,11 @@ function workerPlugins(answers: PageAnswers): Plugin[] {
             // In a browser, the pre-bundles of the page's runners, which
             // Vitest compiles for them only when it inlines them
             // (transform-cache.ts): of every environment but `client`, which
-            // the browser imports itself. And the modules of this package
-            // that they run.
-            if (test.browser?.enabled) {
-              const viteCacheDir = path.resolve(root, config.cacheDir || "node_modules/.vite");
-              inline(
-                test,
-                new RegExp(`^${escapeRegExp(normalizePath(viteCacheDir))}/deps_`),
-                ...ownPackages,
-              );
-            }
+            // the browser imports itself, in Vite's directory of the
+            // environment wherever the cache is: Vitest moves it under
+            // `vitest/<hash>`, and an app can name its own. And the modules
+            // of this package that they run.
+            if (test.browser?.enabled) inline(test, /\/deps_[\w-]+\//, ...ownPackages);
             return;
           }
           test.pool = await withNodeHostPool(test.pool, answers);
