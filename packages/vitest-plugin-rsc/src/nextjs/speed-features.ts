@@ -6,10 +6,10 @@ import { registry } from "./registry.ts";
 // the options of the features decide: see `SpeedOptions` in mode.ts.
 //
 // What the dev server answers about the files of a test, like the
-// stylesheets of a route or whether a module changed, does not change while
-// a test file runs: a change of a file runs the file again. So with
-// `cacheDevServer` an answer is kept until the test file ends, where it is
-// asked for again for every page and every test otherwise. The caches are
+// stylesheets of the host's files or whether a module changed, seldom changes
+// while a test file runs: in watch mode a change of a file runs the file
+// again. So with `cacheDevServer` an answer is kept until the test file ends,
+// where it is asked for again for every page and every test otherwise. The caches are
 // the registry's, as the layers that ask are module graphs of their own.
 
 const caches = () => (registry.testFileCaches ??= new Set());
