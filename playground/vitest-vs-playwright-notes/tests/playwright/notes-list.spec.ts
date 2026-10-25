@@ -1,5 +1,5 @@
 import { expect, test } from "./test.ts";
-import { createUser, grace, seedNotes } from "#test/db.ts";
+import { createUser, seedNotes } from "#test/db.ts";
 
 test("shows an empty state", async ({ page, signedIn }) => {
   await signedIn();
@@ -73,9 +73,9 @@ test("opens the form of a new note", async ({ page, signedIn }) => {
   await expect(page.getByRole("heading", { name: "New note" })).toBeVisible();
 });
 
-test("lists only the notes of the user", async ({ page, signedIn, expectTitles }) => {
+test("lists only the notes of the user", async ({ page, people, signedIn, expectTitles }) => {
   const user = await signedIn();
-  const other = await createUser(grace);
+  const other = await createUser(people.grace);
   await seedNotes(user.id, [{ title: "Mine" }]);
   await seedNotes(other.id, [{ title: "Grace's" }]);
   await page.goto("/notes");

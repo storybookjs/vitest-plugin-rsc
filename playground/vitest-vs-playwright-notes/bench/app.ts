@@ -1,11 +1,40 @@
-import { ada, createSession, createUser, seedNotes } from "#test/db.ts";
+import { db } from "#lib/db.ts";
+import { createSession, createUser, seedNotes } from "#test/db.ts";
+import { ada } from "#test/people.ts";
 
-// The notes app as the primitives use it: a signed-in user with 20 notes.
+// The notes app as the primitives use it: a signed-in user with 20 notes, in
+// tables emptied first, so that each primitive runs on the same rows, however
+// many the primitives before it added.
 
 export const noteCount = 20;
 
-/** Ada with a session and 20 notes, "Note 01" the oldest; her cookie in the page. */
+// The statements of `resetDb()`, sent at once: one round trip, where five
+// took one each. DELETE, not TRUNCATE, which rewrites the files of the tables
+// and their indexes. And setval for the ids.
+const emptyTables = [
+  "DELETE FROM sessions",
+  "DELETE FROM notes",
+  "DELETE FROM users",
+  "SELECT setval('users_id_seq', 1, false)",
+  "SELECT setval('notes_id_seq', 1, false)",
+].join(";\n");
+
+/**
+ * Empties the tables. By the client of the driver: a query of drizzle is one
+ * statement. PGlite's `exec()` takes several.
+ */
+export async function resetDb(): Promise<void> {
+  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- PGlite in the page.
+  const client = db.$client as unknown as { exec: (sql: string) => Promise<unknown> };
+  await client.exec(emptyTables);
+}
+
+/**
+ * Ada with a session and 20 notes, "Note 01" the oldest, alone in the tables;
+ * her cookie in the page.
+ */
 export async function seedApp() {
+  await resetDb();
   const user = await createUser(ada);
   const token = await createSession(user.id);
   const notes = await seedNotes(

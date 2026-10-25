@@ -10,7 +10,7 @@ import { expectTitles, signedIn } from "#test/vitest.ts";
 for (let i = 0; i < 50; i++) {
   const titles = Array.from({ length: (i % 5) + 1 }, (_, k) => `Note ${i}.${k}`);
   test(`writes ${titles.length} notes, variant ${i}`, async () => {
-    await signedIn();
+    const user = await signedIn();
     await renderServer({ url: "/notes" });
 
     for (const title of titles) {
@@ -28,6 +28,6 @@ for (let i = 0; i < 50; i++) {
         page.getByText(titles.length === 1 ? "1 note" : `${titles.length} notes`, { exact: true }),
       )
       .toBeInTheDocument();
-    expect((await storedNotes()).map((note) => note.title)).toEqual(titles);
+    expect((await storedNotes(user.id)).map((note) => note.title)).toEqual(titles);
   });
 }

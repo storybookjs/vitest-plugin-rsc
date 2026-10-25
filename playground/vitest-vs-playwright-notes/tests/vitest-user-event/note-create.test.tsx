@@ -29,7 +29,7 @@ test("creates a note and opens it", async () => {
 });
 
 test("stores the note", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/notes/new" });
 
   await fill(page.getByLabelText("Title"), "Groceries");
@@ -37,20 +37,20 @@ test("stores the note", async () => {
   await click(page.getByRole("button", { name: "Create note" }));
 
   await expect.element(page.getByText("Note created.")).toBeInTheDocument();
-  expect(await storedNotes()).toEqual([
+  expect(await storedNotes(user.id)).toEqual([
     { title: "Groceries", content: "Oat milk, bread", favorite: false },
   ]);
 });
 
 test("trims the title", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/notes/new" });
 
   await fill(page.getByLabelText("Title"), "   Groceries   ");
   await click(page.getByRole("button", { name: "Create note" }));
 
   await expect.element(page.getByRole("heading", { name: "Groceries" })).toBeInTheDocument();
-  expect((await storedNotes())[0]?.title).toBe("Groceries");
+  expect((await storedNotes(user.id))[0]?.title).toBe("Groceries");
 });
 
 test("creates a note without content", async () => {

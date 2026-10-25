@@ -14,10 +14,9 @@ const port = 3300;
 export default defineConfig({
   testDir: "./tests/playwright",
   globalSetup: "./tests/playwright/global-setup.ts",
-  // One worker: the tests share one database, which each empties first, as
-  // each Vitest test empties its own.
-  workers: 1,
-  fullyParallel: false,
+  // Every test on any worker, as many as `--workers` asks for, against one
+  // server and one database: each test has a user and notes of its own.
+  fullyParallel: true,
   forbidOnly: Boolean(env.CI),
   reporter: "list",
   expect: { timeout: 5_000 },

@@ -30,6 +30,6 @@ for (let i = 0; i < 50; i++) {
         page.getByText(left.length === 1 ? "1 note" : `${left.length} notes`, { exact: true }),
       )
       .toBeInTheDocument();
-    expect((await storedNotes()).map((note) => note.title)).toEqual(left);
+    expect((await storedNotes(user.id)).map((note) => note.title)).toEqual(left);
   });
 }

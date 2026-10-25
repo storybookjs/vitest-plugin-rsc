@@ -20,7 +20,7 @@ for (let i = 0; i < 50; i++) {
   const second = invalid[(i + 2) % 5]!;
   const title = `Valid note ${i}`;
   test(`recovers from "${first.error}" and "${second.error}", variant ${i}`, async () => {
-    await signedIn();
+    const user = await signedIn();
     await renderServer({ url: "/notes/new" });
 
     await fill(page.getByLabelText("Title"), first.title);
@@ -41,7 +41,7 @@ for (let i = 0; i < 50; i++) {
     await click(page.getByRole("button", { name: "Save note" }));
 
     await expect.element(page.getByText("Note saved.")).toBeInTheDocument();
-    expect(await storedNotes()).toEqual([
+    expect(await storedNotes(user.id)).toEqual([
       { title: `${title}, edited`, content: "Fixed again", favorite: false },
     ]);
   });

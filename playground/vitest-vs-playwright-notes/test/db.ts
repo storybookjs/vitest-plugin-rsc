@@ -1,45 +1,16 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "#lib/db.ts";
 import { hashPassword } from "#lib/password.ts";
 import { notes, sessions, users, type User } from "#lib/schema.ts";
+import type { Person } from "./people.ts";
 
 // For the tests of both runners: the app's own `db`, which is PGlite in the
 // page for Vitest (lib/__mocks__/db.ts) and Postgres in Docker for Playwright.
-
-// The statements of `resetDb()`, sent at once: one round trip, where five
-// took one each. DELETE, not TRUNCATE, which rewrites the files of the tables
-// and their indexes. And setval for the ids.
-const emptyTables = [
-  "DELETE FROM sessions",
-  "DELETE FROM notes",
-  "DELETE FROM users",
-  "SELECT setval('users_id_seq', 1, false)",
-  "SELECT setval('notes_id_seq', 1, false)",
-].join(";\n");
-
-/**
- * Empties the tables, before each test. By the client of the driver: a query
- * of drizzle is one statement. PGlite's `exec()` and the `query()` of `pg`
- * without parameters take several.
- */
-export async function resetDb(): Promise<void> {
-  // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- PGlite in the page, a pool of `pg` for Playwright.
-  const client = db.$client as unknown as {
-    exec?: (sql: string) => Promise<unknown>;
-    query: (sql: string) => Promise<unknown>;
-  };
-  await (client.exec ? client.exec(emptyTables) : client.query(emptyTables));
-}
-
-export const ada = { name: "Ada Lovelace", email: "ada@example.com", password: "correct horse" };
-export const grace = {
-  name: "Grace Hopper",
-  email: "grace@example.com",
-  password: "battery staple",
-};
+// Nothing empties it between tests: each test reads the rows of its own
+// users, and takes the ids of its notes from the rows `seedNotes()` returns.
 
 /** A user with this password, as after signing up. */
-export async function createUser(person: typeof ada = ada): Promise<User> {
+export async function createUser(person: Person): Promise<User> {
   const [user] = await db
     .insert(users)
     .values({
@@ -68,11 +39,12 @@ export function seedNotes(ownerId: number, list: NewNote[]) {
     .returning();
 }
 
-/** The notes in the database, in order. */
-export function storedNotes() {
+/** The notes of these users in the database, in order. */
+export function storedNotes(ownerId: number, ...others: number[]) {
   return db
     .select({ title: notes.title, content: notes.content, favorite: notes.favorite })
     .from(notes)
+    .where(inArray(notes.ownerId, [ownerId, ...others]))
     .orderBy(asc(notes.id));
 }
 
@@ -81,6 +53,6 @@ export async function storedUser(email: string) {
   return user;
 }
 
-export async function sessionCount(): Promise<number> {
-  return (await db.select().from(sessions)).length;
+export async function sessionCount(userId: number): Promise<number> {
+  return (await db.select().from(sessions).where(eq(sessions.userId, userId))).length;
 }
