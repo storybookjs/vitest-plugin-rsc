@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { page, server } from "vitest/browser";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
-import { findOnEveryChange, forgetTestFileAnswers, matchOnEveryChange } from "./speed-features.ts";
+import { findOnEveryChange, forgetTestFileAnswers, pollOnEveryChange } from "./speed-features.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
 import { leaveKeptAppWithPage } from "./page.ts";
 import { registry } from "./registry.ts";
@@ -78,7 +78,7 @@ beforeEach(async () => {
   await linkStylesheetsOf(nodeFiles);
 });
 
-// The speed feature `watchDom` looks for an element, and matches it again, on
-// every change of the DOM: see speed-features.ts.
+// The speed feature `watchDom` looks for an element, and polls again, on the
+// next change of the document: see speed-features.ts.
 findOnEveryChange(page.getByText(""));
-matchOnEveryChange(expect, () => vi.isFakeTimers());
+pollOnEveryChange(expect, () => vi.isFakeTimers());
