@@ -1,5 +1,4 @@
 import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
-import { commands } from "vitest/browser";
 import { db } from "#lib/db.ts";
 
 // The CPU profile of a test file, of vitest.profile.config.ts, its trace of
@@ -27,6 +26,11 @@ type Registry = {
 };
 
 const mode = import.meta.env.VITEST_PROFILE as string;
+// The commands of vitest.profile.config.ts, or in a DOM of Node.js their
+// stand-ins: see the file.
+const { commands } = import.meta.env.VITEST_DOM
+  ? await import("./profile-commands.node.ts")
+  : await import("vitest/browser");
 const registry = (globalThis as { __vitest_plugin_rsc_next__?: Registry })
   .__vitest_plugin_rsc_next__!;
 let name = "";

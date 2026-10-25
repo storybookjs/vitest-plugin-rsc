@@ -83,6 +83,9 @@ export default mergeConfig(config, {
   define: {
     // oxlint-disable-next-line no-process-env
     "import.meta.env.VITEST_PROFILE": JSON.stringify(process.env.VITEST_PROFILE ?? ""),
+    // In a DOM of Node.js, test/profile.ts has the commands of its own.
+    // oxlint-disable-next-line no-process-env
+    "import.meta.env.VITEST_DOM": JSON.stringify(process.env.VITEST_DOM ?? ""),
   },
   test: {
     browser: { commands: { startProfile, stopProfile, startTrace, stopTrace, writeTimings } },
