@@ -3,7 +3,7 @@
 import { and, eq, not } from "drizzle-orm";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { endSession, requireUser, startSession } from "./auth.ts";
+import { endSession, requireUser, startSession, updateSessionUser } from "./auth.ts";
 import { db } from "./db.ts";
 import { hashPassword, verifyPassword } from "./password.ts";
 import { notes, users } from "./schema.ts";
@@ -29,7 +29,7 @@ export async function signUp(_: FormState, formData: FormData): Promise<FormStat
     .insert(users)
     .values({ ...values, passwordHash: await hashPassword(password) })
     .returning();
-  await startSession(user!.id);
+  await startSession(user!);
   redirect("/notes?welcome=1");
 }
 
@@ -40,7 +40,7 @@ export async function signIn(_: FormState, formData: FormData): Promise<FormStat
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     return { errors: { form: "Invalid email or password." }, values };
   }
-  await startSession(user.id);
+  await startSession(user);
   redirect("/notes");
 }
 
@@ -95,6 +95,7 @@ export async function updateName(_: FormState, formData: FormData): Promise<Form
   const values = { name: field(formData, "name") };
   if (!values.name) return { errors: { name: "Name is required." }, values };
   await db.update(users).set(values).where(eq(users.id, user.id));
+  await updateSessionUser({ ...user, ...values });
   // The header of every page shows the name.
   revalidatePath("/", "layout");
   redirect("/profile?saved=1");
