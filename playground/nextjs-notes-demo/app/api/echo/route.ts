@@ -1,6 +1,10 @@
+import { cookies } from "next/headers";
+
 // For app/request-probe/page.node.test.tsx: what a request of the page
-// brought, as JSON, and a cookie for the next one.
-export function GET(request: Request) {
+// brought, as JSON, and two cookies for the next one: one of the response's
+// own headers, and one that Next adds to them.
+export async function GET(request: Request) {
+  (await cookies()).set("next", "seen");
   return Response.json(
     { method: "GET", cookie: request.headers.get("cookie") ?? "none" },
     { headers: { "set-cookie": "echo=seen; Path=/" } },

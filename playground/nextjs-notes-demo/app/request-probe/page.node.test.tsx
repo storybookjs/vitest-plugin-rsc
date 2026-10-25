@@ -1,13 +1,14 @@
 import { expect, test } from "vitest";
 import { within } from "@testing-library/dom";
 import userEvent from "@testing-library/user-event";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 // The requests of a Client Component to a route handler in a Node.js worker:
-// see the node projects of vitest.config.ts. With happy-dom the page's fetch
-// API is happy-dom's, whose interceptor hands the app's requests to the
-// server, those of `XMLHttpRequest` too; jsdom has none of its own, and only
-// its `fetch`, which is Node's, reaches the app.
+// see the node projects of vitest.config.ts. The page's `fetch` is the
+// plugin's, as in a browser. With happy-dom the rest of the page's fetch API
+// is happy-dom's, whose interceptor hands the app's requests of
+// `XMLHttpRequest` to the server too; jsdom has none of its own, and only its
+// `fetch` reaches the app.
 
 const screen = () => within(document.body);
 const happyDom = "happyDOM" in window;
@@ -20,7 +21,14 @@ test("a fetch of a Client Component reaches a route handler, with the cookies th
   await userEvent.click(button);
   expect(await answer("200 GET cookie=none set-cookie=hidden")).toBeTruthy();
   await userEvent.click(button);
-  expect(await answer("200 GET cookie=echo=seen set-cookie=hidden")).toBeTruthy();
+  expect(await answer("200 GET cookie=echo=seen; next=seen set-cookie=hidden")).toBeTruthy();
+});
+
+test("handleRequest() takes a Request of the page's, for a route that fetches the app with one of its own", async () => {
+  await renderServer({ url: "/request-probe" });
+  const response = await handleRequest(new Request(new URL("/api/echo/self", location.href)));
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ method: "self GET" });
 });
 
 test("a fetch follows a redirect of the app", async () => {
@@ -36,7 +44,7 @@ test.runIf(happyDom)(
     await userEvent.click(await screen().findByRole("button", { name: "fetch" }));
     await answer("200 GET cookie=none set-cookie=hidden");
     await userEvent.click(await screen().findByRole("button", { name: "xhr" }));
-    expect(await answer("xhr 200 GET cookie=echo=seen")).toBeTruthy();
+    expect(await answer("xhr 200 GET cookie=echo=seen; next=seen")).toBeTruthy();
   },
 );
 

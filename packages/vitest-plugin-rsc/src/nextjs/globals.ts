@@ -34,6 +34,13 @@ class ServerRequest extends NativeRequest {
   #headers: Headers;
 
   constructor(input: RequestInfo | URL, init?: RequestInit) {
+    // A request of the DOM's, like one that a test makes with happy-dom's
+    // `Request` for `handleRequest()`: what it is, as the server's.
+    if (input instanceof Request && !(input instanceof NativeRequest)) {
+      const { url, method, headers, body, signal, redirect, credentials } = input;
+      init = { method, headers: [...headers], body, signal, redirect, credentials, ...init };
+      input = url;
+    }
     // A body or a signal of the DOM's, like a form or the signal of a page
     // load that a test gives a request of the server's.
     init = runtimeRequestInit(init, pageHost.serverWebApis);
@@ -137,6 +144,7 @@ class ServerResponse extends NativeResponse {
 
 registry.Request = ServerRequest;
 registry.Response = ServerResponse;
+registry.Headers = Headers;
 // Of the same web APIs as the server's streams, which Next's server pipes
 // with a signal of its own: in a DOM of Node.js the global ones are the
 // DOM's, which Node's streams take and Bun's native `pipeTo()` does not.

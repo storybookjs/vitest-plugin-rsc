@@ -39,15 +39,15 @@ export type PageHost = {
    */
   readonly serverWebApis: WebApis;
   /**
-   * Has `answer` answer the page's requests from now on, where the DOM hands
-   * them over itself, as happy-dom's interceptor does for its `fetch`,
-   * `XMLHttpRequest` and the resources it loads: with a response, of the
-   * page's web APIs or the server's, which the host gives the DOM as one of
-   * its own, or with none, and the DOM sends the request itself. False where
-   * it does not, and the page's `fetch` is the one to replace
-   * (browser-context.ts).
+   * Has `answer` answer the requests of the page that do not go through its
+   * `fetch`, which the page replaces (browser-context.ts), from now on: where
+   * the DOM hands them over, as happy-dom's interceptor does for its
+   * `XMLHttpRequest` and the resources it loads, and for what the page's
+   * `fetch` leaves to the DOM's. With a response of the page's web APIs, or
+   * with none, and the DOM sends the request itself. Nothing where the DOM
+   * does not, like a browser's.
    */
-  interceptRequests(answer: (request: Request) => Promise<Response | undefined>): boolean;
+  interceptRequests(answer: (request: Request) => Promise<Response | undefined>): void;
 };
 
 /** What the page hears of the dev server unasked: see `listen()`. */

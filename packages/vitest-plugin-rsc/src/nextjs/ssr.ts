@@ -590,7 +590,7 @@ async function handle(
     // request. Next makes the middleware one of its own, which stores nothing.
     shareIncrementalCache(headers);
     // The headers of `next.config` and of the middleware, for the response.
-    const routedHeaders = resolved.resolvedHeaders ?? new Headers();
+    const routedHeaders = resolved.resolvedHeaders ?? new registry.Headers();
 
     if (responded) {
       return finishWithBody(request, responded, endRequest);
@@ -800,7 +800,7 @@ async function handle(
 
 // The cookies of the headers the server in front of a route has.
 function cookiesOf(headers: Headers): Headers {
-  const cookies = new Headers();
+  const cookies = new registry.Headers();
   for (const cookie of headers.getSetCookie()) cookies.append("set-cookie", cookie);
   return cookies;
 }
@@ -862,7 +862,7 @@ function finishWithBody(
   if (writing && !adds && request.method !== "HEAD") return { response, finished };
   let { headers } = response;
   if (routedHeaders) {
-    headers = new Headers(routedHeaders);
+    headers = new registry.Headers(routedHeaders);
     response.headers.forEach((value, name) => {
       if (name === "set-cookie") headers.append(name, value);
       else headers.set(name, value);

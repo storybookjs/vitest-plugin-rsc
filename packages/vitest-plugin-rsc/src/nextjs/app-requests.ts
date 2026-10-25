@@ -26,7 +26,13 @@ type SsrLayer = Awaited<ReturnType<typeof ssrLayer>>;
 // The headers of the requests to the app and of its answers are the server's
 // (page-host.ts): in a browser the page's own, in a DOM of Node.js Node's,
 // whatever the page's are by then, like a patch of a mock of the network.
-const { Headers } = pageHost.serverWebApis;
+// And the requests of the server to the network are the server's: in a DOM of
+// Node.js the page's `Request` is the DOM's, like happy-dom's.
+const { Headers, Request: ServerNativeRequest } = pageHost.serverWebApis;
+
+// Whether `value` is a request, of the page's web APIs or of the server's.
+const isRequest = (value: unknown): value is Request =>
+  value instanceof Request || value instanceof ServerNativeRequest;
 
 // What Next's server answers a request with, once the ssr layer is there.
 // As with `fetch`, a request whose signal has aborted is not sent: the
@@ -54,11 +60,11 @@ const nativeFetch = registry.network;
 // goes read, the same bytes. A request without a body goes as it is. Not for
 // the page's own requests: a browser's `fetch` is what they have.
 async function networkFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (!init?.body && !(input instanceof Request && input.body)) return nativeFetch(input, init);
-  const request = new Request(input, init);
+  if (!init?.body && !(isRequest(input) && input.body)) return nativeFetch(input, init);
+  const request = new ServerNativeRequest(input, init);
   // A request with a body, so not a GET.
   // oxlint-disable-next-line unicorn/no-invalid-fetch-options
-  return nativeFetch(new Request(request, { body: await request.arrayBuffer() }));
+  return nativeFetch(new ServerNativeRequest(request, { body: await request.arrayBuffer() }));
 }
 
 // The origin of the app is also the origin of the dev server, which serves the
@@ -78,7 +84,7 @@ function sameOriginRequest(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
 ): AppRequest | undefined {
-  const request = input instanceof Request ? input : undefined;
+  const request = isRequest(input) ? input : undefined;
   const url = new URL(request ? request.url : String(input), window.location.href);
   // A Blob URL has the origin of the document that made it, and is the
   // document's own, like a `data:` URL: the browser answers it at once.
@@ -343,14 +349,14 @@ function networkAfterRedirect(
   );
 }
 
-// What client code gets of a response of the app. A browser never shows a
-// script the `Set-Cookie` headers of a response, a forbidden response header:
-// they are the store's. `handleRequest()` keeps them, for the test.
-function withoutSetCookie(response: Response): Response {
-  // Also a response of the network, which is the browser's already.
-  if (!response.headers.has("set-cookie")) return response;
-  // As a list: the page's `Response` may be the DOM's, like happy-dom's, which
-  // reads no `Headers` of another realm.
+// What client code gets of a response of the app: one of the page's own web
+// APIs, without its `Set-Cookie` headers. A browser never shows a script
+// those, a forbidden response header: they are the store's. `handleRequest()`
+// keeps them, for the test. In a DOM of Node.js the server's response is
+// Node's, where the page's are the DOM's, like happy-dom's.
+function pageResponse(response: Response): Response {
+  if (response instanceof Response && !response.headers.has("set-cookie")) return response;
+  // As a list: the DOM's `Response` reads no `Headers` of another realm.
   const headers = [...response.headers].filter(([name]) => name !== "set-cookie");
   const { status, statusText, url, redirected } = response;
   return Object.defineProperties(new Response(response.body, { status, statusText, headers }), {
@@ -390,7 +396,7 @@ const appFetch =
     const from = store?.();
     if (!sent) return network()(input, init);
     const credentials =
-      (init?.credentials ?? (input instanceof Request ? input.credentials : undefined)) !== "omit";
+      (init?.credentials ?? (isRequest(input) ? input.credentials : undefined)) !== "omit";
     if (!sent.marked) {
       // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
       if (from) sent.headers.delete("cookie");
@@ -415,7 +421,7 @@ const appFetch =
       return new registry.Response(null, { status: 204 });
     }
     // The request, for the network: a body can be read once.
-    const spare = input instanceof Request && input.body ? input.clone() : input;
+    const spare = isRequest(input) && input.body ? input.clone() : input;
     // The server's Request keeps a `cookie` header, which a browser's drops.
     const request = server ? new registry.Request(input, init) : new Request(input, init);
     const response = await sendRequest<Passed>(request, {
@@ -423,7 +429,7 @@ const appFetch =
       credentials,
       network: sent.marked ? undefined : () => network()(spare, init),
     });
-    return from && response ? withoutSetCookie(response) : response;
+    return from && response ? pageResponse(response) : response;
   };
 
 // What a request of a page that was left gets: nothing, ever. One promise
@@ -526,7 +532,7 @@ export function pageFetch<Passed extends undefined = never>(
 const serverFetch = appFetch<never>(undefined, () => networkFetch);
 registry.fetch = async (input, init) => {
   // A server has no page to resolve a path against: Node's `fetch` rejects it.
-  if (!(input instanceof Request) && !URL.canParse(String(input))) {
+  if (!isRequest(input) && !URL.canParse(String(input))) {
     throw new TypeError(`Failed to parse URL from ${String(input)}`, {
       cause: new TypeError("Invalid URL"),
     });

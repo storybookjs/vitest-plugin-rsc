@@ -26,11 +26,12 @@ function missingWebApis(): never {
 
 // What happy-dom's window has of its own: the settings of its browser, which
 // its `Fetch` reads at every request, its interceptor among them.
+type Intercepted = { request: Request };
 type HappyDom = {
   settings: {
     fetch: {
       interceptor: {
-        beforeAsyncRequest?: (context: { request: Request }) => Promise<Response | void>;
+        beforeAsyncRequest?: (context: Intercepted) => Promise<Response | void>;
       } | null;
     };
   };
@@ -38,9 +39,11 @@ type HappyDom = {
 const happyDom = (window as unknown as { happyDOM?: HappyDom }).happyDOM;
 
 // With happy-dom, the page's fetch API is the DOM's own, as a browser's is
-// the page's: its `fetch`, `XMLHttpRequest` and the resources it loads go
-// through its `Fetch`, whose interceptor hands the app's requests to the
-// server (`interceptRequests()`), and sends the rest to the network itself.
+// the page's. The page's `fetch` is the context's, as in a browser
+// (browser-context.ts); its `XMLHttpRequest` and the resources it loads go
+// through happy-dom's `Fetch`, whose interceptor hands the app's requests to
+// the server too (`interceptRequests()`), and sends the rest to the network
+// itself.
 //
 // jsdom has none of its own: there the page's fetch API is Node's, which
 // sends what the page sends to the app or to Node's `fetch`. The DOM keeps
@@ -77,29 +80,6 @@ if (!happyDom) {
     nodeFetch(new PageRequest(input, init));
 }
 
-// The statuses whose response has no body, which the DOM's `Response` takes
-// none for.
-const nullBodyStatuses = new Set([101, 103, 204, 205, 304]);
-
-// A response of the server, or of Node's `fetch` after a redirect away from
-// the app, as one of the DOM's: what the page reads, `instanceof` included,
-// is the DOM's own. Its `Set-Cookie` headers, which a browser never shows a
-// page, stay the server's.
-function pageResponse(response: Response): Response {
-  // Of the DOM's already, like one without `Set-Cookie` that the page made.
-  if ((response as unknown) instanceof window.Response) return response;
-  const headers = new window.Headers();
-  response.headers.forEach((value, name) => {
-    if (name !== "set-cookie") headers.append(name, value);
-  });
-  const { status, statusText, url, redirected } = response;
-  const body = nullBodyStatuses.has(status) ? null : response.body;
-  return Object.defineProperties(new window.Response(body, { status, statusText, headers }), {
-    url: { value: url },
-    redirected: { value: redirected },
-  });
-}
-
 // The DOM has no Navigation API: see navigation-shim.ts.
 const navigation = createNavigation(window);
 
@@ -113,14 +93,15 @@ export function nodeHost(origin: string): PageHost {
     loadsStylesheets: false,
     serverWebApis: webApis,
     interceptRequests: (answer) => {
-      if (!happyDom) return false;
-      happyDom.settings.fetch.interceptor = {
-        beforeAsyncRequest: async ({ request }) => {
-          const response = await answer(request);
-          return response && pageResponse(response);
-        },
+      if (!happyDom) return;
+      const { fetch } = happyDom.settings;
+      // Before an interceptor of the test's, which gets what the app does not answer.
+      const before = fetch.interceptor;
+      fetch.interceptor = {
+        ...before,
+        beforeAsyncRequest: async (context) =>
+          (await answer(context.request)) ?? before?.beforeAsyncRequest?.(context),
       };
-      return true;
     },
   };
 }

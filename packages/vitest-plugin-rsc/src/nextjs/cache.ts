@@ -87,7 +87,7 @@ export function restoreIncrementalCache(): void {
  * `getIncrementalCache()` of Next's server passes. Without headers it is the
  * cache between requests, for a test that calls a cached function itself.
  */
-export function shareIncrementalCache(headers = new Headers()): void {
+export function shareIncrementalCache(headers: Headers = new registry.Headers()): void {
   const cache = new IncrementalCache({
     // With these two Next takes its own handler, the one `next start` uses.
     // It keeps the entries on the disk, as `next start` keeps a prerendered

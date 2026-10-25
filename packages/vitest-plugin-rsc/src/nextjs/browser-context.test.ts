@@ -16,6 +16,7 @@ vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
     get navigation() {
       return (globalThis.window as { navigation?: EventTarget }).navigation;
     },
+    interceptRequests: () => {},
   },
 }));
 vi.mock("./document.ts", () => ({

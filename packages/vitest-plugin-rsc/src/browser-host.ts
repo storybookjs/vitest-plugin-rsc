@@ -43,9 +43,8 @@ const browserHost: PageHost = {
   navigation: (window as { navigation?: EventTarget }).navigation,
   loadsStylesheets: true,
   serverWebApis: globalThis,
-  // The page's `fetch` is the one to replace: no browser hands over what a
-  // page sends.
-  interceptRequests: () => false,
+  // No browser hands over what a page sends.
+  interceptRequests: () => {},
 };
 export default browserHost;
 

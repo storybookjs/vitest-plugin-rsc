@@ -11,6 +11,12 @@ import type { WebApis } from "./page-host.ts";
 const isOf = (value: unknown, of: abstract new (...args: never[]) => unknown) =>
   value instanceof of;
 
+// The DOM's `Response`, as the environment set it up: one that reads a body
+// of the DOM's, where the DOM has a fetch API of its own. Taken as this
+// module loads, before a test wraps the global, as MSW's `setupServer()`
+// does with one of its own around the runtime's.
+const DomResponse = globalThis.Response;
+
 /** `init`, with a body or a signal of the DOM's as one of `runtime`'s. */
 export function runtimeRequestInit(
   init: RequestInit | undefined,
@@ -42,8 +48,8 @@ function bodyOf(
   headers: Headers,
   runtime: WebApis,
 ): RequestInit & { duplex: "half" } {
-  if (globalThis.Response !== runtime.Response) {
-    const read = new Response(body);
+  if (DomResponse !== runtime.Response) {
+    const read = new DomResponse(body);
     const type = read.headers.get("content-type");
     if (type && !headers.has("content-type")) headers.set("content-type", type);
     return { body: read.body, headers, duplex: "half" };
