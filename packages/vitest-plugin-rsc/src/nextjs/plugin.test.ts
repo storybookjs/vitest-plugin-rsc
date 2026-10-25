@@ -757,7 +757,6 @@ test("turns every speed feature but `watchDom` off in fidelity mode, the default
     keepApp: true,
     flightLoads: true,
     skipPrefetch: true,
-    immediates: true,
     watchDom: true,
     cacheDevServer: true,
     fastCrypto: true,

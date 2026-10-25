@@ -120,9 +120,6 @@ export type NextRegistry = {
   /** Node's, for Next's server: a task after the microtasks. Not globals. */
   setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
   clearImmediate(id: unknown): void;
-  /** The `setTimeout` and `clearTimeout` of server code: see globals.ts. */
-  setTimeout(callback: unknown, delay?: number, ...args: unknown[]): unknown;
-  clearTimeout(id: unknown): void;
   /** Starts the scope of one request, see `enterAmbientScope`. Returns its end. */
   enterRequestScope(): () => void;
   /** What an async function of server code is compiled to call: server-code.ts. */

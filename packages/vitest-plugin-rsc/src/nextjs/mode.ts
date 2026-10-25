@@ -79,17 +79,6 @@ export type SpeedOptions = {
    */
   skipPrefetch?: boolean;
   /**
-   * Experimental. The server runs the steps of a render, which React
-   * separates with `setTimeout(work, 0)`, as immediates, unless the test has
-   * faked the timers.
-   *
-   * Gives up: the delay a browser adds to a timeout, at least 4 ms for one
-   * that a timeout started, five deep.
-   *
-   * Default: `true` in fast mode, `false` in fidelity mode.
-   */
-  immediates?: boolean;
-  /**
    * Experimental. `expect.element()` and `expect.poll()` look again on the
    * next change of the document, not after a growing wait: a mutation of the
    * DOM, or an event of what changes without one, like `input` or the `load`
@@ -149,7 +138,6 @@ const inFidelityMode: Record<SpeedFeature, boolean> = {
   keepApp: false,
   flightLoads: false,
   skipPrefetch: false,
-  immediates: false,
   watchDom: true,
   cacheDevServer: false,
   fastCrypto: false,
