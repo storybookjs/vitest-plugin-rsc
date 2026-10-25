@@ -12,6 +12,12 @@ import { pageNewsPath, pageRequestPath, toldHeader } from "./page-protocol.ts";
 // Not an import, which the page's runner would resolve as a module of the
 // app's layer.
 const http = process.getBuiltinModule("node:http");
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
+// How long an answer waits for the news before it, which the stream brings
+// within a turn of the event loop of both processes.
+const newsTimeout = 10_000;
 
 /** The channel to the listener at `origin`. */
 export function channelTo(origin: string): Pick<PageHost, "request" | "listen"> {
@@ -96,7 +102,25 @@ function listenForNews(url: string): News {
     heard: (count) =>
       count <= told || !opened
         ? Promise.resolve()
-        : new Promise((resolve) => waiting.push({ told: count, resolve })),
+        : new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              waiting = waiting.filter((wait) => wait !== waited);
+              reject(
+                new Error(
+                  `vitest-plugin-rsc: the dev server told the page ${count} pieces of news before an answer, ` +
+                    `and the page heard ${told} in ${newsTimeout} ms.`,
+                ),
+              );
+            }, newsTimeout);
+            const waited = {
+              told: count,
+              resolve: () => {
+                clearTimeout(timeout);
+                resolve();
+              },
+            };
+            waiting.push(waited);
+          }),
   };
 }
 
@@ -127,7 +151,9 @@ function post(agent: Agent, url: string, body: string, news: News): Promise<unkn
             reject(error);
             return;
           }
-          void news.heard(Number(response.headers[toldHeader])).then(() => resolve(result));
+          // An answer that says nothing of the news waits for none.
+          const told = Number(response.headers[toldHeader] ?? 0);
+          news.heard(told).then(() => resolve(result), reject);
         });
       },
     );
