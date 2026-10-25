@@ -18,9 +18,10 @@
 // at 4554372e456154d7365b6902ef9f3e1e7de76e94, as ivya 1.8.2 has it
 // (https://github.com/vitest-dev/ivya/blob/v1.8.2/src/roleUtils.ts), the
 // code that Vitest 5's locators run: roles, ARIA states, the accessible
-// name and what is hidden from ARIA. Changed: the imports; added, which
-// ivya does not have: the role candidates of `getAriaRoleCandidates()` and
-// the name of text alone of `getPlainTextAccessibleName()`. See NOTICE.
+// name and what is hidden from ARIA. Changed: the imports; no content of
+// pseudo-elements in a DOM that does not render; added, which ivya does
+// not have: the role candidates of `getAriaRoleCandidates()` and the name
+// of text alone of `getPlainTextAccessibleName()`. See NOTICE.
 
 import {
   closestCrossShadow,
@@ -31,6 +32,7 @@ import {
   isVisibleTextNode,
   parentElementOrShadowHost,
 } from "./dom-utils.ts";
+import { isRendered } from "./environment.ts";
 
 function hasExplicitAccessibleName(e: Element) {
   return e.hasAttribute("aria-label") || e.hasAttribute("aria-labelledby");
@@ -569,6 +571,10 @@ function queryInAriaOwned(element: Element, selector: string): Element[] {
 }
 
 export function getPseudoContent(element: Element, pseudo: "::before" | "::after") {
+  // A DOM that does not render has no styles of pseudo-elements.
+  if (!isRendered(element.ownerDocument)) {
+    return "";
+  }
   const cache = pseudo === "::before" ? cachePseudoContentBefore : cachePseudoContentAfter;
   if (cache?.has(element)) {
     return cache?.get(element) || "";

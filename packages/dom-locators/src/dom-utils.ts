@@ -19,7 +19,10 @@
 // (https://github.com/vitest-dev/ivya/blob/v1.8.2/src/domUtils.ts), the
 // code that Vitest 5's locators run, with `sortInDOMOrder()` of its
 // src/selectorEvaluator.ts. Changed: WebKit is told by the user agent, where
-// ivya has an option of the browser. See NOTICE.
+// ivya has an option of the browser; in a DOM that does not render, a style
+// without a visibility is visible. See NOTICE.
+
+import { isRendered } from "./environment.ts";
 
 export function isInsideScope(scope: Node, element: Element | undefined): boolean {
   while (element) {
@@ -99,7 +102,7 @@ export function isElementStyleVisibilityVisible(
   // details element for example.
   // All the browser implement it, but WebKit has a bug which prevents us from using it:
   // https://bugs.webkit.org/show_bug.cgi?id=264733
-  if ((Element.prototype as Partial<Element>).checkVisibility && !isWebKit) {
+  if (checksVisibility) {
     if (!element.checkVisibility()) {
       return false;
     }
@@ -114,7 +117,11 @@ export function isElementStyleVisibilityVisible(
       return false;
     }
   }
-  if (style.visibility !== "visible") {
+  // A DOM that does not render, like happy-dom's, may compute no visibility.
+  if (
+    style.visibility !== "visible" &&
+    (style.visibility !== "" || isRendered(element.ownerDocument))
+  ) {
     return false;
   }
   return true;
@@ -169,6 +176,12 @@ const isWebKit =
   typeof navigator !== "undefined" &&
   /AppleWebKit/.test(navigator.userAgent) &&
   !/Chrome|Chromium|Edg/.test(navigator.userAgent);
+
+/** Whether `isElementStyleVisibilityVisible()` asks `checkVisibility()`: in a browser that has it, but WebKit. */
+export const checksVisibility =
+  typeof Element !== "undefined" &&
+  !!(Element.prototype as Partial<Element>).checkVisibility &&
+  !isWebKit;
 
 // From src/selectorEvaluator.ts of ivya 1.8.2, Playwright's at the same commit.
 export function sortInDOMOrder(elements: Iterable<Element>): Element[] {

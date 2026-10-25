@@ -14,11 +14,14 @@ The upstream version is Playwright at commit
 The ported files keep the Apache License 2.0 header and say what changed:
 
 - src/role-utils.ts: packages/playwright-core/src/server/injected/roleUtils.ts
-  (ivya src/roleUtils.ts). Changed: the imports; `getAriaRoleCandidates()`
+  (ivya src/roleUtils.ts). Changed: the imports; a DOM that does not render,
+  of Node.js, has no content of pseudo-elements; `getAriaRoleCandidates()`
   and `getPlainTextAccessibleName()` are added.
 - src/dom-utils.ts: packages/playwright-core/src/server/injected/domUtils.ts
   (ivya src/domUtils.ts), and `sortInDOMOrder()` of selectorEvaluator.ts.
-  Changed: WebKit is detected by the user agent instead of an option.
+  Changed: WebKit is detected by the user agent instead of an option; in a
+  DOM that does not render, of Node.js, a style without a visibility is
+  visible.
 - src/text-match.ts: `normalizeWhiteSpace()` of
   packages/playwright-core/src/utils/isomorphic/stringUtils.ts,
   `matchesAttributePart()`, `elementText()`, `elementMatchesText()` and

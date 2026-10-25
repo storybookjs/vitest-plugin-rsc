@@ -1,7 +1,7 @@
 import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 import { parseCLI } from "vitest/node";
 import { vitestPluginRscSourceConditions } from "./vitest.conditions.ts";
-import domLocatorsProject from "./packages/dom-locators/vitest.config.ts";
+import { domLocatorsProjects } from "./packages/dom-locators/vitest.config.ts";
 import storybookNextjsViteRscProject from "./packages/storybook-nextjs-vite-rsc/vitest.config.ts";
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
 import nextjsCacheComponentsDemoBuildProject from "./playground/nextjs-cache-components-demo/vitest.build.config.ts";
@@ -65,7 +65,7 @@ export default defineConfig({
     projects: [
       vitestPluginRscProject,
       storybookNextjsViteRscProject,
-      domLocatorsProject,
+      ...domLocatorsProjects,
       rscVitestDemoProject,
       rscVitestDemoBuildProject,
       nextjsE2eDemoProject,

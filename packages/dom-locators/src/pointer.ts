@@ -3,6 +3,7 @@
 // `hover()`, at the middle of the element, on what is there.
 
 import { isInsideScope, parentElementOrShadowHost } from "./dom-utils.ts";
+import { eventView, isRendered } from "./environment.ts";
 import { focusOnPress } from "./focus.ts";
 
 // The element the mouse is on, and the ones it is in, for the events of its
@@ -21,9 +22,11 @@ interface Point {
  * the window if it is out of it, and what is on top there if that is the
  * element or in it, as Playwright's click lands on a `<span>` in a button.
  * Anything else on top, an overlay, gets no events: the element does, where
- * Playwright waits for the overlay to go.
+ * Playwright waits for the overlay to go. In a DOM that does not render,
+ * there is no box: the element itself, at 0, 0.
  */
 function pointFor(element: Element): Point {
+  if (!isRendered(element.ownerDocument)) return { x: 0, y: 0, target: element };
   let rect = element.getBoundingClientRect();
   const view = element.ownerDocument.defaultView;
   if (
@@ -48,7 +51,8 @@ function pointFor(element: Element): Point {
   return { x, y, target: hit && isInsideScope(element, hit) ? hit : element };
 }
 
-const pointerEventOf = (type: string, init: PointerEventInit) =>
+/** A `PointerEvent`, or a `MouseEvent` in a DOM without one. */
+export const pointerEventOf = (type: string, init: PointerEventInit) =>
   typeof PointerEvent === "function" ? new PointerEvent(type, init) : new MouseEvent(type, init);
 
 // The element and what it is in, through the hosts of shadow roots.
@@ -71,7 +75,7 @@ function moveTo({ x, y, target }: Point): void {
   const from = pointerPath.filter((node) => node.isConnected);
   const to = pathOf(target);
   pointerPath = to;
-  const view = target.ownerDocument.defaultView;
+  const view = eventView(target.ownerDocument);
   const base = { clientX: x, clientY: y, view, composed: true };
   if (from[0] !== target) {
     const fromSet = new Set(from);
@@ -114,7 +118,7 @@ function moveTo({ x, y, target }: Point): void {
 
 /** A press and a release of the left button at `point`, the `detail`th in a row. */
 function pressAndRelease({ x, y, target }: Point, detail: number): void {
-  const view = target.ownerDocument.defaultView;
+  const view = eventView(target.ownerDocument);
   const base = { clientX: x, clientY: y, view, bubbles: true, cancelable: true, composed: true };
   const pointer = { ...base, pointerId: 1, pointerType: "mouse", isPrimary: true };
   const down = target.dispatchEvent(
@@ -151,7 +155,7 @@ export function dblClick(element: Element): void {
     new MouseEvent("dblclick", {
       clientX: x,
       clientY: y,
-      view: target.ownerDocument.defaultView,
+      view: eventView(target.ownerDocument),
       bubbles: true,
       cancelable: true,
       composed: true,

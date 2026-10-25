@@ -2,6 +2,7 @@
 // Playwright's, and the edits of text that a key makes, each with the events
 // Chrome dispatches for it and with the value set past React's tracker.
 
+import { eventView } from "./environment.ts";
 import { UnsupportedError, escapeHatch } from "./errors.ts";
 import { editing, focus } from "./focus.ts";
 
@@ -28,6 +29,14 @@ function setValue(element: TextControl | HTMLSelectElement, value: string): void
 const typeInto = new Set(["", "email", "number", "password", "search", "tel", "text", "url"]);
 const setInto = new Set(["color", "date", "time", "datetime-local", "month", "range", "week"]);
 
+/** Whether the text of an element is edited in place: `isContentEditable`, by the attribute in jsdom, which has not that. */
+export function isContentEditable(element: Element): boolean {
+  const own = (element as HTMLElement).isContentEditable;
+  if (own !== undefined) return own;
+  const editable = element.closest("[contenteditable]");
+  return !!editable && editable.getAttribute("contenteditable")?.toLowerCase() !== "false";
+}
+
 /** Whether a control takes text, which a key edits. */
 export function isTextControl(element: Element): element is TextControl {
   return (
@@ -36,7 +45,8 @@ export function isTextControl(element: Element): element is TextControl {
   );
 }
 
-const inputEvent = (inputType: string, data: string | null, cancelable: boolean) =>
+/** A `beforeinput` (`cancelable`) or an `input`, an `Event` in a DOM without `InputEvent`. */
+export const inputEvent = (inputType: string, data: string | null, cancelable: boolean) =>
   typeof InputEvent === "function"
     ? new InputEvent(cancelable ? "beforeinput" : "input", {
         bubbles: true,
@@ -112,7 +122,7 @@ export function fill(element: Element, text: string): void {
     return;
   }
   if (!isTextControl(element)) {
-    if ((element as HTMLElement).isContentEditable) {
+    if (isContentEditable(element)) {
       throw new UnsupportedError(
         `fill() of a contenteditable element is not in dom-locators yet: ${escapeHatch}.`,
       );
@@ -131,7 +141,8 @@ export function fill(element: Element, text: string): void {
     editText(element, "insertText", text, (_value, start, end) => [start, end], all);
     return;
   }
-  const init = { ...deleteKey, bubbles: true, cancelable: true, composed: true, view: window };
+  const view = eventView(element.ownerDocument);
+  const init = { ...deleteKey, bubbles: true, cancelable: true, composed: true, view };
   if (element.dispatchEvent(new KeyboardEvent("keydown", init))) {
     editText(element, "deleteContentForward", null, (_value, start, end) => [start, end], all);
   }

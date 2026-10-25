@@ -4,9 +4,18 @@
 // the focus, and the keys of text edit a text control.
 
 import { isVisible } from "./actionability.ts";
+import { eventView } from "./environment.ts";
 import { UnsupportedError, escapeHatch } from "./errors.ts";
 import { activeElement, commitChange, focus, focusNext } from "./focus.ts";
-import { deleteBackward, deleteForward, insertText, isTextControl } from "./form-controls.ts";
+import {
+  deleteBackward,
+  deleteForward,
+  inputEvent,
+  insertText,
+  isContentEditable,
+  isTextControl,
+} from "./form-controls.ts";
+import { pointerEventOf } from "./pointer.ts";
 
 /** A key of `press()`: a named key, or one printable character. */
 export type Key =
@@ -91,11 +100,11 @@ const submitOnEnter = new Set([
 /** A `click` of a key: no pointer, as Chrome's for Enter and Space. */
 function keyClick(element: Element): void {
   element.dispatchEvent(
-    new PointerEvent("click", {
+    pointerEventOf("click", {
       bubbles: true,
       cancelable: true,
       composed: true,
-      view: window,
+      view: eventView(element.ownerDocument),
       pointerId: -1,
       pointerType: "",
     }),
@@ -117,15 +126,7 @@ function onEnter(element: HTMLElement): void {
     return;
   }
   if (!(element instanceof HTMLInputElement) || !isTextControl(element)) return;
-  element.dispatchEvent(
-    new InputEvent("beforeinput", {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      inputType: "insertLineBreak",
-      data: null,
-    }),
-  );
+  element.dispatchEvent(inputEvent("insertLineBreak", null, true));
   // Enter commits an edit of a text input, as its blur does.
   commitChange(element);
   const form = element.form;
@@ -162,9 +163,9 @@ export function press(element: HTMLElement, key: Key): void {
     bubbles: true,
     cancelable: true,
     composed: true,
-    view: window,
+    view: eventView(element.ownerDocument),
   };
-  const editable = (element as HTMLElement).isContentEditable && !isTextControl(element);
+  const editable = isContentEditable(element) && !isTextControl(element);
   if (editable && definition.key !== "Escape" && definition.key !== "Tab") {
     throw new UnsupportedError(
       `press("${key}") in a contenteditable element is not in dom-locators yet: ${escapeHatch}.`,

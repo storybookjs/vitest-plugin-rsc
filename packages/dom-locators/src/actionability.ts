@@ -2,9 +2,14 @@
 // that it is visible, enabled and, for typing, editable. A check that fails
 // is looked at again, as the DOM changes, until the action's timeout.
 
-import { defaultTimeout } from "./environment.ts";
+import { defaultTimeout, isRendered } from "./environment.ts";
 import { elementNotFound, notActionable, strictModeViolation } from "./errors.ts";
-import { getElementComputedStyle, isElementVisible } from "./dom-utils.ts";
+import {
+  getElementComputedStyle,
+  isElementVisible,
+  parentElementOrShadowHost,
+} from "./dom-utils.ts";
+import { isContentEditable } from "./form-controls.ts";
 import { getAriaDisabled, getAriaRole } from "./role-utils.ts";
 import { waitUntil } from "./wait.ts";
 
@@ -80,14 +85,15 @@ function failedCheck(element: Element, checks: Check[]): string | undefined {
 
 /**
  * Whether an element is visible, as Playwright's: a box of some size, and no
- * `visibility: hidden`. In a DOM without layout, like jsdom's, by its style
- * alone: no `display: none` on it or above it, and no `visibility: hidden`.
+ * `visibility: hidden`. In a DOM that does not render, jsdom's or
+ * happy-dom's, by its style alone: no `display: none` on it or above it,
+ * through the hosts of shadow roots, and no `visibility: hidden`.
  */
 export function isVisible(element: Element): boolean {
-  if (typeof element.checkVisibility === "function") return isElementVisible(element);
+  if (isRendered(element.ownerDocument)) return isElementVisible(element);
   const style = getElementComputedStyle(element);
   if (style && style.visibility !== "" && style.visibility !== "visible") return false;
-  for (let node: Element | null = element; node; node = node.parentElement) {
+  for (let node: Element | undefined = element; node; node = parentElementOrShadowHost(node)) {
     if (getElementComputedStyle(node)?.display === "none") return false;
   }
   return true;
@@ -126,7 +132,7 @@ function isReadonly(element: Element): boolean {
  * label it is in, as Playwright's `fill()` and `selectOption()` find it.
  */
 export function followLabel(element: Element): Element {
-  if (!element.matches("input, textarea, select") && !(element as HTMLElement).isContentEditable) {
+  if (!element.matches("input, textarea, select") && !isContentEditable(element)) {
     const label = element.closest("label");
     if (label?.control) return label.control;
   }
