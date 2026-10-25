@@ -8,7 +8,12 @@ import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
-import { hostsPageInNode } from "./page-in-node.ts";
+import {
+  hostsPageInNode,
+  isTestServer,
+  projectsHostPageInNode,
+  servesPageInNode,
+} from "./page-in-node.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
@@ -78,11 +83,10 @@ const ownFile = (name: string) =>
 
 export function vitestPluginRSC(): Plugin[] {
   let devServer: ViteDevServer | undefined;
-  // Whether the page is in a worker of Node.js, which Vitest says of a
-  // project once its config is resolved: see `hostsPageInNode()`. Under
-  // any other host, like Storybook or a static build, the page is in a
-  // browser.
-  let inNode = false;
+  // Whether the page is in a worker of Node.js: what the config of the
+  // server says, see `servesPageInNode()`. Under any other host, like
+  // Storybook or a static build, the page is in a browser.
+  const page = { inNode: false };
   // The directory of the server's files of the run, in a worker of Node.js.
   let serverFiles = "";
   return [
@@ -110,14 +114,16 @@ export function vitestPluginRSC(): Plugin[] {
         project,
         defineCacheKeyGenerator,
       }: VitestPluginContext) => {
-        inNode = hostsPageInNode(project.config);
-        if (!inNode) return;
+        if (!hostsPageInNode(project.config)) return;
+        if (!page.inNode) throw serverOfAnotherHost(project);
         // The server's own files of the run, like the cache of Next's build:
         // each worker has a directory in it (node-host.ts). This process
         // removes it, as a worker that Vitest stops does not run its `exit`.
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-"));
-        serverFiles = dir;
-        vitest.onClose(() => fs.rmSync(dir, { recursive: true, force: true }));
+        if (!serverFiles) {
+          const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-"));
+          serverFiles = dir;
+          vitest.onClose(() => fs.rmSync(dir, { recursive: true, force: true }));
+        }
         await startWorkerPage(project);
         // Vitest keeps what it compiled on disk for the next run, by a key
         // without the version of the optimizer's pre-bundles, which it has
@@ -134,7 +140,7 @@ export function vitestPluginRSC(): Plugin[] {
         if (source !== pageHostId) return;
         // In a browser the host's own file, with no module in between for
         // the page to fetch.
-        return inNode && devServer ? `\0${pageHostId}` : ownFile("browser-host");
+        return page.inNode && devServer ? `\0${pageHostId}` : ownFile("browser-host");
       },
       load(id) {
         if (id !== `\0${pageHostId}` || !devServer) return;
@@ -253,7 +259,7 @@ export function vitestPluginRSC(): Plugin[] {
     },
     // What the page in a worker asks, the plugin's own dev server answers:
     // Vitest's project may have another object for it.
-    ...workerPlugins((event, data) => answerOf(devServer!, event, data)),
+    ...workerPlugins(page, (event, data) => answerOf(devServer!, event, data)),
     dependencySourceMapPlugin(),
     dependencyTransformPlugin(),
     createReactClientCoveragePlugin(),
@@ -274,6 +280,8 @@ export function vitestPluginRSC(): Plugin[] {
 // Node's own web APIs for the server. With Browser Mode, Vitest leaves the
 // environments as they are, and so do these.
 type VitestProject = {
+  name: string;
+  sharedViteServer: boolean;
   config: {
     browser: { enabled: boolean };
     environment: string;
@@ -348,6 +356,8 @@ async function optimizersSettled(server: ViteDevServer): Promise<void> {
 
 type TestOptions = {
   browser?: { enabled?: boolean };
+  projects?: unknown[];
+  sharedViteServer?: boolean;
   pool?: string | { name: string };
   environment?: string;
   include?: string[];
@@ -377,21 +387,42 @@ async function withNodeHostPool(
   );
 }
 
+// A project whose page is in a worker of Node.js, on a server whose `config`
+// hooks made it for a page in a browser.
+function serverOfAnotherHost(project: VitestProject): Error {
+  const fix = project.sharedViteServer
+    ? `It shares the server of the config that declares it, which Vitest resolves for it ` +
+      `without the plugins' \`config\` hooks. Give it a server of its own: set ` +
+      `\`test.sharedViteServer: false\` in the root config.`
+    : `Set \`test.environment\` in the project's config, where the plugins' \`config\` ` +
+      `hooks see it.`;
+  return new Error(
+    `vitest-plugin-rsc: the project ${JSON.stringify(project.name)} has its page in a worker ` +
+      `of Node.js, in ${project.config.environment} without Browser Mode, on a Vite server ` +
+      `made for a page in a browser. ${fix}`,
+  );
+}
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function workerPlugins(answers: PageAnswers): Plugin[] {
-  // Whether the config is of a page in a worker: then only these do anything.
-  let inWorker = false;
+// Where the config is of a page in a worker, which these decide for the
+// server: only then they do anything.
+function workerPlugins(page: { inNode: boolean }, answers: PageAnswers): Plugin[] {
   const before = new Map<string, unknown>();
   return [
     {
       name: "rsc:page-in-worker",
       config: {
         order: "post",
-        async handler(config) {
+        async handler(config, { command }) {
           const { test } = config as { test?: TestOptions };
-          inWorker = hostsPageInNode(test);
-          if (!test || !inWorker) return;
+          page.inNode = servesPageInNode(config, command);
+          // Each project then has a server of its own, as before Vitest 5:
+          // see `projectsHostPageInNode()`.
+          if (test && isTestServer(config, command) && projectsHostPageInNode(test)) {
+            test.sharedViteServer = false;
+          }
+          if (!test || !page.inNode) return;
           test.pool = await withNodeHostPool(test.pool, answers);
           // The pre-bundles of its own: the projects of a root that run in a
           // browser bundle the same dependencies, from other entries.
@@ -429,7 +460,7 @@ function workerPlugins(answers: PageAnswers): Plugin[] {
       configEnvironment: {
         order: "post",
         handler(name, config) {
-          if (inWorker && (config.consumer === "client" || name === "client")) {
+          if (page.inNode && (config.consumer === "client" || name === "client")) {
             before.set(name, config.optimizeDeps);
           }
         },
