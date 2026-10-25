@@ -287,8 +287,12 @@ type Argon2Params = {
   associatedData?: Input;
 };
 
+// Argon2 takes no secret, or no associated data, as one of no bytes.
+const none = new Uint8Array();
+
 function argon2Raw(password: Input, salt: Input, params: Argon2Params): Bytes {
-  const { type, version, memory, passes, parallelism, length, secret, associatedData } = params;
+  const { type, version, memory, passes, parallelism, length } = params;
+  const { secret = none, associatedData = none } = params;
   const digest = derive(
     argon2Types[type] ?? "argon2",
     [password, salt, version, memory, passes, parallelism, secret, associatedData],
@@ -299,21 +303,24 @@ function argon2Raw(password: Input, salt: Input, params: Argon2Params): Bytes {
   return digest;
 }
 
+// The associated data goes in the string as a parameter, `data=`, as the
+// argon2 package writes it, so that `verify()` has it.
 function argon2Encoded(salt: Uint8Array, hash: Uint8Array, params: Argon2Params): string {
-  const { type, version, memory, passes, parallelism } = params;
+  const { type, version, memory, passes, parallelism, associatedData } = params;
+  const data = associatedData === undefined ? none : bytesOf(associatedData);
   return (
     `$${argon2Types[type]}$v=${version}$m=${memory},t=${passes},p=${parallelism}` +
-    `$${base64(salt)}$${base64(hash)}`
+    `${data.length > 0 ? `,data=${base64(data)}` : ""}$${base64(salt)}$${base64(hash)}`
   );
 }
 
 const phc =
-  /^\$(argon2(?:d|i|id))\$v=(\d+)\$m=(\d+),t=(\d+),p=(\d+)\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
+  /^\$(argon2(?:d|i|id))\$v=(\d+)\$m=(\d+),t=(\d+),p=(\d+)(?:,data=([A-Za-z0-9+/]*))?\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
 
 function argon2Verify(api: string, encoded: string, password: Input, secret?: Input): boolean {
   const match = phc.exec(encoded);
   if (!match) throw new Error(`Invalid hash: ${encoded}`);
-  const [, name, version, memory, passes, parallelism, salt, hash] = match;
+  const [, name, version, memory, passes, parallelism, data, salt, hash] = match;
   const expected = fromBase64(hash!);
   if (expected.length < argon2Mark.length + 16) return false;
   if (!argon2Mark.every((byte, at) => expected[at] === byte)) throw notMadeHere(api, encoded);
@@ -325,6 +332,7 @@ function argon2Verify(api: string, encoded: string, password: Input, secret?: In
     parallelism: Number(parallelism),
     length: expected.length,
     secret,
+    associatedData: data === undefined ? undefined : fromBase64(data),
   };
   return base64(argon2Raw(password, fromBase64(salt!), params)) === hash;
 }

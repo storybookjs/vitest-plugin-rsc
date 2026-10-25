@@ -277,3 +277,24 @@ test("PBKDF2 derives one key through node:crypto, Web Crypto and @noble/hashes, 
     fast.pbkdf2Sync(password, salt, 1000, 32, "sha256"),
   );
 });
+
+test("argon2: a hash with associated data has it in its PHC string, and verifies", async () => {
+  const lib = argon2();
+  const hash = String(await lib.hash(password, { associatedData: Buffer.from("user 42") }));
+  // As the package writes it: a parameter `data`, in base64 without padding.
+  expect(hash).toMatch(
+    /^\$argon2id\$v=19\$m=65536,t=3,p=4,data=dXNlciA0Mg\$[A-Za-z0-9+/]{22}\$[A-Za-z0-9+/]{43}$/,
+  );
+  expect(await lib.verify(hash, password)).toBe(true);
+  expect(nodeRsArgon2().verifySync(hash, password)).toBe(true);
+  expect(await lib.verify(hash, "wrong")).toBe(false);
+  // Other data, another hash: "user 43".
+  expect(await lib.verify(hash.replace("data=dXNlciA0Mg", "data=dXNlciA0Mw"), password)).toBe(
+    false,
+  );
+  // No data is data of no bytes, as in Argon2.
+  const salt = new Uint8Array(16);
+  expect(await lib.hash(password, { salt, associatedData: new Uint8Array() })).toBe(
+    await lib.hash(password, { salt }),
+  );
+});
