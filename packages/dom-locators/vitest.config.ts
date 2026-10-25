@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { defineProject } from "vitest/config";
+import { playwrightPress, playwrightPressSequentially } from "./test/playwright-commands.ts";
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 
@@ -21,6 +22,7 @@ export const domLocatorsProjects = [
         provider: playwright(),
         screenshotFailures: false,
         instances: [{ browser: "chromium" }],
+        commands: { playwrightPress, playwrightPressSequentially },
       },
     },
   }),
@@ -36,9 +38,8 @@ export const domLocatorsProjects = [
         ],
         environment,
         setupFiles: ["./test/node/setup.ts"],
-        // test/node/oracle.test.ts holds every locator of its tables to
-        // ivya's: in jsdom 2 to 6 s a test on a CI runner, where Vitest
-        // gives a test 5 s in Node.js.
+        // jsdom is slow: the oracle's tables take it seconds on a CI runner,
+        // where Vitest gives a test 5 s in Node.js.
         testTimeout: 20_000,
       },
     }),

@@ -37,7 +37,7 @@ import {
   isVisibleTextNode,
   parentElementOrShadowHost,
 } from "./dom-utils.ts";
-import { isRendered } from "./environment.ts";
+import { rendered } from "./environment.ts";
 
 function hasExplicitAccessibleName(e: Element) {
   return e.hasAttribute("aria-label") || e.hasAttribute("aria-labelledby");
@@ -583,7 +583,7 @@ function queryInAriaOwned(element: Element, selector: string): Element[] {
 
 export function getPseudoContent(element: Element, pseudo: "::before" | "::after") {
   // A DOM that does not render has no styles of pseudo-elements.
-  if (!isRendered(element.ownerDocument)) {
+  if (!rendered) {
     return "";
   }
   const cache = pseudo === "::before" ? cachePseudoContentBefore : cachePseudoContentAfter;

@@ -7,7 +7,7 @@ import { eventView } from "./environment.ts";
 import { UnsupportedError, escapeHatch } from "./errors.ts";
 import { editing, focus } from "./focus.ts";
 
-type TextControl = HTMLInputElement | HTMLTextAreaElement;
+export type TextControl = HTMLInputElement | HTMLTextAreaElement;
 
 const valueSetters = new Map<object, (this: Element, value: string) => void>();
 
@@ -85,44 +85,134 @@ export const inputEvent = (inputType: string, data: string | null, cancelable: b
       });
 
 /**
- * An edit of a text control: `beforeinput`, which may cancel it, then the
- * text of `range(value, selectionStart, selectionEnd)` replaced by `data`,
- * the caret after it, and `input` if the value changed. `maxlength` cuts
- * what it inserts, as typing does. `selection` is for a control without a
- * selection of its own to read, like an email input.
+ * An edit of a text control: the text of `range(value, selectionStart,
+ * selectionEnd)` replaced by `data`, with its `inputType`.
  */
-export function editText(
+export interface Edit {
+  inputType: string;
+  data: string | null;
+  range(value: string, start: number, end: number): [number, number];
+}
+
+/** A typed text, over the selection. */
+export const insertion = (text: string, inputType = "insertText"): Edit => ({
+  inputType,
+  data: text,
+  range: (_value, start, end) => [start, end],
+});
+
+const graphemes =
+  typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : undefined;
+
+/** The boundary of the character as it is seen before (`-1`) or after (`1`) `index` in `value`. */
+export function characterBoundary(value: string, index: number, direction: -1 | 1): number {
+  if (direction < 0 ? index <= 0 : index >= value.length) return index;
+  if (!graphemes) return index + direction;
+  let boundary = direction < 0 ? 0 : value.length;
+  for (const { index: at } of graphemes.segment(value)) {
+    if (direction < 0 ? at < index : at > index) {
+      if (direction < 0) boundary = at;
+      else return at;
+    }
+  }
+  return boundary;
+}
+
+/** Backspace: the selection, else the character as it is seen before the caret. */
+export const backwardDeletion: Edit = {
+  inputType: "deleteContentBackward",
+  data: null,
+  range: (value, start, end) =>
+    start !== end ? [start, end] : [characterBoundary(value, start, -1), start],
+};
+
+/** Delete: the selection, else the character as it is seen after the caret. */
+export const forwardDeletion: Edit = {
+  inputType: "deleteContentForward",
+  data: null,
+  range: (value, start, end) =>
+    start !== end ? [start, end] : [start, characterBoundary(value, start, 1)],
+};
+
+/** The value after `edit`, where it starts and what it inserts: `maxlength` cuts that, as typing does. */
+function apply(
   element: TextControl,
-  inputType: string,
-  data: string | null,
-  range: (value: string, start: number, end: number) => [number, number],
+  edit: Edit,
   selection?: [number, number],
-): void {
-  if (!element.dispatchEvent(inputEvent(inputType, data, true))) return;
+): { value: string; from: number; inserted: string } {
   const before = element.value;
   const [start, end] = selection ?? [
     element.selectionStart ?? before.length,
     element.selectionEnd ?? before.length,
   ];
-  const [from, to] = range(before, start, end);
-  let inserted = data ?? "";
+  const [from, to] = edit.range(before, start, end);
+  let inserted = edit.data ?? "";
   if (element.maxLength >= 0) {
     inserted = inserted.slice(0, Math.max(0, element.maxLength - (before.length - (to - from))));
   }
-  const value = before.slice(0, from) + inserted + before.slice(to);
+  return { value: before.slice(0, from) + inserted + before.slice(to), from, inserted };
+}
+
+// The inputs whose value drops, as it is set, what is no value of their
+// type: a part of a number, the white space around an email or a URL.
+const sanitized = new Set(["number", "email", "url"]);
+
+/**
+ * Whether the control keeps the value of `edit`. An input of a number, an
+ * email or a URL drops what is no value of its type as the value is set,
+ * where Chrome keeps the text a key types, like "-" of "-1", as the page
+ * cannot.
+ */
+export function keepsEdit(element: TextControl, edit: Edit): boolean {
+  if (!(element instanceof HTMLInputElement) || !sanitized.has(element.type)) return true;
+  const { value } = apply(element, edit);
+  const probe = element.ownerDocument.createElement("input");
+  probe.type = element.type;
+  probe.value = value;
+  return probe.value === value;
+}
+
+/**
+ * Whether the control keeps each value that typing `text` makes, one
+ * character after the other, at its caret, or at the start of an input
+ * the focus comes to, as `keepsEdit()` of each.
+ */
+export function keepsTyping(element: TextControl, text: string, focused: boolean): boolean {
+  if (!(element instanceof HTMLInputElement) || !sanitized.has(element.type)) return true;
+  let value = element.value;
+  const caretOf = element.selectionStart;
+  let caret = caretOf === null ? value.length : focused ? caretOf : 0;
+  const probe = element.ownerDocument.createElement("input");
+  probe.type = element.type;
+  for (const char of text) {
+    if (char === "\n" || char === "\r") continue;
+    value = value.slice(0, caret) + char + value.slice(caret);
+    caret += char.length;
+    probe.value = value;
+    if (probe.value !== value) return false;
+  }
+  return true;
+}
+
+/**
+ * `edit` of a text control: `beforeinput`, which may cancel it, then the
+ * new value, the caret after what it inserted, and `input` if the value
+ * changed. `selection` is for a control without a selection of its own to
+ * read, like an email input.
+ */
+export function editText(element: TextControl, edit: Edit, selection?: [number, number]): void {
+  if (!element.dispatchEvent(inputEvent(edit.inputType, edit.data, true))) return;
+  const before = element.value;
+  const { value, from, inserted } = apply(element, edit, selection);
   if (value === before) return;
   editing(element);
   setValue(element, value);
   const caret = from + inserted.length;
   setSelection(element, caret, caret);
-  element.dispatchEvent(inputEvent(inputType, data === null ? null : inserted, false));
+  element.dispatchEvent(inputEvent(edit.inputType, edit.data === null ? null : inserted, false));
 }
-
-/** The selection, or what `range` takes when there is none. */
-const selectionOr =
-  (range: (start: number) => [number, number]) =>
-  (_value: string, start: number, end: number): [number, number] =>
-    start !== end ? [start, end] : range(start);
 
 const deleteKey: KeyboardEventInit = { key: "Delete", code: "Delete", keyCode: 46, which: 46 };
 
@@ -162,32 +252,15 @@ export function fill(element: Element, text: string): void {
   // All of the text is selected, where the control may not say so.
   const all: [number, number] = [0, element.value.length];
   if (text) {
-    editText(element, "insertText", text, (_value, start, end) => [start, end], all);
+    editText(element, insertion(text), all);
     return;
   }
   const view = eventView(element.ownerDocument);
   const init = { ...deleteKey, bubbles: true, cancelable: true, composed: true, view };
   if (element.dispatchEvent(new KeyboardEvent("keydown", init))) {
-    editText(element, "deleteContentForward", null, (_value, start, end) => [start, end], all);
+    editText(element, forwardDeletion, all);
   }
   element.dispatchEvent(new KeyboardEvent("keyup", init));
-}
-
-/** Delete in a text control: the selection, else the character after the caret. */
-export function deleteForward(element: TextControl): void {
-  const range = selectionOr((start) => [start, start + 1]);
-  editText(element, "deleteContentForward", null, range);
-}
-
-/** Backspace in a text control: the selection, else the character before the caret. */
-export function deleteBackward(element: TextControl): void {
-  const range = selectionOr((start) => [Math.max(start - 1, 0), start]);
-  editText(element, "deleteContentBackward", null, range);
-}
-
-/** A typed text in a text control, over the selection. */
-export function insertText(element: TextControl, inputType: string, text: string): void {
-  editText(element, inputType, text, (_value, start, end) => [start, end]);
 }
 
 /** An option's `label`, as the HTML standard has it, which happy-dom's leaves at the attribute: the attribute, else the text. */

@@ -7,7 +7,7 @@
 // test holds the recording to them.
 
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { page as vitestPage, userEvent } from "vitest/browser";
+import { commands, page as vitestPage } from "vitest/browser";
 import { page } from "../src/index.ts";
 import {
   compareLogs,
@@ -19,22 +19,19 @@ import {
 } from "./fidelity-steps.tsx";
 import playwrightLogs from "./playwright-logs.json" with { type: "json" };
 
-/** A combination of `press()`, like "Shift+Tab", in the syntax of `userEvent.keyboard()`. */
-function keyboardSyntax(combination: string): string {
-  const keys = combination.split(/\+(?!$)/);
-  const key = keys.pop()!;
-  const name = (key: string) => (key === " " ? " " : `{${key}}`);
-  return `${keys.map((m) => `{${m}>}`).join("")}${name(key)}${keys
-    .reverse()
-    .map((m) => `{/${m}}`)
-    .join("")}`;
+declare module "vitest/browser" {
+  interface BrowserCommands {
+    playwrightPress(selector: string, key: string): Promise<void>;
+    playwrightPressSequentially(selector: string, text: string): Promise<void>;
+  }
 }
 
+// Vitest's locators press no key: Playwright's own `locator.press()` and
+// `locator.pressSequentially()`, by a command of the test's.
 const vitest: Driver = {
   page: vitestPage,
-  // Vitest's locators press no key: Playwright's keyboard, on the focused element.
-  press: (_locator, key) => userEvent.keyboard(keyboardSyntax(key)),
-  type: (locator, text) => userEvent.type(locator, text),
+  press: (locator, key) => commands.playwrightPress(locator.selector, key),
+  type: (locator, text) => commands.playwrightPressSequentially(locator.selector, text),
 };
 const ours: Driver = {
   page,
@@ -59,23 +56,35 @@ afterAll(() => tearDown());
  * Playwright's log it has not (`- entry`) and the ones it has that
  * Playwright's has not (`+ entry`). The README's table of events says why.
  */
-const expectedDifferences: Record<string, string[]> = {};
+const expectedDifferences: Record<string, string[]> = {
+  // A caret the package moves, after an edit in the middle of the text or
+  // by an arrow, Home or End, is the page's `setSelectionRange()`, for which
+  // Chrome fires `select`, where it fires none for a key's.
+  "the caret: arrows, Home and End, with Shift": Array.from({ length: 6 }, () => "+ select@text"),
+};
 
 // Playwright's log of each step, in a DOM of Node.js the oracle.
 const recorded: Record<string, string[]> = {};
 
-test.each(steps)("$name: the log of the package's action is Playwright's", async (step) => {
-  const theirs = await logOf(step, vitest, rest);
-  recorded[step.name] = theirs;
-  const our = await logOf(step, ours, rest);
-  expect(theirs.length).toBeGreaterThan(0);
-  expect(
-    compareLogs(theirs, our),
-    `Playwright:\n${theirs.join("\n")}\n\ndom-locators:\n${our.join("\n")}`,
-  ).toEqual({ differences: expectedDifferences[step.name] ?? [], sameOrder: true });
-});
+// The logs are Chromium's on Linux, as CI runs it: Playwright's keys of
+// editing on a Mac are others.
+const onLinux = /Linux/.test(navigator.platform);
 
-test("Playwright's logs are the ones recorded in playwright-logs.json", () => {
+test.runIf(onLinux).each(steps)(
+  "$name: the log of the package's action is Playwright's",
+  async (step) => {
+    const theirs = await logOf(step, vitest, rest);
+    recorded[step.name] = theirs;
+    const our = await logOf(step, ours, rest);
+    expect(theirs.length).toBeGreaterThan(0);
+    expect(
+      compareLogs(theirs, our),
+      `Playwright:\n${theirs.join("\n")}\n\ndom-locators:\n${our.join("\n")}`,
+    ).toEqual({ differences: expectedDifferences[step.name] ?? [], sameOrder: true });
+  },
+);
+
+test.runIf(onLinux)("Playwright's logs are the ones recorded in playwright-logs.json", () => {
   expect(Object.keys(recorded)).toHaveLength(steps.length);
   // The entries whose place is the browser's, sorted, as their place is no answer.
   const sorted = (logs: Record<string, string[]>) =>

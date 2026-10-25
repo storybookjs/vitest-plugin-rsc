@@ -21,9 +21,9 @@
 // `elementText()`, `elementMatchesText()` and `getElementLabels()` of
 // src/selectorUtils.ts, and `createTextMatcher()` of src/ivya.ts. Changed:
 // the matchers take the text and `exact` of a locator, where Playwright's
-// parse them from a selector string; the text of an element normalizes
-// when it is asked, and an exact matcher first compares the count of its
-// solid characters, `solidLength()`, which is added. See NOTICE.
+// parse them from a selector string; the text of an element is its count
+// of solid characters, of the added `solidLength()`, which an exact matcher
+// compares first, and its strings when a matcher asks. See NOTICE.
 
 import { getAriaLabelledByElements } from "./role-utils.ts";
 
@@ -35,19 +35,28 @@ export function normalizeWhiteSpace(text: string): string {
 }
 
 /**
- * The text of an element: all of it, the runs of its own text nodes, and
- * the count of the characters normalizing keeps that are no white space.
- * The text normalized is worked out the first time a matcher asks, as most
- * elements of a query are ruled out by that count. Not in Playwright,
- * whose text has `normalized` at once.
+ * The text of an element or of an attribute: the count of the characters
+ * normalizing keeps that are no white space, which an exact matcher
+ * compares first, and the text, all of it and normalized, which an
+ * element works out the first time a matcher asks, as most elements of a
+ * query are ruled out by the count. Not in Playwright, whose text has its
+ * strings, and the runs of an element's own text nodes, which no matcher of
+ * the package reads, at once.
  */
 export class ElementText {
+  readonly solidLength: number;
+  #full: string | (() => string);
   #normalized: string | undefined;
-  constructor(
-    readonly full: string,
-    readonly immediate: string[],
-    readonly solidLength: number,
-  ) {}
+
+  constructor(solidLength: number, full: string | (() => string)) {
+    this.solidLength = solidLength;
+    this.#full = full;
+  }
+
+  get full(): string {
+    if (typeof this.#full === "function") this.#full = this.#full();
+    return this.#full;
+  }
 
   get normalized(): string {
     this.#normalized ??= this.full ? normalizeWhiteSpace(this.full) : "";
@@ -56,7 +65,9 @@ export class ElementText {
 }
 
 /** The text of a string alone, as of an attribute. */
-export const textOf = (text: string) => new ElementText(text, [text], solidLength(text));
+export const textOf = (text: string) => new ElementText(solidLength(text), text);
+
+const noText = new ElementText(0, "");
 
 /**
  * How many characters of `text` normalizing keeps that are no white space:
@@ -167,45 +178,57 @@ export function shouldSkipForTextMatching(element: Element | ShadowRoot) {
 }
 
 export function elementText(cache: TextCache, root: Element | ShadowRoot): ElementText {
-  let value = cache.get(root);
-  if (value === undefined) {
-    value = new ElementText("", [], 0);
-    if (!shouldSkipForTextMatching(root)) {
-      if (root instanceof HTMLInputElement && (root.type === "submit" || root.type === "button")) {
-        value = textOf(root.value);
-      } else {
-        let full = "";
-        let length = 0;
-        const immediate: string[] = [];
-        let currentImmediate = "";
-        for (let child = root.firstChild; child; child = child.nextSibling) {
-          if (child.nodeType === Node.TEXT_NODE) {
-            const text = child.nodeValue || "";
-            full += text;
-            length += solidLength(text);
-            currentImmediate += text;
-          } else {
-            if (currentImmediate) immediate.push(currentImmediate);
-            currentImmediate = "";
-            if (child.nodeType === Node.ELEMENT_NODE) {
-              const text = elementText(cache, child as Element);
-              full += text.full;
-              length += text.solidLength;
-            }
-          }
+  return cache.get(root) ?? textOfNode(cache, root, shouldSkipForTextMatching(root));
+}
+
+/**
+ * The text of `root`, which `skip` leaves out, and of what is in it, into
+ * the cache. A child of what is not left out is in the head only if it is
+ * the head, so its name and that tell whether it is left out, without a
+ * walk up the tree for each.
+ */
+function textOfNode(cache: TextCache, root: Element | ShadowRoot, skip: boolean): ElementText {
+  let value = noText;
+  if (!skip) {
+    if (root instanceof HTMLInputElement && (root.type === "submit" || root.type === "button")) {
+      value = textOf(root.value);
+    } else {
+      let length = 0;
+      for (let child = root.firstChild; child; child = child.nextSibling) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          length += solidLength(child.nodeValue || "");
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          length += childText(cache, child as Element).solidLength;
         }
-        if (currentImmediate) immediate.push(currentImmediate);
-        if ((root as Element).shadowRoot) {
-          const text = elementText(cache, (root as Element).shadowRoot!);
-          full += text.full;
-          length += text.solidLength;
-        }
-        value = new ElementText(full, immediate, length);
       }
+      const shadow = (root as Element).shadowRoot;
+      if (shadow) length += (cache.get(shadow) ?? textOfNode(cache, shadow, false)).solidLength;
+      value = new ElementText(length, () => fullText(cache, root));
     }
-    cache.set(root, value);
   }
+  cache.set(root, value);
   return value;
+}
+
+function childText(cache: TextCache, child: Element): ElementText {
+  const skip =
+    child.nodeName === "SCRIPT" ||
+    child.nodeName === "NOSCRIPT" ||
+    child.nodeName === "STYLE" ||
+    child === child.ownerDocument.head;
+  return cache.get(child) ?? textOfNode(cache, child, skip);
+}
+
+/** The text of `root`, of its text nodes and of the texts in the cache of what is in it. */
+function fullText(cache: TextCache, root: Element | ShadowRoot): string {
+  let full = "";
+  for (let child = root.firstChild; child; child = child.nextSibling) {
+    if (child.nodeType === Node.TEXT_NODE) full += child.nodeValue || "";
+    else if (child.nodeType === Node.ELEMENT_NODE) full += cache.get(child as Element)!.full;
+  }
+  const shadow = (root as Element).shadowRoot;
+  if (shadow) full += cache.get(shadow)!.full;
+  return full;
 }
 
 export function elementMatchesText(

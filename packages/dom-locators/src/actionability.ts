@@ -2,8 +2,14 @@
 // that it is visible, enabled and, for typing, editable. A check that fails
 // is looked at again, as the DOM changes, until the action's timeout.
 
-import { defaultTimeout, isRendered } from "./environment.ts";
-import { elementNotFound, notActionable, strictModeViolation } from "./errors.ts";
+import { defaultTimeout, rendered } from "./environment.ts";
+import {
+  UnsupportedError,
+  elementNotFound,
+  escapeHatch,
+  notActionable,
+  strictModeViolation,
+} from "./errors.ts";
 import {
   getElementComputedStyle,
   hasVisibleBox,
@@ -32,7 +38,11 @@ export interface ActionOptions {
 
 /** The options of an action that Playwright's takes with `force`. */
 export interface ForceOptions extends ActionOptions {
-  /** Whether to act on the element once it is there, without the checks of its state. */
+  /**
+   * Whether to act on the element once it is there, without waiting for
+   * its state. One that is not visible, enabled or editable throws: where
+   * Playwright's acts on it, the browser's answer is not the page's.
+   */
   force?: boolean;
 }
 
@@ -52,10 +62,10 @@ export function checkActionOptions(
 }
 
 /**
- * The element of `target` once it passes `checks`, or once it is there for
- * `force`, retargeted by `retarget`. Rejects at once for more than one
- * element, and after the timeout with "cannot find" or with the check that
- * failed last.
+ * The element of `target` once it passes `checks`, retargeted by
+ * `retarget`. Rejects at once for more than one element, with `force` at
+ * once for a check that fails, and after the timeout with "cannot find" or
+ * with the check that failed last.
  */
 export function actionable(
   target: Target,
@@ -74,7 +84,12 @@ export function actionable(
         return undefined;
       }
       const element = retarget(elements[0]!);
-      reason = options.force ? undefined : failedCheck(element, checks);
+      reason = failedCheck(element, checks);
+      if (reason !== undefined && options.force) {
+        throw new UnsupportedError(
+          `${action} with force of ${target.asLocator()}, which ${reason}, is not in dom-locators: ${escapeHatch}.`,
+        );
+      }
       return reason === undefined ? { value: element } : undefined;
     },
     options.timeout ?? defaultTimeout(),
@@ -102,7 +117,7 @@ function failedCheck(element: Element, checks: Check[]): string | undefined {
  * through the hosts of shadow roots, and no `visibility: hidden`.
  */
 export function isVisible(element: Element): boolean {
-  if (isRendered(element.ownerDocument)) {
+  if (rendered) {
     // Playwright's answer, without the computed style where a visible box tells it.
     if (!hasVisibleBox(element)) return isElementVisible(element);
     const rect = element.getBoundingClientRect();

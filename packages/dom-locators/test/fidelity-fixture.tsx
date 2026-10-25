@@ -1,7 +1,8 @@
 // The fixture of the fidelity test: React's handlers on a button, a link, a
 // controlled input, a textarea, a checkbox with its label, a select, a form
-// with an action of `useActionState`, a file input and a box that scrolls,
-// each writing to the log.
+// with an action of `useActionState`, a file input, a button that cancels
+// its `pointerdown`, a read-only input, a number input and a box that
+// scrolls, each writing to the log.
 
 import { useActionState, useState } from "react";
 
@@ -121,6 +122,18 @@ export function Fixture() {
           )
         }
         {...handlers("onInput")}
+      />
+      <button id="hold" type="button" onPointerDown={(event) => event.preventDefault()}>
+        Hold
+      </button>
+      <label htmlFor="locked">Locked</label>
+      <input id="locked" readOnly defaultValue="fixed" {...handlers("onKeyDown")} />
+      <label htmlFor="amount">Amount</label>
+      <input
+        id="amount"
+        type="number"
+        defaultValue=""
+        onChange={(event) => write(`react:onChange@amount=${event.target.value}`)}
       />
       <div
         id="scroller"
