@@ -2,7 +2,11 @@ import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
+import {
+  vitestPluginNext,
+  type NextBuild,
+  type SpeedOptions,
+} from "vitest-plugin-rsc/nextjs/plugin";
 import { cacheDir } from "../test-helpers/vite-cache.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
@@ -38,6 +42,20 @@ const knownGaps: Record<"happy-dom" | "jsdom", string[]> = {
 const gaps = dom ? knownGaps[dom] : [];
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// The benchmark's knob for the price of one speed feature alone:
+// `VITEST_PLUGIN_RSC_FEATURES="watchDom,keepApp=false"` sets each named
+// feature over `VITEST_PLUGIN_RSC_MODE`, on, or off with `=false`.
+const features: SpeedOptions = Object.fromEntries(
+  // oxlint-disable-next-line no-process-env
+  (process.env.VITEST_PLUGIN_RSC_FEATURES ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map((entry) => {
+      const [name, value] = entry.trim().split("=");
+      return [name, value !== "false"];
+    }),
+);
+
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
   // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
@@ -67,6 +85,7 @@ export default defineConfig({
           "@testing-library/jest-dom",
         ],
       },
+      ...features,
     }),
   ],
   test: {

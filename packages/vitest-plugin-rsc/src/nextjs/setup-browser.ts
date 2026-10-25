@@ -8,6 +8,6 @@ import { findOnEveryChange } from "./speed-features.ts";
 
 await setUpTestFiles(server.config.setupFiles);
 
-// The speed feature `watchDom` looks for an element on every change of the DOM:
-// see speed-features.ts.
+// The speed feature `watchDom` looks for an element of `vitest/browser`'s
+// locators on every change of the DOM: see speed-features.ts.
 findOnEveryChange(page.getByText(""));

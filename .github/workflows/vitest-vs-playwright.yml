@@ -37,7 +37,9 @@ jobs:
         # Library's user-event, in the page; tests/dom-locators/ queries, waits
         # and acts with dom-locators, in the page. `mode: fast` runs them in
         # the plugin's fast mode (`VITEST_PLUGIN_RSC_MODE=fast`): see its
-        # README.md. Vitest runs on Bun, `bun --bun vitest`, which starts a run
+        # README.md. Fidelity mode, the default, has `watchDom` on too, as it
+        # gives up nothing: the ratio of the two modes is of the other speed
+        # features. Vitest runs on Bun, `bun --bun vitest`, which starts a run
         # 2 to 3 s sooner than `pnpm exec vitest` on Node.js; the tests then
         # take the same time. See the playgrounds' README.md. `node` runs it on
         # Node.js instead, in production only: the same tests, to compare.
