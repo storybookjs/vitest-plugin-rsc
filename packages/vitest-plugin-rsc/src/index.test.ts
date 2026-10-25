@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { normalizePath, type Plugin } from "vite";
+import { createServer, normalizePath, type Plugin } from "vite";
 import { describe, expect, test } from "vitest";
 import { vitestPluginRSC } from "./index.ts";
 
@@ -97,6 +97,39 @@ describe("react_client optimizer", () => {
       entries: ["/src/app.test.tsx"],
       exclude: ["msw", "vitest-plugin-rsc"],
     });
+  });
+});
+
+describe("node:async_hooks", () => {
+  // With a cold cache, a dependency the optimizer of the page learns of while
+  // a test runs has it pre-bundle again and reload the page.
+  test("is no dependency for the optimizers of the page to find", async () => {
+    const root = fileURLToPath(new URL("../../../playground/nextjs-e2e-demo", import.meta.url));
+    const server = await createServer({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      server: { middlewareMode: true, ws: false },
+      // The package where an app has it, in its `node_modules`, not the
+      // workspace's folder of the package that the link points to.
+      resolve: { preserveSymlinks: true },
+      cacheDir: fileURLToPath(new URL("../node_modules/.vite-async-hooks-test", import.meta.url)),
+      plugins: [vitestPluginRSC()],
+    });
+    try {
+      for (const name of ["client", "react_client"]) {
+        const environment = server.environments[name]!;
+        const resolved = await environment.pluginContainer.resolveId(
+          "node:async_hooks",
+          `${root}/app/page.tsx`,
+        );
+        const optimizer = environment.depsOptimizer!;
+        expect(optimizer.isOptimizedDepFile(resolved!.id)).toBe(false);
+        expect(optimizer.metadata.discovered).not.toHaveProperty(["node:async_hooks"]);
+      }
+    } finally {
+      await server.close();
+    }
   });
 });
 
