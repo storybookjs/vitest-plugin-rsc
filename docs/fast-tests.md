@@ -8,7 +8,7 @@ How to get the quickest feedback loop for the end-to-end scenarios of a Next.js 
 > - On #251: both modes and every speed feature, `watchDom` in both modes, the wait for the next change of the document (#266), the data layer of the notes apps (#262), one CommonJS object per ES module in the pre-bundles (#264), the patch of `@vitest/mocker` (#258), the profile config at any number of workers (#271), the stylesheets of a route asked once per run (#268), the server layer compiled while Chromium launches (#275), and the benchmark on Bun.
 > - On draft pull requests: `dom-locators` (#255), the host of the page in Node.js without a browser (#261, and #267 for the benchmark in happy-dom and jsdom), the benchmark's signed-in user from a signed cookie and the database's times per request (#276), and a cheaper page load in fidelity mode (#277). Without a pull request: a preload of the app's client during the setup files (`wip/lifecycle-3-preload`) and the forced layouts of a test (`wip/forced-layout`).
 >
-> The headline numbers come from one build, **#251 with #255, #276 and the host in Node.js merged in**: the walls of a run with 1 and 4 workers, and the time of each kind of request. In that build the `dom-locators` tests sign in without the signed cookie of #276, so their requests still look the session up; the `user-event` tests have it. The host in Node.js also changes the browser's side of the plugin; what that does to a run in Chromium isn't measured on its own. A section that uses an earlier build says which.
+> The headline numbers come from one build, **#251 with #255, #276 and the host in Node.js merged in**: the walls of a run with 1 and 4 workers. The time of each kind of request and the cookie's gain come from the same build without the host, in one A/B. In that build the `dom-locators` tests sign in without the signed cookie of #276, so their requests still look the session up; the `user-event` tests have it. The host in Node.js also changes the browser's side of the plugin; what that does to a run in Chromium isn't measured on its own. A section that uses an earlier build says which.
 
 - [The quickest loop](#the-quickest-loop)
 - [What a test costs](#what-a-test-costs)
@@ -39,7 +39,7 @@ Every number on this page ran Next and React in production, `vitestPluginNext({ 
 
 ## What a test costs
 
-A run of the 500 tests in fast mode, with 1 worker, takes **14.28 ± 0.08 s with `dom-locators`** and **at most 14.99 ± 0.23 s with the clicks and fills of Testing Library's `user-event`**, 3 runs each after a warmup. The `user-event` runs came right after a profiled run, on a busier machine, so read theirs as an upper bound. The `dom-locators` tests of that build sign in without the signed cookie of #276, which took 1.4 ms off a test of the `user-event` column, so the two aren't a comparison of the clicks alone. Of a run with `dom-locators`, Vitest's `Duration` is 13.6–13.7 s, of which the tests take 93% and the setup of the test files 5%: about 25 ms per test.
+A run of the 500 tests in fast mode, with 1 worker, takes **14.28 ± 0.08 s with `dom-locators`** and **at most 14.99 ± 0.23 s with the clicks and fills of Testing Library's `user-event`**, 3 runs each after a warmup. The `user-event` runs came right after a profiled run, on a busier machine, so read theirs as an upper bound. The `dom-locators` tests of that build sign in without the signed cookie of #276, so the two aren't a comparison of the clicks alone. With the cookie in the `dom-locators` tests too, a run takes 0.75 s less by the median, 14.83 → 14.08 s (14.85 ± 0.32 → 14.37 ± 0.55 s by the mean), faster in each of 5 interleaved rounds, on #251 with #255, without and with #276: 1.5 ms per test, about what the cookie took off the `user-event` column, 1.4. Of a run with `dom-locators`, Vitest's `Duration` is 13.6–13.7 s, of which the tests take 93% and the setup of the test files 5%: about 25 ms per test.
 
 ### Where the time goes
 
@@ -64,17 +64,17 @@ What stays is the app's own stack: its database, Next, React, Flight and Chrome 
 
 ### Per request
 
-Of the tests' time, 47% is in requests of the page, and 53% is the page itself: the clicks, Next's router, decoding Flight, React and the assertions. The server's side of each request:
+With the cookie, 44% of the tests' time is in requests of the page, and 56% is the page itself: the clicks, Next's router, decoding Flight, React and the assertions. The server's side of each request:
 
 |                                       | page load | navigation | Server Action |
 | ------------------------------------- | --------: | ---------: | ------------: |
 | per test                              |      1.32 |       2.28 |          2.13 |
-| the server's ms each                  |       2.0 |        1.8 |           3.2 |
-| before Flight: routing, the action    |       0.8 |        0.6 |           2.0 |
-| the Flight render                     |       1.1 |        1.2 |           1.1 |
-| after Flight, until the response ends |       0.1 |          0 |           0.1 |
+| the server's ms each                  |       1.5 |        1.3 |           2.4 |
+| before Flight: routing, the action    |       0.7 |        0.5 |           1.5 |
+| the Flight render                     |       0.8 |        0.8 |           0.8 |
+| after Flight, until the response ends |         0 |          0 |           0.1 |
 
-That's one timings run of the `dom-locators` column, with the CPU profiler on, at a resolution of 0.1 ms; its requests look the session up, without the signed cookie of #276. With the render that follows, the CPU profile above, on its earlier build, puts a page load at about 3.8 ms, a navigation at 3.0 and a Server Action at 4.2. What the database takes of each request is in [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests).
+That's one timings run of the `dom-locators` column on #251 with #255 and #276, with the cookie in its tests, at a resolution of 0.1 ms. Without the cookie, a request takes 0.10 ms more for a page load, 0.16 for a navigation and 0.31 for a Server Action, as it looks the session up. With the render that follows, the CPU profile above, on its earlier build, puts a page load at about 3.8 ms, a navigation at 3.0 and a Server Action at 4.2. What the database takes of each request is in [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests).
 
 In that profile, the flows are the run: their 350 tests take 88% of the test time, at 38 ms per test, with 1.4 page loads, 3.2 navigations and 2.8 Server Actions each. A short test takes 10 ms: mostly one page load and one assertion.
 
