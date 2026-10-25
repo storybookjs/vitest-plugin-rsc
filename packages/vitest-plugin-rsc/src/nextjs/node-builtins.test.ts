@@ -33,7 +33,11 @@ test("leaves a package alone, and the package's own `async_hooks`", () => {
   expect(nodeModuleOf("node:async_hooks")).toBeUndefined();
 });
 
-test("has a module for every module of Node.js but a few", () => {
+test("has a module for every module of Node.js but a few", ({ skip }) => {
+  skip(
+    process.versions.bun !== undefined,
+    "the runtime's list of modules is the reference, and Bun's has its own, like `bun:sqlite`",
+  );
   // Not the internals of Node's own, like `_stream_duplex`.
   const names = builtinModules.filter((name) => !name.startsWith("_"));
   const without = names.filter((name) => !nodeModuleOf(name));

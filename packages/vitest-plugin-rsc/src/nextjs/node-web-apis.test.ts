@@ -227,7 +227,13 @@ test("`crypto` hashes with MD5, SHA-1 and SHA-2 as Node.js does, by Node's names
   ).toBe(nodeCrypto.createHmac("sha256", Buffer.from("deadbeef", "hex")).update("x").digest("hex"));
 });
 
-test("`crypto` fails as Node.js does: another algorithm, a digest twice, a copy after it", () => {
+test("`crypto` fails as Node.js does: another algorithm, a digest twice, a copy after it", ({
+  skip,
+}) => {
+  skip(
+    process.versions.bun !== undefined,
+    "Node's `crypto` is the reference, and Bun's throws other errors",
+  );
   const calls: [string, (lib: typeof nodeCrypto) => unknown][] = [
     ["createHash of nothing", (lib) => lib.createHash("md55")],
     ["createHmac of nothing", (lib) => lib.createHmac("md55", "k")],
@@ -394,7 +400,13 @@ test("`buffer` tells UTF-8 and ASCII as Node.js does, and has the browser's File
   expect(() => transcode(Buffer.from("a"), "utf8", "latin1")).toThrow();
 });
 
-test("throws Node's error for what is no data or an option out of its range, never an answer", async () => {
+test("throws Node's error for what is no data or an option out of its range, never an answer", async ({
+  skip,
+}) => {
+  skip(
+    process.versions.bun !== undefined,
+    "Node's `crypto` is the reference, and Bun's `hash` has no `outputEncoding`",
+  );
   // The code of what a call throws, as `outcome()` has it.
   const code = (call: () => unknown) => outcome(call as () => undefined).split(":")[0];
   const calls: [string, (z: any, c: any, b: any) => unknown][] = [

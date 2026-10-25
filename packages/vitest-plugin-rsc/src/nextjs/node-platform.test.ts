@@ -68,7 +68,8 @@ test("gives a stand-in a stub of an export it has not, which throws when it is u
     ],
     "16.9.0",
   )!;
-  const stand = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+  // In base64: Bun loads a `data:` URL whose text has a `.` as a file, not a module.
+  const stand = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
   const message = (name: string) =>
     `vitest-plugin-rsc: next@16.9.0 has \`${name}\` in ${file}, which the plugin's ` +
     "stand-in for that module does not have. Use a version of vitest-plugin-rsc that " +

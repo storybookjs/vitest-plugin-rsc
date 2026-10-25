@@ -9,7 +9,13 @@ const form = () => {
   return data;
 };
 
-test("encodes a form as a browser does by default, with the names of its files", async () => {
+test("encodes a form as a browser does by default, with the names of its files", async ({
+  skip,
+}) => {
+  skip(
+    process.versions.bun !== undefined,
+    "the runtime's Blob stands in for the browser's, and Bun's adds a charset to a type of text",
+  );
   const body = formBody(form(), "application/x-www-form-urlencoded") as Blob;
 
   expect(await body.text()).toBe("name=Ada+Lovelace&note=a+%26+b&file=notes.txt");
@@ -26,7 +32,11 @@ test("sends the entries of a multipart form as they are, files too", () => {
   expect(formBody(data, "multipart/form-data")).toBe(data);
 });
 
-test("encodes a form of text/plain a line for each entry", async () => {
+test("encodes a form of text/plain a line for each entry", async ({ skip }) => {
+  skip(
+    process.versions.bun !== undefined,
+    "the runtime's Blob stands in for the browser's, and Bun's adds a charset to a type of text",
+  );
   const body = formBody(form(), "text/plain") as Blob;
 
   expect(await body.text()).toBe("name=Ada Lovelace\r\nnote=a & b\r\nfile=notes.txt\r\n");

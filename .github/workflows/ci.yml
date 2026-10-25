@@ -113,6 +113,12 @@ jobs:
             projects: --project 'nextjs-notes-demo-storybook*' --project '!nextjs-notes-demo-storybook'
           - part: other projects
             projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*'
+          # On Node.js too: a few tests of the plugin check its stand-ins
+          # for Node's modules and the browser's Blob against the runtime's
+          # own, which Bun's differ from. They skip on Bun.
+          - part: plugin on Node.js
+            projects: --project vitest-plugin-rsc
+            script: test:dist:node
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -127,7 +133,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: bunx --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm test:dist ${{ matrix.projects }}
+      - run: pnpm ${{ matrix.script || 'test:dist' }} ${{ matrix.projects }}
 
   # The check that branch protection requires: it passes when every part of
   # the vitest job does.

@@ -61,9 +61,10 @@ async function compileStylesheet(
   }
 }
 
-// What a module of the exports gives the code that imports it.
+// What a module of the exports gives the code that imports it. In base64:
+// Bun loads a `data:` URL whose text has a `.` as a file, not a module.
 const load = (code: string): Promise<Record<string, unknown>> =>
-  import(`data:text/javascript,${encodeURIComponent(code)}`);
+  import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 
 test("keeps the class names of a CSS module, without the <style> Vite adds", async () => {
   const compiled = await compileStylesheet(

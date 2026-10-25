@@ -773,8 +773,9 @@ test("gives the rsc layer every export of the Flight codec, one without an adapt
     vi.unstubAllGlobals();
   });
   const bridge = flightBridge("static", flightExports.static, version, registry);
+  // In base64: Bun loads a `data:` URL whose text has a `.` as a file, not a module.
   const { prerender, resumeAndPrerender } = (await import(
-    /* @vite-ignore */ `data:text/javascript,${encodeURIComponent(bridge)}`
+    /* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(bridge).toString("base64")}`
   )) as Record<string, (...args: unknown[]) => unknown>;
 
   expect(prerender!("page")).toEqual(["prerendered", "page"]);
