@@ -79,13 +79,12 @@ export type SpeedOptions = {
    */
   skipPrefetch?: boolean;
   /**
-   * Experimental. The server runs a timeout of no delay, a
-   * `setTimeout(work, 0)` of its code, as an immediate, unless the test has
-   * faked the timers. React's renderers take an immediate between the steps
-   * of a render in either mode, as on Node.js.
+   * Experimental. The server runs the steps of a render, which React
+   * separates with `setTimeout(work, 0)`, as immediates, unless the test has
+   * faked the timers.
    *
-   * Gives up: the delay of a timeout, at least 4 ms in a browser for one
-   * that a timeout started, five deep, and 1 ms on Node.js.
+   * Gives up: the delay a browser adds to a timeout, at least 4 ms for one
+   * that a timeout started, five deep.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */

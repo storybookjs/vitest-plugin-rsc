@@ -32,13 +32,6 @@ const serverGlobals = [
   "clearTimeout",
 ];
 
-// React's renderers for the edge, of HTML and of Flight, which the server
-// layers run. Between the steps of a render they call `setTimeout(work, 0)`,
-// where their builds for Node.js, which a Next.js server runs, call
-// `setImmediate(work)`: so they get Node's, which no browser delays.
-const reactEdgeRenderer =
-  /\/(?:react-dom-server|react-server-dom-[a-z]+-server)\.edge\.(?:development|production)\.js$/;
-
 const mentionsServerGlobal = new RegExp(`\\b(?:${serverGlobals.join("|")})\\b`);
 // Also `typeof(window)`: which `typeof` the defines replace is up to oxc.
 const mentionsTypeof = /\btypeof\b/;
@@ -58,9 +51,6 @@ export async function compileServerCode(
   if (mentionsServerGlobal.test(code)) {
     for (const name of serverGlobals) {
       defines[name] = defines[`globalThis.${name}`] = `${registry}.${name}`;
-    }
-    if (reactEdgeRenderer.test(normalizePath(id))) {
-      defines.setTimeout = defines["globalThis.setTimeout"] = `${registry}.setImmediate`;
     }
   }
   if (mentionsTypeof.test(code) && mentionsBrowserGlobal.test(code)) {
