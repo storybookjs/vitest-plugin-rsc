@@ -75,9 +75,9 @@ export async function invokeEnvironment(
   const answer = await environment.hot.handleInvoke(payload);
   // Vite answers a module that Vitest compiled in the run with Vitest's
   // code: its map, without the runner's lines.
-  const fetched = (answer as { result?: { code?: unknown } }).result;
-  if (typeof fetched?.code === "string") {
-    fetched.code = withLinesBefore(fetched.code, options?.startOffset ?? 0);
+  const fetched = (answer as { result?: { code?: unknown; id?: unknown } }).result;
+  if (typeof fetched?.code === "string" && typeof fetched.id === "string") {
+    fetched.code = withLinesBefore(fetched.code, options?.startOffset ?? 0, fetched.id);
   }
   return answer;
 }
@@ -115,7 +115,7 @@ async function fromCache(
   const code = "tmp" in result ? await readFile(result.tmp, "utf8") : result.code;
   const { file, id, url: moduleUrl, invalidate } = result;
   return {
-    code: withLinesBefore(code, options?.startOffset ?? 0),
+    code: withLinesBefore(code, options?.startOffset ?? 0, id),
     file,
     id,
     url: moduleUrl,
@@ -135,13 +135,15 @@ const inlineMapRE =
   /\n\/\/# sourceMappingSource=vite-generated\n\/\/# sourceMappingURL=data:application\/json;base64,([A-Za-z0-9+/=]+)\n/g;
 
 /**
- * The code with its source map for a runner that puts `lines` lines before
- * the code, as Vite gives it with the runner's `startOffset`: Vitest's runner
- * puts none, so its cache has the map of the code as it is. A map that Vite
- * put in the code has the lines already. A dependency comes without a map,
- * see `dependencySourceMapPlugin()` in index.ts.
+ * The code of the module `id` with its source map for a runner that puts
+ * `lines` lines before the code, as Vite gives it with the runner's
+ * `startOffset`, and in Vite's form, which names the module before the map:
+ * Vitest's runner puts no lines before the code, so its cache has the map of
+ * the code as it is, and no name. A map in Vite's form has the lines already.
+ * A dependency comes without a map, see `dependencySourceMapPlugin()` in
+ * index.ts.
  */
-export function withLinesBefore(code: string, lines: number): string {
+export function withLinesBefore(code: string, lines: number, id: string): string {
   const inline = lines > 0 ? [...code.matchAll(inlineMapRE)].at(-1) : undefined;
   if (!inline) return code;
   const lineBefore = code.slice(code.lastIndexOf("\n", inline.index - 1) + 1, inline.index);
@@ -151,6 +153,10 @@ export function withLinesBefore(code: string, lines: number): string {
   };
   map.mappings = ";".repeat(lines) + map.mappings;
   const shifted = Buffer.from(JSON.stringify(map)).toString("base64");
-  const start = inline.index + inline[0].length - inline[1]!.length - 1;
-  return `${code.slice(0, start)}${shifted}${code.slice(start + inline[1]!.length)}`;
+  // Not the comment of a map in one piece in this file: Vitest reads the
+  // last such comment of a module it caches as its map, also one in a string.
+  const comments =
+    `\n//# sourceURL=${id}\n//# sourceMappingSource=vite-generated\n` +
+    `//# ${"sourceMappingURL"}=data:application/json;base64,${shifted}\n`;
+  return `${code.slice(0, inline.index)}${comments}${code.slice(inline.index + inline[0].length)}`;
 }

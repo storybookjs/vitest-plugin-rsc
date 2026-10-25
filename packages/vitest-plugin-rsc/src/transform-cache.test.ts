@@ -27,7 +27,7 @@ const viteAnswer = { result: { code: "export default 'vite';", file: "/a.ts", id
 function setUp({ fsModuleCache = true, invalidated = 0 } = {}) {
   fetch.mockReset();
   const server = {} as ViteDevServer;
-  const handleInvoke = vi.fn(async () => viteAnswer);
+  const handleInvoke = vi.fn(async () => structuredClone(viteAnswer));
   const node = { lastInvalidationTimestamp: invalidated, lastHMRTimestamp: 0 };
   const moduleGraph = { ensureEntryFromUrl: vi.fn(async () => node), invalidateModule: vi.fn() };
   const environment = {
@@ -97,9 +97,9 @@ test("leaves to Vite a module that Vitest would leave to Node.js, and an error",
   fetch.mockResolvedValue({ externalize: "file:///node_modules/a/index.js", type: "module" });
   expect(
     await invokeEnvironment(server, environment, fetchModule("/node_modules/a/index.js")),
-  ).toBe(viteAnswer);
+  ).toEqual(viteAnswer);
   fetch.mockRejectedValue(new Error("Transform failed"));
-  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toBe(viteAnswer);
+  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toEqual(viteAnswer);
   expect(handleInvoke).toHaveBeenCalledTimes(2);
 });
 
@@ -107,7 +107,7 @@ test("leaves to Vite a module that Vite invalidated in the run, which Vitest key
   const { server, environment, handleInvoke, project } = setUp({ invalidated: 1 });
   await answerFromTransformCache(project);
 
-  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toBe(viteAnswer);
+  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toEqual(viteAnswer);
   expect(fetch).not.toHaveBeenCalled();
   expect(handleInvoke).toHaveBeenCalledOnce();
 });
@@ -120,7 +120,7 @@ test("leaves to Vite a module invalidated while Vitest read it, and forgets Vite
     return { cached: true, tmp, file: "/a.ts", id: "/a.ts", url: "/a.ts", invalidate: false };
   });
 
-  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toBe(viteAnswer);
+  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toEqual(viteAnswer);
   expect(moduleGraph.invalidateModule).toHaveBeenCalledWith(node);
   expect(handleInvoke).toHaveBeenCalledOnce();
 });
@@ -136,7 +136,7 @@ test("finds the module of a URL as Vite does, and leaves a bare specifier to Vit
     fetchModule("/@id/__x00__virtual:a", { cached: true }),
   );
   expect(moduleGraph.ensureEntryFromUrl).toHaveBeenCalledWith("\0virtual:a");
-  expect(await invokeEnvironment(server, environment, fetchModule("vitest-plugin-rsc/a"))).toBe(
+  expect(await invokeEnvironment(server, environment, fetchModule("vitest-plugin-rsc/a"))).toEqual(
     viteAnswer,
   );
   expect(fetch).toHaveBeenCalledOnce();
@@ -146,7 +146,7 @@ test("finds the module of a URL as Vite does, and leaves a bare specifier to Vit
 test("leaves to Vite what is not a module, and every module without the cache", async () => {
   const { server, environment, handleInvoke, project } = setUp({ fsModuleCache: false });
   await answerFromTransformCache(project);
-  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toBe(viteAnswer);
+  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toEqual(viteAnswer);
 
   const other = setUp();
   await answerFromTransformCache(other.project);
@@ -154,7 +154,7 @@ test("leaves to Vite what is not a module, and every module without the cache", 
     ...fetchModule("/a.ts"),
     data: { name: "getBuiltins", id: "send:2", data: [] },
   };
-  expect(await invokeEnvironment(other.server, other.environment, builtins as never)).toBe(
+  expect(await invokeEnvironment(other.server, other.environment, builtins as never)).toEqual(
     viteAnswer,
   );
   expect(fetch).not.toHaveBeenCalled();
@@ -162,24 +162,39 @@ test("leaves to Vite what is not a module, and every module without the cache", 
   expect(other.handleInvoke).toHaveBeenCalledOnce();
 });
 
-test("moves the source map down by the lines that the runner puts before the code", () => {
-  const map = { version: 3, sources: ["a.ts"], mappings: "AAAA;AACA" };
-  // As Vite puts it in the code, built here: Vitest reads the last comment
-  // of a source map in a module it caches, also one in a string.
-  const withMap = (of: object) =>
-    "export default 1;\n//# sourceMappingSource=vite-generated\n" +
-    `//# ${"sourceMappingURL"}=data:application/json;base64,` +
-    `${Buffer.from(JSON.stringify(of)).toString("base64")}\n// cached`;
-  const code = withMap(map);
+// A module's code with a map, as Vitest keeps it, or as Vite gives it to a
+// runner, which names the module before the map. Built here: Vitest reads the
+// last comment of a source map in a module it caches, also one in a string.
+const map = { version: 3, sources: ["a.ts"], mappings: "AAAA;AACA" };
+const withMap = (of: object, name = "") =>
+  "export default 1;\n" +
+  (name && `//# sourceURL=${name}\n`) +
+  "//# sourceMappingSource=vite-generated\n" +
+  `//# ${"sourceMappingURL"}=data:application/json;base64,` +
+  `${Buffer.from(JSON.stringify(of)).toString("base64")}\n// cached`;
+const shifted = withMap({ ...map, mappings: ";;AAAA;AACA" }, "/a.ts");
 
-  expect(withLinesBefore(code, 2)).toBe(withMap({ ...map, mappings: ";;AAAA;AACA" }));
-  expect(withLinesBefore(code, 0)).toBe(code);
-  // Vite's own, which has the lines already.
-  const fromVite = code.replace(
-    "\n//# sourceMappingSource",
-    "\n//# sourceURL=/a.ts\n//# sourceMappingSource",
-  );
-  expect(withLinesBefore(fromVite, 2)).toBe(fromVite);
+test("moves the source map down by the lines that the runner puts before the code, once", () => {
+  expect(withLinesBefore(withMap(map), 2, "/a.ts")).toBe(shifted);
+  expect(withLinesBefore(shifted, 2, "/a.ts")).toBe(shifted);
+  expect(withLinesBefore(withMap(map), 0, "/a.ts")).toBe(withMap(map));
   // A dependency, which comes without a map.
-  expect(withLinesBefore("export default 1;\n", 2)).toBe("export default 1;\n");
+  expect(withLinesBefore("export default 1;\n", 2, "/a.ts")).toBe("export default 1;\n");
+});
+
+test("moves the map of Vite's answer down when Vitest compiled the module in the run", async () => {
+  const { server, environment, handleInvoke, project } = setUp({ invalidated: 1 });
+  await answerFromTransformCache(project);
+  const answer = (code: string) => ({ result: { code, file: "/a.ts", id: "/a.ts" } });
+  const options = { cached: false, startOffset: 2 };
+
+  handleInvoke.mockResolvedValueOnce(answer(withMap(map)));
+  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts", options))).toEqual(
+    answer(shifted),
+  );
+  // Vite's own, which has the lines already.
+  handleInvoke.mockResolvedValueOnce(answer(shifted));
+  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts", options))).toEqual(
+    answer(shifted),
+  );
 });
