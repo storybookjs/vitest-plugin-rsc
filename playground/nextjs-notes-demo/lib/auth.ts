@@ -50,12 +50,6 @@ export const auth = betterAuth({
       generateId: "uuid",
     },
   },
-  // A session and its user in one query, by the relations of db/schema.ts,
-  // where the adapter would look up the user by a second one: on every
-  // render of a page for a signed-in user.
-  experimental: {
-    joins: true,
-  },
   user: {
     additionalFields: {
       role: {
