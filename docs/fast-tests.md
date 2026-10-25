@@ -6,9 +6,9 @@ How to get the quickest feedback loop for the end-to-end scenarios of a Next.js 
 > **Status, 25 October 2026.** None of this is released yet. Fast mode and its speed features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), the pull request of fast mode, and so is everything below unless it names a draft pull request on top of it:
 >
 > - On #251: both modes and every speed feature, `watchDom` in both modes, the wait for the next change of the document (#266), the data layer of the notes apps (#262), one CommonJS object per ES module in the pre-bundles (#264), the patch of `@vitest/mocker` (#258), the profile config at any number of workers (#271), the stylesheets of a route asked once per run (#268), the server layer compiled while Chromium launches (#275), and the benchmark on Bun.
-> - On draft pull requests: `dom-locators` (#255), the host of the page in Node.js without a browser (#261, and #267 for the benchmark in happy-dom and jsdom), the benchmark's signed-in user from a signed cookie and the database's times per request (#276), and a cheaper page load in fidelity mode (#277). Without a pull request: a preload of the app's client during the setup files (`wip/lifecycle-3-preload`) and the forced layouts of a test (`wip/forced-layout`).
+> - On draft pull requests: `dom-locators` (#255), the host of the page in Node.js without a browser (#261, and #267 for the benchmark in happy-dom and jsdom), the benchmark's signed-in user from a signed cookie and the database's times per request (#276), and a cheaper page load in fidelity mode (#277). Without a pull request: a preload of the app's client during the setup files (`wip/lifecycle-3-preload`).
 >
-> The headline numbers come from one build, **#251 with #255, #276 and the host in Node.js merged in**: the walls of a run with 1 and 4 workers. The time of each kind of request and the cookie's gain come from the same build without the host, in one A/B. In that build the `dom-locators` tests sign in without the signed cookie of #276, so their requests still look the session up; the `user-event` tests have it. The host in Node.js also changes the browser's side of the plugin; what that does to a run in Chromium isn't measured on its own. A section that uses an earlier build says which.
+> The headline numbers come from one build, **#251 with #255, #276 and the host in Node.js merged in**: the walls of a run with 1 and 4 workers. In the headline build the `dom-locators` tests sign in without the signed cookie of #276, so their requests still look the session up; the `user-event` tests have it. The time of each kind of request and the cookie's gain come from an A/B of that build without and with the cookie in its `dom-locators` tests, in another session. The host in Node.js also changes the browser's side of the plugin; what that does to a run in Chromium isn't measured on its own. A section that uses an earlier build says which.
 
 - [The quickest loop](#the-quickest-loop)
 - [What a test costs](#what-a-test-costs)
@@ -39,7 +39,9 @@ Every number on this page ran Next and React in production, `vitestPluginNext({ 
 
 ## What a test costs
 
-A run of the 500 tests in fast mode, with 1 worker, takes **14.28 ± 0.08 s with `dom-locators`** and **at most 14.99 ± 0.23 s with the clicks and fills of Testing Library's `user-event`**, 3 runs each after a warmup. The `user-event` runs came right after a profiled run, on a busier machine, so read theirs as an upper bound. The `dom-locators` tests of that build sign in without the signed cookie of #276, so the two aren't a comparison of the clicks alone. With the cookie in the `dom-locators` tests too, a run takes 0.75 s less by the median, 14.83 → 14.08 s (14.85 ± 0.32 → 14.37 ± 0.55 s by the mean), faster in each of 5 interleaved rounds, on #251 with #255, without and with #276: 1.5 ms per test, about what the cookie took off the `user-event` column, 1.4. Of a run with `dom-locators`, Vitest's `Duration` is 13.6–13.7 s, of which the tests take 93% and the setup of the test files 5%: about 25 ms per test.
+A run of the 500 tests in fast mode, with 1 worker, takes **14.28 ± 0.08 s with `dom-locators`** and **at most 14.99 ± 0.23 s with the clicks and fills of Testing Library's `user-event`**, 3 runs each after a warmup. Of a run with `dom-locators`, Vitest's `Duration` is 13.6–13.7 s, of which the tests take 93% and the setup of the test files 5%: about 25 ms per test. The `user-event` runs came right after a profiled run, on a busier machine, so read theirs as an upper bound.
+
+The `dom-locators` tests of the headline build sign in without the signed cookie of #276, so the two columns aren't a comparison of the clicks alone. With the cookie in the `dom-locators` tests too, a run takes 0.75 s less by the median, 14.83 → 14.08 s, and 0.48 s less by the mean, 14.85 ± 0.32 → 14.37 ± 0.55 s: 1.0–1.5 ms per test, faster in each of 5 interleaved rounds, on the headline build without and with the cookie in its `dom-locators` tests. The cookie took 1.4 ms off a test of the `user-event` column. That session ran the column without the cookie 0.57 s slower than the 14.28 s above; only the difference carries over.
 
 ### Where the time goes
 
@@ -69,12 +71,12 @@ With the cookie, 44% of the tests' time is in requests of the page, and 56% is t
 |                                       | page load | navigation | Server Action |
 | ------------------------------------- | --------: | ---------: | ------------: |
 | per test                              |      1.32 |       2.28 |          2.13 |
-| the server's ms each                  |       1.5 |        1.3 |           2.4 |
+| the server's ms each                  |       1.5 |        1.3 |           2.5 |
 | before Flight: routing, the action    |       0.7 |        0.5 |           1.5 |
 | the Flight render                     |       0.8 |        0.8 |           0.8 |
 | after Flight, until the response ends |         0 |          0 |           0.1 |
 
-That's one timings run of the `dom-locators` column on #251 with #255 and #276, with the cookie in its tests, at a resolution of 0.1 ms. Without the cookie, a request takes 0.10 ms more for a page load, 0.16 for a navigation and 0.31 for a Server Action, as it looks the session up. With the render that follows, the CPU profile above, on its earlier build, puts a page load at about 3.8 ms, a navigation at 3.0 and a Server Action at 4.2. What the database takes of each request is in [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests).
+That's one timings run of the `dom-locators` column on the headline build, with the cookie in its tests too, at a resolution of 0.1 ms. Without the cookie, a request takes 0.10 ms more for a page load, 0.16 for a navigation and 0.31 for a Server Action, as it looks the session up. With the render that follows, the CPU profile above, on its earlier build, puts a page load at about 3.8 ms, a navigation at 3.0 and a Server Action at 4.2. What the database takes of each request is in [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests).
 
 In that profile, the flows are the run: their 350 tests take 88% of the test time, at 38 ms per test, with 1.4 page loads, 3.2 navigations and 2.8 Server Actions each. A short test takes 10 ms: mostly one page load and one assertion.
 
@@ -103,7 +105,7 @@ About 0.27 s of it is idle: Next prepares the route for the first time (`resolve
 | `fastCrypto`     | password hashes of the real algorithm, like one in a fixture                                  |                                   1.6 |                                1.8 | off / on                 |
 | `immediates`     | the delay a browser adds to a timeout of 0 between the steps of a render                      |                                   0.1 |                                0.4 | off / on                 |
 
-Both columns ran on one build, #251 before #258, #262, #264 and #266, with the `user-event` column. The fidelity column turns one feature on over fidelity mode with `watchDom`, as fidelity mode is now, and compares the wall of 3 runs each with fidelity mode's own, 24.52 ± 0.62 s; `flightLoads` goes on over `keepApp`, which it needs. Its `watchDom` row compares fidelity mode with and without it. The fast column turns one feature off in fast mode, and compares the tests' time of one timings run each. A difference under about 2 ms per test is within the noise of either: that's `fastCrypto` and `immediates` in the fidelity column, and every row from `flightLoads` down in the fast column. One of the three runs of `cacheDevServer` in the fidelity column was slow (σ 2.0 s); its timings run agrees, 5.2 ms per test. The [Fast mode](nextjs-guide.md#fast-mode) section of the guide says what each feature does.
+Both columns ran on one build, #251 at 8b5dc1ae, before #258 and every pull request after it, with the `user-event` column. The fidelity column turns one feature on over fidelity mode with `watchDom`, as fidelity mode is now, and compares the wall of 3 runs each with fidelity mode's own, 24.52 ± 0.62 s; `flightLoads` goes on over `keepApp`, which it needs. Its `watchDom` row compares fidelity mode with and without it. The fast column turns one feature off in fast mode, and compares the tests' time of one timings run each. A difference under about 2 ms per test is within the noise of either: that's `fastCrypto` and `immediates` in the fidelity column, and every row from `flightLoads` down in the fast column. One of the three runs of `cacheDevServer` in the fidelity column was slow (σ 2.0 s); its timings run agrees, 5.2 ms per test. The [Fast mode](nextjs-guide.md#fast-mode) section of the guide says what each feature does.
 
 The features add up: the fidelity column's are about 16 ms per test, 8 s of a run, which is the whole difference between fidelity mode, 24.5 s, and fast mode, about 16.6 s on that build. None needs another, but `flightLoads` needs `keepApp`.
 
@@ -126,7 +128,7 @@ A suite that passes in fast mode should pass in fidelity mode too. Keep CI in fi
 
 ### A page load in fidelity mode
 
-In the benchmark of primitives, a page load in fidelity mode takes 6.1–7.6 ms, where a page of the kept app in fast mode takes 3.2–3.7 ms (medians of 100, with `watchDom` off, on #251 before #258 and #262). A fidelity page load, by part:
+In the benchmark of primitives, a page load in fidelity mode takes 6.1–7.6 ms, where a page of the kept app in fast mode takes 3.2–3.7 ms (medians of 100, with `watchDom` off, on #251 at 8b5dc1ae, the build of the table above, before #258, #262 and #268). A fidelity page load, by part:
 
 | part                                                              |      ms | a fresh page needs it                           |
 | ----------------------------------------------------------------- | ------: | ----------------------------------------------- |
@@ -251,11 +253,11 @@ A run of one test file, the loop of a change and its test, is mostly start. One 
 | the first test                                        | 0.30 |    0.35 | its first page load waits for Vite to compile the route |
 | the 9 others, and the end                             | 0.22 |    0.23 |                                                         |
 
-Those are the medians of 3 runs, in seconds, with the marks of the benchmark's start, on #251 before #258 and #262, with the change of #275. The first test takes 0.30 s, where a later one takes 0.01–0.07 s: its first page load waits 0.19 s on Bun and 0.22 s on Node.js for Vite to transform the modules of the first route, on the main thread of Vitest's process. A preload of the app's client while the setup files run (`wip/lifecycle-3-preload`) took 57–58 ms off the first test in every run, but nothing off the wall of one file: the run waits for the same modules, before the test instead of in it. So it isn't on #251.
+Those are the medians of 3 runs, in seconds, with the marks of the benchmark's start, on #251 before #258 and #262, with the change of #275. The first test takes 0.30 s, where a later one takes 0.01–0.07 s: its first page load waits 0.19 s on Bun and 0.22 s on Node.js for Vite to transform the modules of the first route, on the main thread of Vitest's process. A preload of the app's client while the setup files run (`wip/lifecycle-3-preload`), measured on #251 with #258 and #268's stylesheets, before #262 and #275, took 57–58 ms off the first test in every run, but nothing off the wall of one file: the run waits for the same modules, before the test instead of in it. So it isn't on #251.
 
 #275 has Vite compile Next's server layer while Chromium launches: its first module is ready 0.39 s sooner on Bun and 0.47 s sooner on Node.js. The tester page comes 0.06–0.10 s later, as the two share the start, and the first test starts 53–56 ms sooner. The wall of one file is 43 ms shorter on Bun and 105 ms shorter on Node.js (3 runs each, interleaved).
 
-In a run of 500 tests, about 2.2 s is outside the test files: 0.88 s to the first test file, 0.93 s of that file's setup (Next's layers and PGlite), 0.27 s for the 21 other test files, at 12 ms each, and 0.05 s at the end. The first test takes 0.38 s more on top. That's on #251 before #262 and #275.
+In a run of 500 tests, about 2.2 s is outside the test files: 0.88 s to the first test file, 0.93 s of that file's setup (Next's layers and PGlite), 0.27 s for the 21 other test files, at 12 ms each, and 0.05 s at the end. The first test takes 0.38 s more on top. That's on #251 before #258, #262 and #275.
 
 ### Bun or Node.js
 
@@ -280,7 +282,7 @@ Two configs of one project share a cache, and each optimizes it again for itself
 
 In watch mode, Vitest keeps its process, the dev server and Chromium between runs, and the dependency cache stays warm. Saving a file of your app reruns every test file that opens a route, plus any that imports the file: see [Watch mode](nextjs-guide.md#watch-mode).
 
-On the file of 10 tests above, a save of the test file, of the page it opens, or of a module of `lib/` that the page imports, reruns it with a `Duration` of 0.53–0.55 s on Bun and 0.57–0.59 s on Node.js, where its first run takes 1.8–2.2 s. From the save to the result, it takes 0.76–0.92 s, of which 50–100 ms is the measurement's own polling: the watcher waits a moment for more changes, and Vitest schedules the rerun. Those are the medians of 5 saves of each file, which changed only the time of the file, on #251 before #258 and #262. Most of a rerun is its tests: the first test still loads its page. The runtime matters only for the first run; a rerun takes about as long on both.
+On the file of 10 tests above, a save of the test file, of the page it opens, or of a module of `lib/` that the page imports, reruns it with a `Duration` of 0.53–0.55 s on Bun and 0.57–0.59 s on Node.js, where its first run takes 1.8–2.2 s. From the save to the result, it takes 0.76–0.92 s: the watcher waits a moment for more changes, and Vitest schedules the rerun. 50–100 ms of it is the measurement's own polling. Those are the medians of 5 saves of each file, which changed only the time of the file, on #251 before #258 and #262. Most of a rerun is its tests: the first test still loads its page. The runtime matters only for the first run; a rerun takes about as long on both.
 
 ## Workers
 
@@ -295,7 +297,7 @@ So 4 workers take the run from 14.3 to 6.9 s. 6 add nothing: on an earlier build
 
 | workers                     |    1 |    2 |    4 |    6 |
 | --------------------------- | ---: | ---: | ---: | ---: |
-| the test files' ms per test | 27.1 | 32.0 | 39.6 | 50.0 |
+| the test files' ms per test | 27.2 | 32.0 | 39.6 | 50.0 |
 | cores used, about           |  1.6 |  2.9 |  5.0 |  6.2 |
 | memory, GB                  |  1.7 |  2.6 |  3.8 |  5.2 |
 
