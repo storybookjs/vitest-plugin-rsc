@@ -392,5 +392,38 @@ export async function buildRouting(
     }
   }
 
-  return { routing, routesManifest, unmatchedRoutes };
+  // The page that the server answers a URL with, before anything runs: with
+  // `proxy`, through the redirects and rewrites of `next.config`, to the end of
+  // each redirect of the app's own origin, as `resolve()` in server-in-front.ts
+  // goes. The middleware takes the request on as it is, as only running it
+  // tells what it does. Without headers or cookies.
+  const pageOf = async (url: URL, { proxy }: { proxy: boolean }): Promise<string | undefined> => {
+    for (let redirects = 0; redirects <= maxRedirects; redirects++) {
+      const resolved = await resolveRoutes({
+        url,
+        headers: new Headers(),
+        requestBody: new ReadableStream(),
+        basePath: routing.basePath,
+        buildId: routing.buildId,
+        pathnames: Object.keys(routing.outputs),
+        routes: proxy ? routing.routes : routing.appRoutes,
+        invokeMiddleware: async () => ({}),
+      });
+      // A redirect of `next.config`, or the one to a URL without its
+      // trailing slash, comes as a status and a `Location` header.
+      const status = resolved.redirect?.status ?? resolved.status ?? 0;
+      const header = resolved.resolvedHeaders?.get("location");
+      const location =
+        resolved.redirect?.url ??
+        (status >= 300 && status < 400 && header ? new URL(header, url) : undefined);
+      if (!location) return routing.outputs[resolved.resolvedPathname ?? ""];
+      if (location.origin !== url.origin) return;
+      url = location;
+    }
+  };
+
+  return { routing, routesManifest, unmatchedRoutes, pageOf };
 }
+
+// As many as a browser follows.
+const maxRedirects = 20;
