@@ -163,5 +163,6 @@ export function nodeHost(
       const immediate = nodeSetImmediate(callback);
       return () => nodeClearImmediate(immediate);
     },
+    immediatesOfRuntime: true,
   };
 }

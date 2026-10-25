@@ -70,13 +70,20 @@ export type PageHost = {
   readonly serverDir: string;
   /**
    * Runs `callback` in a task of its own after the microtasks, as a server's
-   * `setImmediate()`, for the speed feature `immediates`: by a message of one
-   * channel in a browser, which no browser delays as it does a timeout, and
-   * by Node's own `setImmediate()` in a worker of Node.js, which keeps the
-   * stores of Node's `AsyncLocalStorage`, as a message does not. Returns what
-   * cancels it.
+   * `setImmediate()`, for the speed feature `immediates`, and in Node.js for
+   * every immediate of the server: by a message of one channel in a browser,
+   * which no browser delays as it does a timeout, and by Node's own
+   * `setImmediate()` in a worker of Node.js, which keeps the stores of Node's
+   * `AsyncLocalStorage`, as a message does not. Returns what cancels it.
    */
   serverImmediate(callback: () => void): () => void;
+  /**
+   * Whether `serverImmediate()` is the runtime's own `setImmediate()`, which
+   * Next's server has on `next start`: then server code takes it in every
+   * mode. A browser has none, and its server code takes a timeout of no
+   * delay, but for the speed feature `immediates`.
+   */
+  readonly immediatesOfRuntime: boolean;
 };
 
 /**

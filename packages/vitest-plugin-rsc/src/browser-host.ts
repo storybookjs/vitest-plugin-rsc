@@ -51,6 +51,7 @@ const browserHost: PageHost = {
   interceptRequests: () => false,
   serverDir: "",
   serverImmediate,
+  immediatesOfRuntime: false,
 };
 export default browserHost;
 

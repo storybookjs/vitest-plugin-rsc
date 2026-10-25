@@ -280,11 +280,12 @@ function clearImmediateOf(id: symbol): boolean {
   // A task of its own, after the microtasks: what Next's Node.js server waits
   // for between the stages of a render. Server code gets these two in place
   // of the globals (server-code.ts), so there is no global `setImmediate`. Not
-  // a timer of the test, which may be fake.
+  // a timer of the test, which may be fake. In Node.js Node's own, as on
+  // `next start`, in every mode (`immediatesOfRuntime` of page-host.ts).
   const nativeSetTimeout = globalThis.setTimeout;
   const nativeClearTimeout = globalThis.clearTimeout;
   registry.setImmediate = (callback, ...args) =>
-    registry.speedFeatures?.immediates
+    pageHost.immediatesOfRuntime || registry.speedFeatures?.immediates
       ? immediate(callback, args)
       : nativeSetTimeout(callback, 0, ...args);
   registry.clearImmediate = (id) =>
