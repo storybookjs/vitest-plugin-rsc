@@ -107,6 +107,11 @@ export default defineConfig([
   {
     entry: [
       "src/index.ts",
+      // Imported by their files: see `pageHostId` of src/index.ts.
+      "src/browser-host.ts",
+      "src/node-host.ts",
+      // Loaded by Node.js with `--import`: see src/worker-web-apis.ts.
+      "src/worker-web-apis.ts",
       "src/async-hooks.ts",
       "src/testing-library.tsx",
       "src/testing-library-client.tsx",
@@ -114,7 +119,11 @@ export default defineConfig([
       "src/nextjs/client-components.ts",
       "src/nextjs/plugin.ts",
       "src/nextjs/adapter.ts",
-      "src/nextjs/setup.ts",
+      // The setup files: with what both of them run, setup.ts, in a chunk
+      // that only they import, the only files of the build that import
+      // Vitest.
+      "src/nextjs/setup-browser.ts",
+      "src/nextjs/setup-node.ts",
       "src/nextjs/rsc.ts",
       "src/nextjs/ssr.ts",
       "src/nextjs/client.tsx",

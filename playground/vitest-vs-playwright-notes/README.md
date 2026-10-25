@@ -5,6 +5,7 @@ A notes app in the style of the notes demo, Next.js on Postgres with Drizzle: ac
 - `tests/vitest/*.test.tsx`: Vitest browser mode with `renderServer({ url })`. The database is PGlite in the page (`lib/__mocks__/db.ts`). `isolate: false`, Next and React in production by default.
 - `tests/vitest-user-event/*.test.tsx`: the tests of `tests/vitest/`, with their clicks and fills in the page, by Testing Library's `user-event` (`test/user-event.ts`), where `locator.click()` and `locator.fill()` send each to Node.js, which has Playwright do it. Made from `tests/vitest/` by turning `await locator.click()` into `await click(locator)` and `await locator.fill(text)` into `await fill(locator, text)`. `fill()` clears the field and pastes the text, one input event, as Playwright's `fill()` does.
 - `tests/dom-locators/*.test.tsx`: the tests of `tests/vitest/`, with `page` of [dom-locators](../../packages/dom-locators/README.md), which queries, waits and acts in the page itself, instead of `vitest/browser`'s: only the import changed, by `node test/write-dom-locators-tests.ts`, which writes the directory and `test/dom-locators.ts` again from `tests/vitest/` and `test/vitest.ts`. `bench/oracle.test.tsx` holds dom-locators' locators to Vitest's own on the app's routes, as the plugin renders them.
+- `VITEST_DOM=happy-dom` or `VITEST_DOM=jsdom` runs `tests/dom-locators/` without a browser: in a worker of Node.js, with the DOM of happy-dom or jsdom, where the plugin is the page's host itself (see [the Node host](../../docs/internals/architecture.md#the-node-host)). On Node.js, `pnpm exec vitest run`, not on Bun, whose runtime would run the worker too. `vitest.setup.node.ts` adds what Browser Mode has of Vitest's own: `expect.element()`, from dom-locators, and the matchers of the DOM, from `@testing-library/jest-dom`. The other columns query with `vitest/browser`'s `page`, which needs the browser.
 - In the plugin's fast mode, `VITEST_PLUGIN_RSC_MODE=fast` (`mode` of `vitestPluginNext()`), the same Vitest tests render each page in the app of the test file from its Flight payload, without HTML of the server, and prefetch no link: a quick feedback loop, like an agent's. Both modes see a change of the page as it happens (`watchDom`). CI runs `tests/vitest-user-event/` in fast mode too, and then in fidelity mode, the default, on the same runner, for the ratio of the two.
 - `tests/playwright/*.spec.ts`: Playwright against `next start` after `next build`, or against `next dev` with `PLAYWRIGHT_SERVER=dev`, on Postgres in Docker, in RAM.
 
@@ -26,6 +27,9 @@ bun --bun vitest run --configLoader native --maxWorkers 1 tests/vitest/
 bun --bun vitest run --configLoader native --maxWorkers 1 tests/vitest-user-event/
 VITEST_PLUGIN_RSC_MODE=fast bun --bun vitest run --configLoader native --maxWorkers 1 tests/vitest-user-event/
 VITEST_PLUGIN_RSC_BUILD=development bun --bun vitest run --configLoader native --maxWorkers 1 tests/vitest/
+# Without a browser, in a DOM of Node.js
+VITEST_DOM=happy-dom VITEST_PLUGIN_RSC_MODE=fast pnpm exec vitest run --configLoader native --maxWorkers 1 tests/dom-locators/
+VITEST_DOM=jsdom VITEST_PLUGIN_RSC_MODE=fast pnpm exec vitest run --configLoader native --maxWorkers 1 tests/dom-locators/
 
 # Playwright
 docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres \

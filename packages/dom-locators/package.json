@@ -26,6 +26,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./expect-element": {
+      "types": "./src/expect-element.ts",
+      "default": "./src/expect-element.ts"
     }
   },
   "publishConfig": {
@@ -34,6 +38,10 @@
       ".": {
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
+      },
+      "./expect-element": {
+        "types": "./dist/expect-element.d.ts",
+        "default": "./dist/expect-element.js"
       }
     }
   },
@@ -42,11 +50,12 @@
     "dev": "tsdown --sourcemap --watch src"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitest/browser": "5.0.5",
     "@vitest/browser-playwright": "5.0.5",
-    "happy-dom": "^20.14.6",
+    "happy-dom": "^21.0.4",
     "ivya": "1.8.2",
     "jsdom": "^30.1.3",
     "playwright": "^1.64.0",

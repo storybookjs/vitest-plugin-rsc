@@ -10,6 +10,14 @@ vi.mock("./app-requests.ts", () => ({
       store() ? Promise.resolve(new Response("the app")) : network()(input, init),
 }));
 vi.mock("./document-loads.ts", () => ({ followNavigation: () => {} }));
+// The host of a browser, whose navigations are the document's.
+vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
+  default: {
+    get navigation() {
+      return (globalThis.window as { navigation?: EventTarget }).navigation;
+    },
+  },
+}));
 vi.mock("./document.ts", () => ({
   streamedContentQueue: { configurable: true, get: () => undefined, set: () => {} },
 }));

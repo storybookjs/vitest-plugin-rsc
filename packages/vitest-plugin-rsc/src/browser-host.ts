@@ -1,0 +1,199 @@
+import type { PageHost } from "./page-host.ts";
+import { answerEvent, webSocketInfoPath, webSocketQuery } from "./page-protocol.ts";
+
+// The host of a page in a browser: its requests to the dev server go over a
+// WebSocket of the page's own, next to Vite's, and the browser has the
+// navigations and loads the stylesheets. See page-host.ts.
+
+type WebSocketInfo = { token: string; path: string };
+type PendingInvoke = {
+  resolve: (result: unknown) => void;
+  reject: (error: unknown) => void;
+  timeoutId: ReturnType<typeof setTimeout> | undefined;
+};
+type InvokeResultMessage = {
+  type?: string;
+  event?: string;
+  data?: {
+    id?: string;
+    result?: unknown;
+  };
+};
+
+// Before anything replaces it, like a mock of the network.
+const nativeFetch = globalThis.fetch;
+let webSocket: WebSocket | undefined;
+let webSocketPromise: Promise<WebSocket> | undefined;
+let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;
+let nextInvokeId = 0;
+const invokeTimeout = 30_000;
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
+const now = performance.now.bind(performance);
+// When the server last answered. A page asks for its modules at once, and a
+// dev server that compiles them for the first time answers them one by one:
+// a request waits for the ones before it, so it times out when the server has
+// been silent, not when it is old.
+let lastAnswer = 0;
+
+const pendingInvokes = new Map<string, PendingInvoke>();
+
+const browserHost: PageHost = {
+  request: requestOverWebSocket,
+  navigation: (window as { navigation?: EventTarget }).navigation,
+  loadsStylesheets: true,
+  serverWebApis: globalThis,
+  // One realm: the page's are the server's.
+  fromPage: (init) => init,
+};
+export default browserHost;
+
+// Rejects once the server has sent nothing for `invokeTimeout`, unless the
+// request does not `expire`.
+async function requestOverWebSocket(event: string, data: object, expires = true): Promise<unknown> {
+  const socket = await getReactClientWebSocket();
+  const id = String(++nextInvokeId);
+
+  return new Promise((resolve, reject) => {
+    const sent = now();
+    const pending: PendingInvoke = {
+      resolve,
+      reject,
+      timeoutId: expires ? setTimeout(expire, invokeTimeout) : undefined,
+    };
+    function expire() {
+      const silent = now() - Math.max(sent, lastAnswer);
+      if (silent < invokeTimeout) {
+        pending.timeoutId = setTimeout(expire, invokeTimeout - silent);
+        return;
+      }
+      pendingInvokes.delete(id);
+      reject(new Error(`React client websocket invoke timed out: ${event} ${id}`));
+    }
+
+    pendingInvokes.set(id, pending);
+    try {
+      socket.send(JSON.stringify({ type: "custom", event, data: { id, ...data } }));
+    } catch (error) {
+      clearTimeout(pending.timeoutId);
+      pendingInvokes.delete(id);
+      reject(error);
+    }
+  });
+}
+
+async function getReactClientWebSocket() {
+  if (webSocket?.readyState === WebSocket.OPEN) {
+    return webSocket;
+  }
+
+  webSocketPromise ??= openReactClientWebSocket().finally(() => {
+    webSocketPromise = undefined;
+  });
+  return webSocketPromise;
+}
+
+async function openReactClientWebSocket() {
+  const info = await getWebSocketInfo();
+  const socket = new WebSocket(createWebSocketUrl(info), "vite-hmr");
+
+  socket.addEventListener("message", handleWebSocketMessage);
+  socket.addEventListener("close", () => {
+    if (webSocket === socket) {
+      webSocket = undefined;
+    }
+    rejectPendingInvokes(new Error("React client websocket connection closed"));
+  });
+
+  await waitForWebSocketOpen(socket);
+  webSocket = socket;
+  return socket;
+}
+
+function waitForWebSocketOpen(socket: WebSocket) {
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      socket.removeEventListener("open", handleOpen);
+      socket.removeEventListener("error", handleError);
+      socket.removeEventListener("close", handleClose);
+    };
+    const handleOpen = () => {
+      cleanup();
+      resolve();
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error("React client websocket connection failed"));
+    };
+    const handleClose = () => {
+      cleanup();
+      reject(new Error("React client websocket closed before opening"));
+    };
+
+    socket.addEventListener("open", handleOpen);
+    socket.addEventListener("error", handleError);
+    socket.addEventListener("close", handleClose);
+  });
+}
+
+function handleWebSocketMessage(event: MessageEvent) {
+  const result = parseInvokeResultMessage(event.data);
+  if (!result) return;
+
+  lastAnswer = now();
+  const pending = pendingInvokes.get(result.id);
+  if (!pending) {
+    return;
+  }
+
+  clearTimeout(pending.timeoutId);
+  pendingInvokes.delete(result.id);
+  pending.resolve(result.result);
+}
+
+function parseInvokeResultMessage(raw: unknown) {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+
+  try {
+    const message = JSON.parse(raw) as InvokeResultMessage;
+    if (
+      message.type !== "custom" ||
+      message.event !== answerEvent ||
+      typeof message.data?.id !== "string"
+    ) {
+      return undefined;
+    }
+    return { id: message.data.id, result: message.data.result };
+  } catch {
+    return undefined;
+  }
+}
+
+function rejectPendingInvokes(error: unknown) {
+  for (const pending of pendingInvokes.values()) {
+    clearTimeout(pending.timeoutId);
+    pending.reject(error);
+  }
+  pendingInvokes.clear();
+}
+
+function createWebSocketUrl(info: WebSocketInfo) {
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const url = new URL(`${protocol}://${window.location.host}${info.path}`);
+  url.searchParams.set("token", info.token);
+  url.searchParams.set(webSocketQuery, "1");
+  return url;
+}
+
+async function getWebSocketInfo() {
+  webSocketInfoPromise ??= nativeFetch(webSocketInfoPath).then(async (response) => {
+    if (!response.ok) {
+      throw new Error("Failed to fetch React client websocket info");
+    }
+    return response.json() as Promise<WebSocketInfo>;
+  });
+  return webSocketInfoPromise;
+}

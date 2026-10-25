@@ -77,8 +77,9 @@ const browserProject = (name: string, mode: Mode) =>
     test: {
       name,
       include: ["**/*.test.{ts,tsx}"],
-      // e2e/ runs Storybook: see vitest.storybook.config.ts.
-      exclude: ["e2e/**", "node_modules"],
+      // e2e/ runs Storybook: see vitest.storybook.config.ts. A `.node.test`
+      // file is the node project's.
+      exclude: ["e2e/**", "node_modules", "**/*.node.test.{ts,tsx}"],
       browser: { ...browserMode(), viewport: { width: 390, height: 844 } },
       // Browser workers each own their browser state and run in parallel.
       // Inside one worker, test files run sequentially with `isolate: false`,
@@ -95,7 +96,51 @@ const browserProject = (name: string, mode: Mode) =>
     },
   });
 
+// The tests of the app in a Node.js worker, with happy-dom for the document,
+// where the browser projects run in Chromium. The same plugins: without
+// Browser Mode the plugin is the page's host itself (SB-2419).
+const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
+  defineProject({
+    root,
+    envPrefix: ["VITE_", "CI"],
+    resolve: {
+      tsconfigPaths: true,
+      conditions: [...vitestPluginRscSourceConditions, "test"],
+    },
+    // PGlite sees Node.js here, and runs as on Node.js, and MSW's server is
+    // one of Node.js: Node.js imports them itself, where a pre-bundle would
+    // have the stand-ins of a browser for the modules of Node.js, and the
+    // server's web APIs.
+    optimizeDeps: { include: ["drizzle-orm/pglite"], exclude: ["@electric-sql/pglite", "msw"] },
+    plugins: [
+      vitestPluginRSC(),
+      // oxlint-disable-next-line no-process-env
+      vitestPluginNext({
+        build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
+        // Testing Library, which the tests query the page with, where the
+        // browser projects have `vitest/browser`: it asks for `document`.
+        browserModules: ["**/node_modules/@testing-library/**"],
+      }),
+    ],
+    test: {
+      name,
+      include: ["**/*.node.test.{ts,tsx}"],
+      exclude: ["e2e/**", "node_modules"],
+      environment,
+      isolate: false,
+      // What Vitest gives a test in Browser Mode, where Node.js has 5 s: the
+      // first test of a file opens its route, which compiles that route and
+      // the first modules of the browser layer, as with Browser Mode. The ssr
+      // layer loads in the setup file, and the optimizer's first bundling
+      // before the worker starts, out of a test's time.
+      testTimeout: 15_000,
+      expect: { poll: { timeout: 10_000 } },
+      setupFiles: ["./vitest.setup.node.ts"],
+    },
+  });
+
 export const nextjsNotesProjects = [
+  nodeProject("nextjs-notes-demo-happy-dom", "happy-dom"),
   browserProject("nextjs-notes-demo-browser", "fidelity"),
   browserProject("nextjs-notes-demo-fast", "fast"),
   // Every story of the app, as a test of Storybook's Vitest addon, which

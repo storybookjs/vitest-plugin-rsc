@@ -4,8 +4,8 @@
 import { leftTheApp } from "./app-requests.ts";
 import { documentUrl } from "./document.ts";
 import { enctypeOf, formBody } from "./form-submission.ts";
-import { noRouter, type NavigateEvent } from "./host-document.ts";
-import { currentPage, leavePage, navigate } from "./page.ts";
+import type { NavigateEvent } from "./host-document.ts";
+import { currentPage, leavePage, navigate, noRouter } from "./page.ts";
 import type { PageStore } from "./page-store.ts";
 import { openedAt } from "./registry.ts";
 

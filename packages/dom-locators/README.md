@@ -33,6 +33,8 @@ Vitest's defaults apply: `exact` is Vitest's `browser.locators.exact` (`true` un
 - The options of an action are Playwright's that the page can model: `timeout` for every one; `force` and `noWaitAfter` (no effect, as in Playwright) for all but `wheel`; `modifiers`, `position` and `trial` for the mouse's, `sourcePosition`, `targetPosition` and `trial` for `dropTo`; `button` for the clicks; `clickCount` for `click`. Any other option throws, and so does an invalid value.
 - `configure({ testIdAttribute, timeout })`, and `UnsupportedError`.
 
+Without Browser Mode, in a DOM of Node.js, Vitest has no `expect.element()`: a setup file that imports `dom-locators/expect-element` adds one of the same shape, which waits with `findElement()`, with the matchers of a DOM library, like `@testing-library/jest-dom/vitest`.
+
 `expect.element(locator)` takes a locator of the package, with `.not`, `toHaveLength` and `{ timeout }`: it carries Vitest's locator symbol and has the methods `expect.element` calls. A locator is assignable to `Locator` of `vitest/browser`.
 
 Not yet, on the type and throwing with the way out, `vitestPage.elementLocator(await locator.findElement())`: `screenshot`, `mark`, `page.viewport`, `page.screenshot`, `page.mark`, `page.frameLocator`. A locator of `vitest/browser` in `filter({ has })`, `and` or `or` throws too, and so do `upload` of a path, which the page cannot read, and `dropTo` of an element the browser drags itself, `draggable` as a link or an image is: Chrome's drag and drop of HTML.
