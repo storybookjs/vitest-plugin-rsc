@@ -6,7 +6,7 @@ Your server code runs in a browser tab, which has no Node.js. So `vitestPluginNe
 > All of this comes with `vitestPluginNext()`. On its own, `vitestPluginRSC()` only provides `node:async_hooks`.
 
 > [!TIP]
-> Without Browser Mode, in a project with `environment: "happy-dom"` or `"jsdom"`, none of this applies: your server code runs on Node.js itself, with Node's own modules. See [Without Browser Mode](nextjs-guide.md#without-browser-mode).
+> Without Browser Mode, in a project with `environment: "happy-dom"` or `"jsdom"`, none of this applies but [Fast crypto](#fast-crypto) of fast mode: your server code runs on Node.js itself, with Node's own modules. See [Without Browser Mode](nextjs-guide.md#without-browser-mode).
 
 ## What just works
 

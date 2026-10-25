@@ -819,7 +819,7 @@ A Vitest project without Browser Mode, with `environment: "happy-dom"` or `"jsdo
 - **Node's own modules**, not the browser's stand-ins of [Node.js in the browser](nodejs-in-the-browser.md): nothing throws because a browser can't do it. `node:crypto` has its ciphers and signatures, `node:zlib` its streams and Brotli, and `child_process`, `net` and `http` are there.
 - **Your packages' builds for Node.js**: the server code resolves a package with the `node` condition, as Next does, where a browser has `browser`. A package like `jose` or `ws` is its Node.js build.
 - **Node's own `AsyncLocalStorage`**: `cookies()`, `headers()` and the scope of a `"use cache"` function follow your code everywhere, also into a callback or a package, without the limits of [The Scope Of A Cached Function](internals/next-routes.md#the-scope-of-a-cached-function).
-- **A database over TCP**: a driver like `pg`, `postgres`, `mysql2` or `mongodb` reaches a real server, or one your setup file starts. The notes demo's TCP project runs the app's own `pg` module against PGlite served over TCP by [`@electric-sql/pglite-socket`](https://www.npmjs.com/package/@electric-sql/pglite-socket), in `vitest.setup.tcp.ts`.
+- **A database over TCP**: a driver like `pg` reaches a real server, or one your setup file starts: Node's own `net` is there for any driver, and `pg` is the one this repository tests. The notes demo's TCP project runs the app's own `pg` module against PGlite served over TCP by [`@electric-sql/pglite-socket`](https://www.npmjs.com/package/@electric-sql/pglite-socket), in `vitest.setup.tcp.ts`.
 - **Native addons**, like `sharp`, `bcrypt` or `better-sqlite3`: list the package in `optimizeDeps.exclude` of the project, so that Node.js loads it itself rather than Vite bundling it.
 
 What still differs from `next start`: the test, your server and the page share one process, with its globals, `process.env` and a test's fake timers; a request to your app is a call, not a request over a socket, so code that calls your app's own URL with `http` rather than `fetch` reaches Vite's dev server, not your app; MSW's `setupServer()` sees the page's `fetch`, but not a `fetch` of your server code, which goes to the network; and the [disk](#the-disk-without-browser-mode) is your machine's.
@@ -828,13 +828,13 @@ What still differs from `next start`: the test, your server and the page share o
 
 `node:fs` is Node's own, so the disk is your machine's, as with `next start`:
 
-| What                       | In a browser (Browser Mode)                        | In Node.js (happy-dom or jsdom)                                                                         |
-| -------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `node:fs`                  | a disk in memory                                   | your machine's disk                                                                                     |
-| At the start of every test | empty, but for `/tmp`                              | as the last test left it                                                                                |
-| `process.cwd()`            | `/`                                                | Vitest's working directory, your project when you run Vitest there                                      |
-| Your project's files       | not on it                                          | there, so a Server Component can read `content/*.md`                                                    |
-| Next's cache, `.next/`     | `/.next/<n>` on the disk, a new one for every test | a temporary directory of the worker, a new `.next/<n>` in it for every test, gone when the worker exits |
+| What                       | In a browser (Browser Mode)                        | In Node.js (happy-dom or jsdom)                                                                     |
+| -------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `node:fs`                  | a disk in memory                                   | your machine's disk                                                                                 |
+| At the start of every test | empty, but for `/tmp`                              | as the last test left it                                                                            |
+| `process.cwd()`            | `/`                                                | Vitest's working directory, your project when you run Vitest there                                  |
+| Your project's files       | not on it                                          | there, so a Server Component can read `content/*.md`                                                |
+| Next's cache, `.next/`     | `/.next/<n>` on the disk, a new one for every test | a temporary directory of the worker, a new `.next/<n>` in it for every test, gone when the run ends |
 
 The plugin never writes to your project. What your code writes, it writes to your disk, as it would on a server. So a test that writes a file cleans it up itself. For a test that runs on both, make a directory of its own and tell the app where it is:
 
@@ -852,7 +852,7 @@ beforeEach(() => {
 });
 ```
 
-In a browser that is a directory of the disk in memory, `/tmp/notes-…`, and in Node.js one of your machine's. A relative path, like `content/today.md`, reads your project's file in Node.js, and in a browser only what the test wrote there.
+In a browser that is a directory of the disk in memory, `/tmp/notes-…`, and in Node.js one of your machine's. A relative path, like `content/today.md`, reads your project's file in Node.js when Vitest runs in your project's directory, and in a browser only what the test wrote there.
 
 ## Development or production
 
