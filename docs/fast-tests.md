@@ -159,7 +159,7 @@ Measured on an earlier #251 with #255, before #266, when `expect.poll()` still l
 ### Writing a wait that's fast
 
 - **Wait with `expect.element()` or `expect.poll()`**, never a fixed time. They look again as soon as the page changes.
-- **Don't pass an `interval`.** A poll with an interval of its own, and any poll while the test's timers are fake, keeps Vitest's own wait: Vitest advances fake timers by the interval. An `expect.poll.interval` in the config doesn't count: with `watchDom`, the poll waits for the next change.
+- **Don't pass an `interval`.** A poll with an interval of its own, and any poll while the test's timers are fake, keeps Vitest's own wait, at that interval or else at the config's `expect.poll.interval`, which the plugin sets to 5 ms when your config has none: Vitest advances fake timers by that interval. Otherwise the config's interval doesn't count: with `watchDom`, the poll waits for the next change.
 - **What changes without a mutation is seen within 5 ms.** A value that a script sets on a property, like a field's, changes no attribute and fires none of those events: the test looks again 5 ms after the last look. In a run of the benchmark, 84 of 4,398 waits ended that way.
 
 ## The test's own code
