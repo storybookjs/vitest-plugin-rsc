@@ -16,12 +16,14 @@ Every column runs the same 500 tests with the same assertions. Playwright parall
 
 The 500 tests, Next and React in production, on an M1 Pro with 10 cores, the wall of a run in seconds:
 
-| Runner and setup                                                     | 1 worker |   2 |   4 | Playwright's default, 5 |
-| -------------------------------------------------------------------- | -------: | --: | --: | ----------------------: |
-| Playwright, one `next start`, each test on its own data              |          |     |     |                         |
-| Playwright, a `next start` and a database per worker, reset per test |          |     |     |                         |
-| Vitest, fast mode, user-event                                        |          |   – |     |                       – |
-| Vitest, fast mode, dom-locators                                      |          |   – |     |                       – |
+| Runner and setup                                                     |    1 worker |           2 |          4 | Playwright's default, 5 |
+| -------------------------------------------------------------------- | ----------: | ----------: | ---------: | ----------------------: |
+| Playwright, one `next start`, each test on its own data              | 206.3 ± 3.5 | 107.4 ± 0.6 | 62.5 ± 2.3 |              56.2 ± 3.2 |
+| Playwright, a `next start` and a database per worker, reset per test |     on #297 |             |            |                         |
+| Vitest, fast mode, user-event                                        |             |           – |            |                       – |
+| Vitest, fast mode, dom-locators                                      |             |           – |            |                       – |
+
+Means of 5 runs after a warmup, 3 at 5 workers, in one interleaved session on 25 October 2026, `next start` after `next build`, Postgres 17 in Docker on tmpfs; every run passed all 500. In the same session, today's column before this change, 1 worker with the tables emptied before each test, took 205.7 ± 1.9 s: at 1 worker, a test costs the same with its own data as with a reset. With more workers each test slows, as they share one machine: by 16 to 26% at 4 workers, short tests the most, and by 29 to 42% at 5, so 4 workers run the suite 3.3× as fast as 1, and 5 workers 3.7×.
 
 The workflow `.github/workflows/vitest-vs-playwright.yml` runs both and writes what each step took to the summary of the run.
 
