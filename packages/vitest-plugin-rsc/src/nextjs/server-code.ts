@@ -39,6 +39,17 @@ const mentionsBrowserGlobal = new RegExp(`\\b(?:${browserGlobals.join("|")})\\b`
 
 type Compiled = Pick<Awaited<ReturnType<typeof transformWithOxc>>, "code" | "map">;
 
+const serverGlobalsOf = (registry: string) =>
+  Object.fromEntries(
+    serverGlobals.flatMap((name) => [
+      [name, `${registry}.${name}`],
+      [`globalThis.${name}`, `${registry}.${name}`],
+    ]),
+  );
+const browserTypeofs = Object.fromEntries(
+  browserGlobals.map((name) => [`typeof ${name}`, '"undefined"']),
+);
+
 /** Compiles JavaScript as server code. Returns nothing for code that stays as it is. */
 export async function compileServerCode(
   code: string,
@@ -47,15 +58,11 @@ export async function compileServerCode(
   define: Record<string, string> = {},
 ): Promise<Compiled | undefined> {
   // Replacements are scope-aware: a parameter named `fetch` is not the global.
-  const defines = { ...define };
-  if (mentionsServerGlobal.test(code)) {
-    for (const name of serverGlobals) {
-      defines[name] = defines[`globalThis.${name}`] = `${registry}.${name}`;
-    }
-  }
-  if (mentionsTypeof.test(code) && mentionsBrowserGlobal.test(code)) {
-    for (const name of browserGlobals) defines[`typeof ${name}`] = '"undefined"';
-  }
+  const defines = {
+    ...define,
+    ...(mentionsServerGlobal.test(code) && serverGlobalsOf(registry)),
+    ...(mentionsTypeof.test(code) && mentionsBrowserGlobal.test(code) && browserTypeofs),
+  };
   if (Object.keys(defines).length === 0) return;
   return transformWithOxc(code, id, { lang: "js", define: defines });
 }
@@ -421,7 +428,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     /**
      * What a dependency of a server layer needs on top of `compileServerCode()`
      * to keep its stores across an `await` and a render, for a static build,
-     * which has no optimizer: see `optimizerPlugin()` and
+     * which has no optimizer: see `optimizerDefine()`, `optimizerPlugin()` and
      * `asyncFunctionsOptimizerPlugin()`.
      */
     forStores(context: Warns, code: string, id: string, layer: NextLayer) {
@@ -430,8 +437,25 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       }
       return (layer === "rsc" ? flightServerOf(code, id) : undefined) ?? { code, define: {} };
     },
-    /** For the dependency optimizer: the pre-bundled dependencies of a layer. */
-    optimizerPlugin(layer: NextLayer) {
+    /**
+     * For the dependency optimizer of a layer: what the bundler replaces in
+     * every module of the pre-bundle, by its `transform.define`, natively and
+     * in parallel. In the ssr layer every dependency is server code
+     * (`isServerCode()`), and of this plugin's own files the pre-bundle has
+     * only its stand-ins of the modules of Node.js and of `fastCrypto`: those
+     * take the server's timers too, as Node's own modules do. The bundler
+     * also reaches a dependency in TypeScript or JSX, which oxc does not take
+     * as JavaScript. The rsc layer pre-bundles the host's packages with the
+     * app's, so there it is `optimizerPlugin()`, file by file.
+     */
+    optimizerDefine(layer: NextLayer): Record<string, string> {
+      return layer === "ssr" ? { ...serverGlobalsOf(registry), ...browserTypeofs } : {};
+    },
+    /**
+     * For the dependency optimizer of the rsc layer: its pre-bundled
+     * dependencies that are server code.
+     */
+    optimizerPlugin() {
       return {
         name,
         async transform(
@@ -439,8 +463,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           code: string,
           id: string,
         ): Promise<Compiled | undefined> {
-          if (!/\.[cm]?js$/.test(id) || !isServerCode(id, layer)) return;
-          const flight = layer === "rsc" ? flightServerOf(code, id) : undefined;
+          if (!/\.[cm]?js$/.test(id) || !isServerCode(id, "rsc")) return;
+          const flight = flightServerOf(code, id);
           if (flight) code = flight.code;
           const define = flight?.define;
           try {

@@ -19,7 +19,7 @@ Everything you can do with `vitest-plugin-rsc/nextjs/testing-library`, one examp
 - [Test isolation](#test-isolation)
 - [Development or production](#development-or-production)
 - [Watch mode](#watch-mode)
-- [Fast tests](fast-tests.md): what a test costs, and the quickest feedback loop
+- [Fast testing patterns](fast-testing-patterns.md): what a test costs, and how to make a suite fast
 
 > [!TIP]
 > Got a Client Component that only takes props, like a button from your design system? You can test it without Next at all. See [Testing Client Components](use-client-test-files.md).
@@ -822,7 +822,7 @@ See [Development or production](internals/next-routes.md#development-or-producti
 
 ## Fast mode
 
-The plugin runs in one of two modes. Fidelity mode, the default, gives up nothing for speed: a test sees what a browser shows of your app, as CI should run it. Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run in production takes about 16 s instead of 24 s on an M1 Pro, and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in fidelity mode:
+The plugin runs in one of two modes. Fidelity mode, the default, gives up nothing for speed: a test sees what a browser shows of your app, as CI should run it. Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run in production took about 16 s instead of 24 s on an M1 Pro before #284, which made fidelity mode faster, and about 15 s instead of 19 s after it, and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in fidelity mode:
 
 ```ts
 vitestPluginNext({ mode: "fast" });
@@ -851,7 +851,7 @@ vitestPluginNext({ mode: "fidelity", skipPrefetch: true });
 
 A suite that passes in fast mode should pass in fidelity mode too. CI tells you when it doesn't.
 
-What each feature saves, and what else makes a test cheaper, is in [Fast tests](fast-tests.md).
+What each feature saves, and what else makes a test cheaper, is in [Fast testing patterns](fast-testing-patterns.md).
 
 ## Start sooner on Bun
 

@@ -1,6 +1,6 @@
 # Fast tests
 
-How to get the quickest feedback loop for the end-to-end scenarios of a Next.js App Router app: what a test costs, where the time goes, and what each way to make it cheaper gives up. Every number was measured, and comes with the conditions it was measured under. This assumes you've read the [quick start](../README.md#quick-start) and the [Next.js guide](nextjs-guide.md).
+How to get the quickest feedback loop for the end-to-end scenarios of a Next.js App Router app: what a test costs, where the time goes, and what each way to make it cheaper gives up. Every number was measured, and comes with the conditions it was measured under. This assumes you've read the [quick start](../README.md#quick-start) and the [Next.js guide](nextjs-guide.md). For the patterns alone, each with its code and what it gives up, read [Fast testing patterns](fast-testing-patterns.md) first: this page is the measurements behind it.
 
 > [!NOTE]
 > **Status, 25 October 2026.** None of this is released yet. Fast mode and its speed features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), the pull request of fast mode, and so is everything below unless it names a draft pull request on top of it:
@@ -27,7 +27,7 @@ How to get the quickest feedback loop for the end-to-end scenarios of a Next.js 
 On the 500 tests of the notes benchmark, on an M1 Pro:
 
 - **Wait with `expect.element()` and `expect.poll()`, without an `interval`.** With `watchDom`, on in both modes, they look again on the next change of the page: a run of fidelity mode takes about 26 s instead of 60. See [Waiting for the page](#waiting-for-the-page).
-- **Fast mode for the loop, fidelity mode in CI.** Its features take about 16 ms off each test of fidelity mode: on an earlier build, a run of 24.5 s took about 16.6 s. See [The two modes](#the-two-modes).
+- **Fast mode for the loop, fidelity mode in CI.** Its features took about 16 ms off each test of fidelity mode before #284: on an earlier build, a run of 24.5 s took about 16.6 s. Since #284, fidelity mode is faster, and the gap is about 8–9 ms: see [Fast testing patterns](fast-testing-patterns.md#fast-mode-for-the-loop-fidelity-mode-in-ci). See [The two modes](#the-two-modes).
 - **4 workers.** 6.85 s instead of 14.21 s, with `dom-locators`. See [Workers](#workers).
 - **Clicks and queries in the page.** A click of Vitest's goes to Playwright and back, about 50 ms; one of `user-event` takes 0.1 ms. `dom-locators` (draft #255) takes another 2.0 ms off a test. See [The test's own code](#the-tests-own-code).
 - **Vitest on Bun.** A run of one test file starts its first test 0.88 s sooner than on Node.js with `pnpm exec`. See [The start of a run](#the-start-of-a-run).
@@ -206,7 +206,7 @@ Of a click of `dom-locators`, 30–32 µs are its events: the pointer and mouse 
   await expect.element(page.getByText("Note created.")).toBeInTheDocument();
 ```
 
-On the benchmark, the `dom-locators` column takes 2.0 ms per test less than the `user-event` column: 16.26 → 15.25 s, by the median of 5 interleaved rounds, faster in each, on #251 before #262, #264 and #266. All of it is on the page's side. The package's own code cost about 2.2 ms per test on that build (focusing an element 0.43, the pointer events 0.45, checking that it's visible 0.14), and replaces Vitest's locators, 1.4 ms, and `user-event`, 2.3.
+On the benchmark, the `dom-locators` column takes 2.0 ms per test less than the `user-event` column: 16.26 → 15.25 s, by the median of 5 interleaved rounds, faster in each, on #251 before #262, #264 and #266. All of it is on the page's side. The package's own code cost about 2.2 ms per test on that build, and replaces Vitest's locators, 1.4 ms, and `user-event`, 2.3. In that build's CPU profile (one run, the profiler on, 2.4 ms per test), half of it is the browser's own work that it calls: a focus 0.40, the layout and the style that the visibility check reads 0.35, which Playwright's actions force too, and the dispatch of the events 0.2. Its own JavaScript, 1.1 ms, is mostly its queries; the package's README says what is left of it.
 
 What differs from Playwright's actions: every event is the page's own, so `isTrusted` is `false`, and an action doesn't wait for an element to stop moving or for what covers it to go. The package's README, on #255, has the full table. `dom-locators` is private: the repository's benchmark and playgrounds use it, and it isn't on npm.
 
