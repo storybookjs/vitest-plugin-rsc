@@ -159,9 +159,13 @@ const nodeProject = (
         host: { packages: ["dom-locators", "@testing-library/jest-dom"] },
         cacheDevServer,
       }),
+      // For components/changing-probe.node.test.tsx.
+      fileChangeService(),
     ],
     test: {
       name,
+      // For components/changing-probe.node.test.tsx.
+      provide: { cacheDevServer },
       // test/page-leaks.test.tsx runs in Chromium and here alike.
       include: [
         overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}",
