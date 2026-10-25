@@ -16,13 +16,15 @@ const graph: Record<string, string[]> = {
   "/b.js": [],
 };
 const asked: string[] = [];
+// The version of the modules of each environment, by its name.
+const versions = new Map<string, number>();
 
 type Message = {
   event: string;
-  data: { id: string; payload?: { data: { name: string; data: [string] } } };
+  data: { id: string; environment?: string; payload?: { data: { name: string; data: [string] } } };
 };
 function answer({ event, data }: Message): unknown {
-  if (event === versionEvent) return 1;
+  if (event === versionEvent) return versions.get(data.environment!) ?? 1;
   if (event !== invokeEvent) throw new Error(`no answer for ${event}`);
   const { name, data: args } = data.payload!.data;
   if (name === "getBuiltins") return { result: [] };
@@ -63,7 +65,8 @@ class Socket extends EventTarget {
 vi.stubGlobal("WebSocket", Socket);
 vi.stubGlobal("window", { location: new URL("http://localhost:63315/") });
 vi.stubGlobal("fetch", async () => Response.json({ token: "t", path: "/socket" }));
-const { createEnvironmentRunner, preloadModules } = await import("./utils.ts");
+const { checkFetchedModules, checkedVersions, createEnvironmentRunner, preloadModules } =
+  await import("./utils.ts");
 
 test("preloads a module and its imports for the runner of the next page load", async () => {
   await preloadModules("next_ssr", "/entry.js");
@@ -76,4 +79,16 @@ test("preloads a module and its imports for the runner of the next page load", a
   // From what the tab fetched: the server is asked for none of them again.
   expect(asked).toHaveLength(3);
   await runner.close();
+});
+
+test("checks the versions of the modules the page keeps answers about before a page load", async () => {
+  const first = await checkedVersions();
+  expect(first).toContain("client:1");
+  expect(first).toContain("react_client:1");
+  // Kept until the next check.
+  versions.set("client", 2);
+  expect(await checkedVersions()).toBe(first);
+  await checkFetchedModules();
+  expect(await checkedVersions()).not.toBe(first);
+  expect(await checkedVersions()).toContain("client:2");
 });

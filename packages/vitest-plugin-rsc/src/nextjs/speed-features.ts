@@ -5,14 +5,12 @@ import { registry } from "./registry.ts";
 // and `watchDom` do there. Which are on, the mode of `vitestPluginNext()` and
 // the options of the features decide: see `SpeedOptions` in mode.ts.
 //
-// What the dev server answers about the files of a test, like whether a
-// module changed, does not change while a test file runs: a change of a file
-// runs the file again. So with `cacheDevServer` an answer is kept until the
-// test file ends, where it is asked for again for every page and every test
-// otherwise. One that the dev server reads off its modules, like the
-// stylesheets of a route, is kept for the test files after it too, for as
-// long as the version of those modules stays. The caches are the registry's,
-// as the layers that ask are module graphs of their own.
+// What the dev server answers about the files of a test, like the
+// stylesheets of a route or whether a module changed, does not change while
+// a test file runs: a change of a file runs the file again. So with
+// `cacheDevServer` an answer is kept until the test file ends, where it is
+// asked for again for every page and every test otherwise. The caches are
+// the registry's, as the layers that ask are module graphs of their own.
 
 const caches = () => (registry.testFileCaches ??= new Set());
 
@@ -33,46 +31,11 @@ export function oncePerTestFile<T>(
 ): Promise<T> {
   if (!speedFeature("cacheDevServer")) return ask();
   caches().add(cache as Map<string, Promise<unknown>>);
-  return keptIn(cache, key, ask);
-}
-
-// The version that the answers of a cache of `whileVersionStays()` are of,
-// and its question, once per test file.
-const versions = new WeakMap<object, { of?: unknown; asked: Map<string, Promise<unknown>> }>();
-
-/**
- * What `ask` answers for `key`: with `cacheDevServer` the answer of the first
- * time since `version` last changed, which is asked once per test file, else
- * a new one. For what the dev server reads off its modules alone, by the
- * version of those modules: a change of a file invalidates its modules, also
- * on a server without a watcher of its own, a project's under Vitest, whose
- * top-level watcher invalidates them. An answer that fails is asked for
- * again.
- */
-export async function whileVersionStays<T>(
-  cache: Map<string, Promise<T>>,
-  key: string,
-  version: () => Promise<unknown>,
-  ask: () => Promise<T>,
-): Promise<T> {
-  if (!speedFeature("cacheDevServer")) return ask();
-  let kept = versions.get(cache);
-  if (!kept) versions.set(cache, (kept = { asked: new Map() }));
-  const now = await oncePerTestFile(kept.asked, "", version);
-  if (now !== kept.of) {
-    cache.clear();
-    kept.of = now;
-  }
-  return keptIn(cache, key, ask);
-}
-
-function keptIn<T>(cache: Map<string, Promise<T>>, key: string, ask: () => Promise<T>): Promise<T> {
   let answer = cache.get(key);
   if (!answer) {
     answer = ask();
     cache.set(key, answer);
-    // Not a later answer, after the cache was emptied.
-    answer.catch(() => cache.get(key) === answer && cache.delete(key));
+    answer.catch(() => cache.delete(key));
   }
   return answer;
 }

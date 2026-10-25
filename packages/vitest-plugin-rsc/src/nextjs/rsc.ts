@@ -12,9 +12,8 @@ import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { NoFallbackError } from "./compat/rsc/handlers.ts";
 import { preloadPage } from "./document.ts";
-import { whileVersionStays } from "./speed-features.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { askDevServer, versionOfModules } from "../utils.ts";
+import { askDevServer, checkedVersions } from "../utils.ts";
 // By the package, so that it stays a module of its own with its "use client"
 // in the build of the package, and in the one of the app it is a client
 // reference: see node-rendered.tsx.
@@ -186,20 +185,31 @@ if (directory) {
     });
   };
 } else {
-  // Every request of a page asks: with the speed feature `cacheDevServer` once,
-  // for as long as the modules that the dev server reads them off stay: those
-  // of this layer and of the layer of the browser, with Client Components, by
-  // the version of each, which the page asks for once per test file.
+  // The dev server reads them off its modules, so a page asks once per route,
+  // for as long as the modules stay the ones the page last checked, before a
+  // page load: see `checkedVersions()`. Not for every request of the page.
   const stylesheets = new Map<string, Promise<Stylesheets>>();
-  const version = () => Promise.all(["client", "react_client"].map(versionOfModules)).then(String);
-  registry.loadStylesheets = (entry, inline, files) =>
-    whileVersionStays(stylesheets, JSON.stringify([entry, inline, files]), version, () =>
-      askDevServer<Stylesheets>(stylesheetsEvent, {
+  let stylesheetsOf: string | undefined;
+  registry.loadStylesheets = async (entry, inline, files) => {
+    const versions = await checkedVersions();
+    if (versions !== stylesheetsOf) {
+      stylesheets.clear();
+      stylesheetsOf = versions;
+    }
+    const key = JSON.stringify([entry, inline, files]);
+    let answer = stylesheets.get(key);
+    if (!answer) {
+      const asked = askDevServer<Stylesheets>(stylesheetsEvent, {
         entry,
         inline,
         files,
-      } satisfies StylesheetsQuestion),
-    );
+      } satisfies StylesheetsQuestion);
+      stylesheets.set(key, (answer = asked));
+      // Asked again, unless the cache has a later answer.
+      asked.catch(() => stylesheets.get(key) === asked && stylesheets.delete(key));
+    }
+    return answer;
+  };
   // The dev server has a module where the page asks for it, and Next's
   // development code links a stylesheet with the time of the request in its
   // URL, which a preload cannot know.
