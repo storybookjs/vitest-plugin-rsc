@@ -9,12 +9,14 @@ env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/postgres";
 // mode, as for its own e2e tests: tests/playwright/test.ts waits for it, as
 // `renderServer()` waits for the page to hydrate. `next build` needs it too.
 env.__NEXT_TEST_MODE ??= "1";
-const port = 3300;
 // With PLAYWRIGHT_ISOLATION=worker, each worker runs its own server, on port
-// 3300 + its index, on a database of its own: tests/playwright/
+// 3400 + its index, on a database of its own: tests/playwright/
 // worker-server.ts. A worker evaluates this file with its index before the
 // test files import lib/db.ts, which connects test/db.ts to DATABASE_URL.
 const perWorker = env.PLAYWRIGHT_ISOLATION === "worker";
+// Apart from the one server's 3300: a run of each, on `next start`, can share
+// a machine (Next starts one `next dev` in a directory).
+const port = perWorker ? 3400 : 3300;
 const dev = env.PLAYWRIGHT_SERVER === "dev";
 if (perWorker && env.TEST_PARALLEL_INDEX) {
   const database = new URL(env.DATABASE_URL);

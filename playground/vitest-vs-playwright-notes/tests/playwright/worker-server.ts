@@ -21,48 +21,73 @@ export const perWorker = env.PLAYWRIGHT_ISOLATION === "worker";
 const command = env.PLAYWRIGHT_SERVER === "dev" ? "dev" : "start";
 
 const app = fileURLToPath(new URL("../..", import.meta.url));
+const next = fileURLToPath(new URL("../../node_modules/.bin/next", import.meta.url));
 
 /** Playwright's `test`, on the worker's own server and database. */
-export const serverPerWorker: typeof base = base.extend<object, { server: string }>({
-  server: [
+export const serverPerWorker: typeof base = base.extend<
+  object,
+  { port: number; database: URL; server: string }
+>({
+  // The port of the config's baseURL, plus the worker's index. A server left
+  // on it, of a run killed or still running, would answer the tests on its
+  // own database, which has the name of this worker's.
+  port: [
     // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
     async ({}, use, workerInfo) => {
-      if (command === "dev" && workerInfo.config.workers > 1) {
-        throw new Error("`next dev` runs on 1 worker: Next starts one `next dev` in a directory");
-      }
-      // The port of the config's baseURL, plus the worker's index.
-      const origin = new URL(workerInfo.project.use.baseURL!);
-      const port = Number(origin.port) + workerInfo.parallelIndex;
-      origin.port = String(port);
-      // A server left on the port, of a run killed or still running, would
-      // answer the tests on another database.
+      const port = Number(new URL(workerInfo.project.use.baseURL!).port) + workerInfo.parallelIndex;
       if (await accepts(port)) throw new Error(`Port ${port} is in use: is another run on it?`);
-
-      // The worker's database: playwright.config.ts points DATABASE_URL at it.
+      await use(port);
+    },
+    { scope: "worker" },
+  ],
+  // The worker's database: playwright.config.ts points DATABASE_URL at it, for
+  // test/db.ts. A fixture of its own, so that it is dropped even when the
+  // worker stops while its server starts.
+  database: [
+    // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
+    async ({}, use) => {
       const database = new URL(env.DATABASE_URL!);
       const name = database.pathname.slice(1);
       const postgres = new URL(database);
       postgres.pathname = "/postgres";
       const drop = `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`;
-      await run(postgres, drop, `CREATE DATABASE "${name}"`);
-      await run(database, await readFile(`${app}/lib/schema.sql`, "utf8"));
-
-      const server = spawn(`${app}/node_modules/.bin/next`, [command, "--port", String(port)], {
+      await execute(postgres, drop, `CREATE DATABASE "${name}"`);
+      try {
+        const schema = await readFile(new URL("../../lib/schema.sql", import.meta.url), "utf8");
+        await execute(database, schema);
+        await use(database);
+      } finally {
+        // The pool of test/db.ts first: the drop would end its connections,
+        // which pg reports as an `error` of the pool, thrown with no listener.
+        await db.$client.end();
+        await execute(postgres, drop);
+      }
+    },
+    { scope: "worker" },
+  ],
+  server: [
+    // `port` first: a port in use stops the worker before it drops a database.
+    async ({ port, database }, use, workerInfo) => {
+      if (command === "dev" && workerInfo.config.workers > 1) {
+        throw new Error("`next dev` runs on 1 worker: Next starts one `next dev` in a directory");
+      }
+      const server = spawn(next, [command, "--port", String(port)], {
         cwd: app,
         env: { ...env, DATABASE_URL: database.href },
         stdio: ["ignore", "ignore", "inherit"],
       });
+      // A worker stopped while this waits exits with no teardown of it.
+      const kill = () => server.kill();
+      process.once("exit", kill);
       try {
         await listening(server, port);
-        await use(origin.origin);
+        await use(`http://localhost:${port}`);
       } finally {
+        process.off("exit", kill);
         if (server.exitCode === null && server.signalCode === null) {
           server.kill();
           await once(server, "exit");
         }
-        // The pool of test/db.ts first, which would see its connections end.
-        await db.$client.end();
-        await run(postgres, drop);
       }
     },
     { scope: "worker", auto: true },
@@ -73,7 +98,7 @@ export const serverPerWorker: typeof base = base.extend<object, { server: string
 });
 
 /** Sends the statements to the database, one after the other. */
-async function run(database: URL, ...statements: string[]): Promise<void> {
+async function execute(database: URL, ...statements: string[]): Promise<void> {
   const client = new Client({ connectionString: database.href });
   await client.connect();
   try {
@@ -86,8 +111,9 @@ async function run(database: URL, ...statements: string[]): Promise<void> {
 /** Waits until the server accepts connections, as `webServer.port` does. */
 async function listening(server: ChildProcess, port: number): Promise<void> {
   while (!(await accepts(port))) {
-    if (server.exitCode !== null) {
-      throw new Error(`\`next ${command}\` on port ${port} exited with code ${server.exitCode}`);
+    if (server.exitCode !== null || server.signalCode !== null) {
+      const end = server.signalCode ?? `code ${server.exitCode}`;
+      throw new Error(`\`next ${command}\` on port ${port} exited with ${end}`);
     }
     await sleep(50);
   }
