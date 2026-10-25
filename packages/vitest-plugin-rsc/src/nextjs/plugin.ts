@@ -950,7 +950,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // Vitest says it runs in the env of its process, before it loads a
         // config: what tells a test run from a dev server here.
         // oxlint-disable-next-line no-process-env
-        const fastCrypto = chosen.fastCrypto && !isBuild && process.env.VITEST !== undefined;
+        const testRun = !isBuild && process.env.VITEST !== undefined;
+        const fastCrypto = chosen.fastCrypto && testRun;
         speedFeatures = { ...chosen, fastCrypto };
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
@@ -1178,6 +1179,14 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // the app has no NODE_ENV of its own, and React's build follows it,
         // as the aliases of a layer do (project/layers.ts).
         const nodeEnv = JSON.stringify(build);
+        // Vitest compiles the test file as the browser starts, but not the
+        // setup files: the plugin's, with the entry of the server's API and
+        // the rsc layer that it starts, and the ssr layer, about 170 modules
+        // that the page asks for one after another once it runs. Vite
+        // compiles a file of `dev.warmup`, and what it imports, as its
+        // server starts to listen, which under Vitest is as the browser
+        // launches: by the time the page asks, they are there.
+        const warmup = (files: string[]) => (testRun ? { warmup: files } : {});
         const builtLayer = (layer: NextLayer) =>
           isBuild && {
             define: {
@@ -1211,6 +1220,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           environments: {
             [environmentOf.rsc]: {
               ...builtLayer("rsc"),
+              dev: warmup([setupFile, ownFile("rsc")]),
               optimizeDeps: optimizeDeps("rsc"),
             },
             [environmentOf.ssr]: {
@@ -1227,7 +1237,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                   "development|production",
                 ],
               },
-              dev: { moduleRunnerTransform: true },
+              dev: { moduleRunnerTransform: true, ...warmup([ownFile("ssr")]) },
               optimizeDeps: {
                 ...optimizeDeps("ssr"),
                 // Its entries: see `vitest-plugin-rsc:next-scan`.
