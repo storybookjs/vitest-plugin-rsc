@@ -388,7 +388,7 @@ rows.push(
   ],
 );
 
-// The locators of the benchmark's 22 test files, and more of the same kind.
+// The locators of the benchmark's test files, and more of the same kind.
 export const notesRows: Row[] = [
   ["Title", (p) => p.getByLabelText("Title")],
   ["Password", (p) => p.getByLabelText("Password")],

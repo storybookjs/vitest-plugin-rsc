@@ -202,7 +202,7 @@ jobs:
         run: python3 test/profile-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Sum up the timings of the requests
         run: python3 test/timings-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Trace Chrome for two test files
+      - name: Trace Chrome for three test files
         env:
           VITEST_PROFILE: trace
         run: >-
