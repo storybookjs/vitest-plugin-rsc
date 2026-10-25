@@ -22,7 +22,9 @@ export async function fileChanged(file: string, content?: string): Promise<void>
   addEventListener(modulesChangedEvent, listener);
   try {
     const query = new URLSearchParams({ file, ...(content === undefined ? {} : { content }) });
-    const response = await fetch(`/service/file-change?${query}`);
+    // At the origin of the page, which is the dev server's: an app that
+    // imports this has it as server code, whose `fetch` is the server's.
+    const response = await fetch(`${globalThis.location.origin}/service/file-change?${query}`);
     const { versions } = (await response.json()) as { versions: Record<string, number> };
     const pending = () =>
       Object.entries(versions).some(
