@@ -34,16 +34,19 @@ export type SpeedOptions = {
    * over from one test to the next. What does is the state of the modules
    * of the app, of a package and of Next and React, as in a single-page app
    * that never reloads, and so is what they took of the window as they
-   * loaded: Next reports the error of a page with the `reportError` it
-   * found then, which a spy of a later test does not see. The server
+   * loaded: Next reports an error that no boundary of the app catches
+   * with the `reportError` it found then, which a spy of a later test does
+   * not see. The server
    * renders no HTML (`ssr: false`), also not of a page that the app loads
    * itself from one of these, like after a `<form>` without a Server
-   * Action, so no preload of the HTML or its `Link` header, and no status
-   * of the HTML's render: a page that is not found or fails to render is a
-   * 200, and without `flightLoads`, one that redirects opens as itself, and
-   * Next's router redirects it after `renderServer()`. A test that asserts
-   * on them passes `ssr: true`, and gets a page load of its own. In
-   * development the page has no dev overlay.
+   * Action, so no preload of the HTML or its `Link` header: a test that
+   * asserts on it passes `ssr: true`, and gets a page load of its own. In
+   * development the page has no dev overlay. The status of the `response` is the one Next sets as
+   * it renders the HTML, read from the error in the Flight payload, and a
+   * page whose payload redirects loads as its target, as a browser follows
+   * the 307 of a document: but for a page that fails under a Suspense
+   * boundary, which gets the error's status, where Next has sent the 200 of
+   * its document before the error.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */
@@ -62,16 +65,11 @@ export type SpeedOptions = {
    * the render of a document would go on: a test of a render that outlives
    * its page passes `ssr: true`.
    *
-   * The server handles each page once. A page whose payload redirects, with
-   * a `redirect()` anywhere in its render, Suspense or not, loads as its
-   * target, as a browser follows the 307 of a document: with one request of
-   * Flight of the target, and the `response` is the target's, with
-   * `redirected` and the final URL. The 307 itself is not in it. A redirect
-   * to another origin throws, as in fidelity mode. A `notFound()` or an
-   * error renders its boundary from the payload, with the status 200 of the
-   * response of Flight: the 404 or the 500 of a render that fails before
-   * any of the document is out is not there, as it is not with `keepApp`
-   * alone, whose document of `ssr: false` renders no HTML that could fail.
+   * The server handles each page once. Its status and redirects are as with
+   * `keepApp` alone: a page whose payload redirects loads as its target,
+   * with one request of Flight of the target, and the `response` is the
+   * target's, with `redirected` and the final URL. A redirect to another
+   * origin throws, as in fidelity mode.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */

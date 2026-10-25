@@ -67,14 +67,14 @@ A `mode` in the config wins over the variable, so `vitestPluginNext({ mode: "fas
 
 Fast mode is a set of speed features, each an option of its own. What each saved on top of fidelity mode with `watchDom`, on an earlier build, and what it gives up:[^features]
 
-| feature          | ms per test | gives up                                                                                                                                       |
-| ---------------- | ----------: | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `keepApp`        |         3.5 | a fresh page per test: module state carries over within a file, no server HTML, no hydration mismatch, no 404 or 500 of a page, no dev overlay |
-| `flightLoads`    |  2.7 on top | the document as the `response`                                                                                                                 |
-| `skipPrefetch`   |         3.0 | the requests of prefetches, and the routes rendered from them, in production                                                                   |
-| `fastCrypto`     |         1.6 | password hashes of the real algorithm, like one in a fixture                                                                                   |
-| `cacheDevServer` |   see below | a change through another connection than the page's is seen later                                                                              |
-| `immediates`     |         0.1 | the delay a browser adds to a timeout of 0 between the steps of a render                                                                       |
+| feature          | ms per test | gives up                                                                                                                                                                           |
+| ---------------- | ----------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `keepApp`        |         3.5 | a fresh page per test: module state carries over within a file, no server HTML or its preloads, no hydration mismatch, no dev overlay, the 200 of a page that fails under Suspense |
+| `flightLoads`    |  2.7 on top | the document as the `response`                                                                                                                                                     |
+| `skipPrefetch`   |         3.0 | the requests of prefetches, and the routes rendered from them, in production                                                                                                       |
+| `fastCrypto`     |         1.6 | password hashes of the real algorithm, like one in a fixture                                                                                                                       |
+| `cacheDevServer` |   see below | a change through another connection than the page's is seen later                                                                                                                  |
+| `immediates`     |         0.1 | the delay a browser adds to a timeout of 0 between the steps of a render                                                                                                           |
 
 `cacheDevServer` saved 5.4 ms per test there. Since #284 the dev server tells the page of every change of its modules, which took most of that wait off fidelity mode too.[^push] What `cacheDevServer` still saves on top of #284 isn't measured: the one comparison ran on a version that didn't read the option. `immediates` measures nothing in either mode. Whether to keep either option is open on #251 (#279, #280).
 
