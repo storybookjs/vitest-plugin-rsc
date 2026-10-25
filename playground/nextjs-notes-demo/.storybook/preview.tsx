@@ -31,10 +31,11 @@ export default definePreview({
   // an iframe each.
   tags: ["autodocs"],
   // The page's clock stopped at TEST_NOW, as vitest.setup.ts stops it for
-  // each test: a date that a story shows is the same on every build. Once
-  // for the page, before Storybook renders a story, a server story too: the
-  // page has one `Date`, which the server code and PGlite read. Not reset,
-  // so what the page does after a play, as a click, has the same clock.
+  // the tests of a file: a date that a story shows is the same on every
+  // build. Once for the page, before Storybook renders a story, a server
+  // story too: the page has one `Date`, which the server code and PGlite
+  // read. Not reset, so what the page does after a play, as a click, has the
+  // same clock.
   beforeAll: () => {
     MockDate.set(TEST_NOW);
   },
