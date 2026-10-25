@@ -1,3 +1,4 @@
+import { forgetCheckedVersions } from "../utils.ts";
 import type { SpeedFeature } from "./mode.ts";
 import { registry } from "./registry.ts";
 
@@ -9,8 +10,9 @@ import { registry } from "./registry.ts";
 // stylesheets of the host's files or whether a module changed, seldom changes
 // while a test file runs: in watch mode a change of a file runs the file
 // again. So with `cacheDevServer` an answer is kept until the test file ends,
-// where it is asked for again for every page and every test otherwise. The caches are
-// the registry's, as the layers that ask are module graphs of their own.
+// where it is asked for again for every page and every test otherwise. The
+// caches are the registry's, as the layers that ask are module graphs of their
+// own.
 
 const caches = () => (registry.testFileCaches ??= new Set());
 
@@ -43,6 +45,7 @@ export function oncePerTestFile<T>(
 /** Forgets the answers of `oncePerTestFile()`, as a test file ends. */
 export function forgetTestFileAnswers(): void {
   for (const cache of caches()) cache.clear();
+  forgetCheckedVersions();
 }
 
 // Vitest's `expect.element()` looks for an element that is not there yet

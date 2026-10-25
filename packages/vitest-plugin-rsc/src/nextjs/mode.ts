@@ -117,6 +117,9 @@ export type SpeedOptions = {
    * like what a test file imports, are asked once per test file, not for
    * every test.
    *
+   * In a test run of Vitest only, whose test files end: a dev server of
+   * another host, like `storybook dev`, asks every time.
+   *
    * Gives up: a change of a file while a test file runs shows at the next
    * test file, not the next page load, and every test links the stylesheets
    * of the host's files as they were at the start of the test file. Only a
