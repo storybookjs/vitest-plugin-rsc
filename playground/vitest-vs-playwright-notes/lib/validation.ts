@@ -16,3 +16,10 @@ export function noteErrors(title: string, content: string): Record<string, strin
   if (content.length > 2000) errors.content = "Content is at most 2000 characters.";
   return errors;
 }
+
+/** The error of a user's name, if any: it is in the header and in the user cookie. */
+export function nameError(name: string): string | undefined {
+  if (!name) return "Name is required.";
+  if (name.length > 100) return "Name is at most 100 characters.";
+  return undefined;
+}
