@@ -25,6 +25,8 @@ vi.setConfig({ testTimeout: 60_000 });
 // The `config` hook, as Vite calls it for a dev server or a build.
 type ConfigHook<T> = (config: object, env: { command: "serve" | "build" }) => Promise<T>;
 const serve = { command: "serve" } as const;
+// What Vitest puts in the config of a server it runs tests on.
+const vitestPlugins = [{ name: "vitest:config" }];
 
 // What the plugin has Vite scan and pre-bundle for the demo, per layer. A
 // dependency that is missing here is one Vite finds while a test runs, with a
@@ -830,10 +832,11 @@ test("gives the page the speed features, with `fastCrypto` and `cacheDevServer` 
     command: "serve" | "build",
     cacheDir?: string,
     options: VitestPluginNextOptions = { mode: "fast" },
+    plugins: object[] = vitestPlugins,
   ) => {
     const plugin = vitestPluginNext(options).find(({ name }) => name === "vitest-plugin-rsc:next")!;
     const config = await (plugin.config as ConfigHook<{ cacheDir?: string }>)(
-      { root, cacheDir },
+      { root, cacheDir, plugins },
       { command },
     );
     const load = plugin.load as (this: object, id: string) => Promise<string>;
@@ -844,8 +847,8 @@ test("gives the page the speed features, with `fastCrypto` and `cacheDevServer` 
     const features = JSON.parse(manifest.match(/^export const speedFeatures = (.*);$/m)![1]!);
     return { ...features, cacheDir: config.cacheDir };
   };
-  // Vitest runs this test file: `VITEST` is set. With `fastCrypto` the
-  // pre-bundles have a directory of their own, in the user's.
+  // A server of Vitest. With `fastCrypto` the pre-bundles have a directory
+  // of their own, in the user's.
   expect(await fastOf("serve")).toMatchObject({
     keepApp: true,
     fastCrypto: true,
@@ -859,21 +862,17 @@ test("gives the page the speed features, with `fastCrypto` and `cacheDevServer` 
     cacheDevServer: false,
     cacheDir: undefined,
   });
-  // A dev server of another host, like `storybook dev`, in either mode.
-  vi.stubEnv("VITEST", undefined);
-  try {
-    expect(
-      await fastOf("serve", undefined, { mode: "fidelity", cacheDevServer: true }),
-    ).toMatchObject({ cacheDevServer: false });
-    expect(await fastOf("serve")).toMatchObject({
-      keepApp: true,
-      fastCrypto: false,
-      cacheDevServer: false,
-      cacheDir: undefined,
-    });
-  } finally {
-    vi.unstubAllEnvs();
-  }
+  // A dev server of another host, like `storybook dev`, in either mode,
+  // also in a process that Vitest started.
+  expect(
+    await fastOf("serve", undefined, { mode: "fidelity", cacheDevServer: true }, []),
+  ).toMatchObject({ cacheDevServer: false });
+  expect(await fastOf("serve", undefined, undefined, [])).toMatchObject({
+    keepApp: true,
+    fastCrypto: false,
+    cacheDevServer: false,
+    cacheDir: undefined,
+  });
 });
 
 test("gives the server layers the package's module of Node.js, after Next's aliases and the bridges", async () => {
@@ -959,7 +958,7 @@ test("gives the server layers Node's own modules for a page in a worker of Node.
   const plugins = vitestPluginNext({ mode: "fast" });
   const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
   const { environments } = await (plugin.config as ConfigHook<OptimizerPlugins>)(
-    { root, test: { environment: "happy-dom" } },
+    { root, plugins: vitestPlugins, test: { environment: "happy-dom" } },
     serve,
   );
   // A pre-bundle of CommonJS imports Node's module for a `require()` of one.
@@ -1041,6 +1040,42 @@ test("gives the server layers Node's own modules for a page in a worker of Node.
     id: "node:crypto",
     external: true,
   });
+});
+
+// A project whose `vite.config.ts` has its tests in jsdom: Vitest's server has
+// the page in a worker of Node.js, and a static build, or the dev server of
+// another host that merges the config into its own, like `storybook dev`,
+// has it in a browser, where `node:fs` is no module to import.
+test("has the server layers of a page in a browser where Vitest runs no tests", async () => {
+  const configOf = (command: "serve" | "build", host: object[] = []) =>
+    resolveConfig(
+      {
+        root,
+        configFile: false,
+        logLevel: "silent",
+        test: { environment: "jsdom" },
+        plugins: [...host, vitestPluginRSC(), vitestPluginNext()],
+      } as UserConfig,
+      command,
+    );
+  const hostOf = (config: Awaited<ReturnType<typeof configOf>>) => ({
+    conditions: config.environments.next_ssr!.resolve.conditions,
+    cacheDir: path.basename(config.cacheDir),
+    pool: (config.test?.pool as { name?: string } | undefined)?.name,
+  });
+  const inBrowser = { conditions: expect.arrayContaining(["browser"]), pool: undefined };
+  expect(hostOf(await configOf("build"))).toMatchObject(inBrowser);
+  expect(hostOf(await configOf("serve"))).toMatchObject(inBrowser);
+  expect(hostOf(await configOf("serve", vitestPlugins))).toMatchObject({
+    conditions: expect.arrayContaining(["node"]),
+    cacheDir: "worker",
+    pool: "vitest-plugin-rsc",
+  });
+  for (const command of ["build", "serve"] as const) {
+    const { conditions, cacheDir } = hostOf(await configOf(command));
+    expect(conditions).not.toContain("node");
+    expect(cacheDir).not.toBe("worker");
+  }
 });
 
 test("gives the rsc layer the ssr layer's contexts for Next's shared-runtime modules, as Next's build for Node.js does", async () => {

@@ -20,7 +20,7 @@ import {
 } from "vite";
 import { escapePath } from "tinyglobby";
 import type { TestProject, Vitest } from "vitest/node";
-import { hostsPageInNode } from "../page-in-node.ts";
+import { isTestServer, servesPageInNode } from "../page-in-node.ts";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
@@ -992,19 +992,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       async config(config, { command }) {
         const isBuild = command === "build";
         build = options.build ?? (isBuild ? "production" : "development");
-        // Vitest says it runs in the env of its process, before it loads a
-        // config: what tells a test run from a dev server here.
-        // oxlint-disable-next-line no-process-env
-        const testRun = !isBuild && process.env.VITEST !== undefined;
+        // A test run of Vitest, not the dev server of another host.
+        const testRun = isTestServer(config, command);
         speedFeatures = {
           ...chosen,
           fastCrypto: chosen.fastCrypto && testRun,
           cacheDevServer: chosen.cacheDevServer && testRun,
         };
         // Whether the page, and with it the server, is in a worker of Node.js.
-        const pageInNode = hostsPageInNode(
-          (config as { test?: Parameters<typeof hostsPageInNode>[0] }).test,
-        );
+        const pageInNode = servesPageInNode(config, command);
         nodeModules = pageInNode ? "native" : "stand-ins";
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,

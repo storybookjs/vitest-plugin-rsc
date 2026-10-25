@@ -19,9 +19,11 @@ describe("the page's host", () => {
 });
 
 describe("the pool of a page in a worker of Node.js", () => {
-  const configOf = async (test: Record<string, unknown>) => {
+  // The config of a server that Vitest runs tests on, with its plugin.
+  const configOf = async (test: Record<string, unknown>, command = "serve") => {
     const config = getHookHandler(getPlugin("rsc:page-in-worker").config);
-    await config.call({} as never, { root: "/app", test } as never, {} as never);
+    const plugins = [{ name: "vitest:config" }];
+    await config.call({} as never, { root: "/app", plugins, test } as never, { command } as never);
     return test;
   };
 
@@ -39,6 +41,10 @@ describe("the pool of a page in a worker of Node.js", () => {
     expect(
       (await configOf({ environment: "happy-dom", browser: { enabled: true } })).pool,
     ).toBeUndefined();
+  });
+
+  test("is not there in a build, whose page is in a browser", async () => {
+    expect((await configOf({ environment: "jsdom" }, "build")).pool).toBeUndefined();
   });
 
   test("says so where the project sets another pool", async () => {
