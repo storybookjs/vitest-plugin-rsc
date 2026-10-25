@@ -35,7 +35,10 @@ export function recordListeners(target: EventTarget): Leftovers {
     // Someone else may have wrapped the method since. Then it stays, and
     // only passes the calls on.
     if (target.addEventListener !== record) return;
-    if (own) Object.defineProperty(target, "addEventListener", own);
+    // Set back, not defined back: an accessor keeps what was set in a
+    // closure of its own, like Vitest's on the global of a DOM of Node.js,
+    // whose getter would go on returning `record`.
+    if (own) target.addEventListener = add;
     else delete (target as Partial<EventTarget>).addEventListener;
   };
   return {
