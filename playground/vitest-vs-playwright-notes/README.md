@@ -11,15 +11,18 @@ Each Playwright test is the Vitest test of the same name in the file of the same
 
 The workflow `.github/workflows/vitest-vs-playwright.yml` runs both and writes what each step took to the summary of the run.
 
-The benchmark of primitives, `pnpm exec vitest run --configLoader native -c vitest.bench.config.ts --maxWorkers 1` (with `VITEST_PLUGIN_RSC_MODE=fast` for fast mode), times what the 500 tests are made of, each a hundred times, in `bench/`: the startup until the first test, a page load (`ssr` on and off), a navigation, a Server Action, an event of each kind (user-event, the DOM's own, Playwright's), a wait, a query and a query of the database. It prints min, median, p90 and max of each, and the server's and the client's share, and writes them to `bench-results/<mode>.json` (`BENCH_LABEL` names it otherwise); `python3 bench/compare.py old.json new.json` puts two runs side by side. The workflow runs it in both modes too. With `BENCH_INCLUDE=tests/vitest-user-event/note-create.test.tsx` it runs that file in place of `bench/`, for the table of its startup alone: the marks since the shell started the command (`BENCH_SHELL_START=$(date +%s%3N)`), from the config through Vite's server, the browser and the setup files to the first page and the end of the first test.
+Vitest runs on [Bun](https://bun.sh) here: `pnpm test:vitest` and the workflow run `bun --bun vitest run --configLoader native`, and `pnpm test:vitest:node` runs it on Node.js, on a machine without Bun. Bun runs Vitest's own process, with Vite and Playwright, and the tests still run in Chromium. Measured with one test file, a run took 10.4 s with `pnpm exec vitest run` and 7.6 s on Bun; once started, the tests take the same time. About 1.1 s of that is `pnpm exec` alone, which `./node_modules/.bin/vitest` skips on Node.js too. On Bun, Vite keeps its dependency cache in `node_modules/.vite-bun` (`cacheDir`, in `../test-helpers/vite-cache.ts`): Vite's hash of the config stringifies its functions, which Bun prints differently, so one runtime's cache would be stale for the other, and every switch would optimize the dependencies again. One entry of the workflow's vitest job runs the user-event tests in fast mode on Node.js, to compare; the profile and the benchmark of primitives run on Node.js too.
+
+The benchmark of primitives, `pnpm exec vitest run --configLoader native -c vitest.bench.config.ts --maxWorkers 1` (with `VITEST_PLUGIN_RSC_MODE=fast` for fast mode), times what the 500 tests are made of, each a hundred times, in `bench/`: the startup until the first test, a page load (`ssr` on and off), a navigation, a Server Action, an event of each kind (user-event, the DOM's own, Playwright's, dom-locators'), a wait, a query (Vitest's locators, dom-locators', Testing Library's) and a query of the database. It prints min, median, p90 and max of each, and the server's and the client's share, and writes them to `bench-results/<mode>.json` (`BENCH_LABEL` names it otherwise); `python3 bench/compare.py old.json new.json` puts two runs side by side. The workflow runs it in both modes too. With `BENCH_INCLUDE=tests/vitest-user-event/note-create.test.tsx` it runs that file in place of `bench/`, for the table of its startup alone: the marks since the shell started the command (`BENCH_SHELL_START=$(date +%s%3N)`), from the config through Vite's server, the browser and the setup files to the first page and the end of the first test.
 
 ```bash
 # Vitest
 pnpm --dir ../.. --filter vitest-plugin-rsc build
-pnpm exec vitest run --configLoader native --maxWorkers 1 tests/vitest/
-pnpm exec vitest run --configLoader native --maxWorkers 1 tests/vitest-user-event/
-VITEST_PLUGIN_RSC_MODE=fast pnpm exec vitest run --configLoader native --maxWorkers 1 tests/vitest-user-event/
-VITEST_PLUGIN_RSC_BUILD=development pnpm exec vitest run --configLoader native --maxWorkers 1 tests/vitest/
+# Without Bun: pnpm exec vitest run, in place of bun --bun vitest run --configLoader native
+bun --bun vitest run --configLoader native --maxWorkers 1 tests/vitest/
+bun --bun vitest run --configLoader native --maxWorkers 1 tests/vitest-user-event/
+VITEST_PLUGIN_RSC_MODE=fast bun --bun vitest run --configLoader native --maxWorkers 1 tests/vitest-user-event/
+VITEST_PLUGIN_RSC_BUILD=development bun --bun vitest run --configLoader native --maxWorkers 1 tests/vitest/
 
 # Playwright
 docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres \

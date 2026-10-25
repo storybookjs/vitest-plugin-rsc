@@ -16,3 +16,4 @@ allowBuilds:
   sharp: true
 patchedDependencies:
   "@electric-sql/pglite@0.5.10": patches/@electric-sql__pglite@0.5.10.patch
+  "@vitest/mocker@5.0.5": patches/@vitest__mocker@5.0.5.patch

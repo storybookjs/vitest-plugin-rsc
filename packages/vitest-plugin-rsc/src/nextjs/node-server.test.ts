@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { expect, test, vi } from "vitest";
-import { handleRequest } from "./node-server.ts";
+import { handleRequest, writingOf } from "./node-server.ts";
 import { registry } from "./registry.ts";
 
 vi.mock("virtual:vitest-plugin-rsc/node-stream", () => ({ Readable }));
@@ -117,4 +117,44 @@ test("closes a response whose handler fails before the head, as a socket would",
   );
   expect(failure).toBe("failed before the head");
   await expect.poll(() => closed).toBe(true);
+});
+
+test("says when the body of a response is written, whole or not", async () => {
+  const ended = await handleRequest(request(), {}, async (_, res) => {
+    (res as NodeResponse).end("<html></html>");
+  });
+  await writingOf(ended)!.written;
+  expect(await ended.text()).toBe("<html></html>");
+
+  let res!: NodeResponse;
+  const cancelled = await handleRequest(request(), {}, async (_, of) => {
+    res = of as NodeResponse;
+    res.write("<html>");
+  });
+  await cancelled.body!.cancel();
+  await writingOf(cancelled)!.written;
+  expect(res.destroyed).toBe(true);
+});
+
+test("stops a response as a page that is left does", async () => {
+  let res!: NodeResponse;
+  const response = await handleRequest(request(), {}, async (_, of) => {
+    res = of as NodeResponse;
+    res.write("<html>");
+  });
+  const writing = writingOf(response)!;
+  writing.stop();
+  await writing.written;
+
+  await expect(response.text()).rejects.toMatchObject({ name: "AbortError" });
+  expect(res.destroyed).toBe(true);
+});
+
+test("has no writing for a response without a body", async () => {
+  const response = await handleRequest(request(), {}, async (_, res) => {
+    (res as unknown as { statusCode: number }).statusCode = 204;
+    (res as NodeResponse).end("");
+  });
+  expect(response.body).toBe(null);
+  expect(writingOf(response)).toBe(undefined);
 });

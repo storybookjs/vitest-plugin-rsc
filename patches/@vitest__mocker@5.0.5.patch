@@ -1,0 +1,35 @@
+diff --git a/dist/node.js b/dist/node.js
+index 3fd5273f37d9ccaba653c1bcc92013c985af599f..6d5ec71db3d41568a58404ae05d86f3c739e75ea 100644
+--- a/dist/node.js
++++ b/dist/node.js
+@@ -36,6 +36,11 @@ function automockPlugin(options = {}) {
+ 	};
+ }
+ 
++// vitest-plugin-rsc: a chunk of Vite's dependency optimizer goes without the
++// mocker's transforms, until Vitest has it (docs/nextjs-guide.md).
++function isOptimizedDepFile(environment, id) {
++	return !!environment && "depsOptimizer" in environment && !!environment.depsOptimizer?.isOptimizedDepFile(id);
++}
+ const regexDynamicImport = /import\s*\(/;
+ function dynamicImportPlugin(options = {}) {
+ 	return {
+@@ -51,6 +56,9 @@ function dynamicImportPlugin(options = {}) {
+ 				if (options.filter && !options.filter(id, this.environment)) {
+ 					return;
+ 				}
++				if (isOptimizedDepFile(this.environment, id)) {
++					return;
++				}
+ 				return injectDynamicImport(source, id, this.parse, options);
+ 			}
+ 		}
+@@ -115,7 +123,7 @@ function hoistMocksPlugin(options = {}) {
+ 			root = config.root;
+ 		},
+ 		transform(code, id) {
+-			if (!filter(id)) {
++			if (!filter(id) || isOptimizedDepFile(this.environment, id)) {
+ 				return;
+ 			}
+ 			const staticMocks = [];

@@ -3,6 +3,7 @@ import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
+import { cacheDir } from "../test-helpers/vite-cache.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
 // The files of PGlite in the page: see test/pglite-files.ts.
@@ -10,6 +11,8 @@ await writePgliteFiles();
 
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
+  // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
+  cacheDir,
   // What lib/__mocks__/db.ts imports, which no file that Vite scans imports.
   optimizeDeps: { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
   plugins: [
