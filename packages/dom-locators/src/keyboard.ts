@@ -19,6 +19,7 @@ import {
   isContentEditable,
   isTextControl,
   keepsEdit,
+  lineBreak,
   keepsTyping,
   setSelection,
   type Edit,
@@ -157,7 +158,7 @@ function onEnter(element: HTMLElement): void {
     return;
   }
   if (element instanceof HTMLTextAreaElement) {
-    editText(element, insertion("\n", "insertLineBreak"));
+    editText(element, lineBreak);
     return;
   }
   if (!(element instanceof HTMLInputElement) || !isTextControl(element)) return;
@@ -166,15 +167,17 @@ function onEnter(element: HTMLElement): void {
   commitChange(element);
   const form = element.form;
   if (!form) return;
-  // The default button: the form's first submit button, in tree order.
-  const submit = [...form.elements].find(
-    (control) =>
-      (control instanceof HTMLButtonElement && control.type === "submit") ||
-      (control instanceof HTMLInputElement &&
-        (control.type === "submit" || control.type === "image")),
+  // The default button: the form's first submit button, in tree order,
+  // an image's too, which `form.elements` leaves out.
+  const submit = [
+    ...element.ownerDocument.querySelectorAll<HTMLButtonElement | HTMLInputElement>(
+      "button, input[type=submit], input[type=image]",
+    ),
+  ].find(
+    (control) => control.form === form && control.type !== "button" && control.type !== "reset",
   );
   if (submit) {
-    if (!(submit as HTMLButtonElement).disabled) keyClick(submit);
+    if (!submit.matches(":disabled")) keyClick(submit);
     return;
   }
   const blocking = [...form.elements].filter(
@@ -286,6 +289,23 @@ function planOf(
     throw unsupported(`on a ${element.localName}`);
   }
   if (control && /^Arrow(Up|Down)$/.test(named)) throw unsupported("in a text control");
+  // What else these keys do in Chrome, which the package does not model.
+  if (named === "Tab" && element.ownerDocument.querySelector(tabSkips)) {
+    throw unsupported("on a page with a group of radio buttons or the controls of a media element");
+  }
+  if (named === "Escape" && (openLayer(element.ownerDocument) || isSearchWithText(element))) {
+    throw unsupported("with an open dialog or popover, or in a search input with a text,");
+  }
+  if (named === "Enter" && element.localName === "summary") throw unsupported("on a summary");
+  if (
+    named === "Enter" &&
+    element instanceof HTMLInputElement &&
+    element.form &&
+    !control &&
+    !clickOnEnter.has(element.type)
+  ) {
+    throw unsupported(`on an input of type ${element.type} in a form`);
+  }
   // Playwright's Home and End of a Mac scroll the document, with Shift
   // select to its ends.
   if (control && isMac && (named === "Home" || named === "End")) {
@@ -311,6 +331,23 @@ function planOf(
   }
   return { definition, held, shortcut, control, edit };
 }
+
+// What Tab does not go to as the package's does: the radio buttons of a
+// group, one of which has the focus, and the controls of a media element.
+const tabSkips = 'input[type=radio][name]:not([name=""]), audio[controls], video[controls]';
+
+/** An open dialog or popover, which Escape closes: any dialog, and any popover where the DOM cannot tell. */
+function openLayer(document: Document): Element | null {
+  try {
+    return document.querySelector("dialog[open], :popover-open");
+  } catch {
+    return document.querySelector("dialog[open], [popover]");
+  }
+}
+
+/** A search input with a text, which Escape clears. */
+const isSearchWithText = (element: Element) =>
+  element instanceof HTMLInputElement && element.type === "search" && element.value !== "";
 
 /**
  * Presses a key by its plan: `keydown`, `keypress` for a key of a
@@ -371,8 +408,9 @@ function pressKey(
     }
   }
   const target = (activeElement() as HTMLElement | null) ?? document.body;
-  target.dispatchEvent(new KeyboardEvent("keyup", init));
-  if (clickAfterKeyup) keyClick(element);
+  const released = target.dispatchEvent(new KeyboardEvent("keyup", init));
+  // Space clicks what it went down on, if it still has the focus and its `keyup` is not cancelled.
+  if (clickAfterKeyup && released && target === element) keyClick(element);
 }
 
 const caretKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"]);

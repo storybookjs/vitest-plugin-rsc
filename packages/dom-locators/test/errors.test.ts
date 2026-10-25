@@ -149,17 +149,18 @@ test("a locator of vitest/browser in filter, and or, throws", () => {
   expect(() => page.getByRole("main").and(vitestPage.getByRole("main"))).toThrow(UnsupportedError);
 });
 
-test("a deferred method throws, naming the way out", () => {
+test("a deferred method rejects, or throws where it returns no promise, naming the way out", async () => {
   const locator = page.getByRole("button", { name: "Cancel" });
+  const wayOut = /page\.elementLocator\(await locator\.findElement\(\)\)/;
   for (const call of [
     () => locator.screenshot(),
     () => locator.mark("step"),
     () => page.viewport(100, 100),
     () => page.screenshot(),
-    () => page.frameLocator(locator),
   ]) {
-    expect(call).toThrow(/page\.elementLocator\(await locator\.findElement\(\)\)/);
+    await expect(call()).rejects.toThrow(wayOut);
   }
+  expect(() => page.frameLocator(locator)).toThrow(wayOut);
 });
 
 test("a key the package does not press throws", async () => {

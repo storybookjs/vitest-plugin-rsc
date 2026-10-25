@@ -77,7 +77,8 @@ export function focusNext(
   const candidates = [...document.querySelectorAll<HTMLElement>(tabbable)].filter(
     (element) =>
       element.tabIndex >= 0 &&
-      !(element as HTMLButtonElement).disabled &&
+      // A control of a disabled fieldset too.
+      !element.matches(":disabled") &&
       !element.closest("[inert]") &&
       isVisible(element),
   );

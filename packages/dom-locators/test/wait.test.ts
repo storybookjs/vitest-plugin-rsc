@@ -7,6 +7,9 @@ import { page, UnsupportedError } from "../src/index.ts";
 beforeEach(() => {
   document.body.innerHTML = "<main></main>";
 });
+// The clock of the page, before a test's fake timers replace it.
+const realNow = performance.now.bind(performance);
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -89,6 +92,13 @@ test("waits with the page's own timers when the test's are fake", async () => {
   const found = page.getByText("Later").findElement({ timeout: 1000 });
   main().innerHTML = "<p>Later</p>";
   expect(await found).toBe(document.querySelector("p"));
+  // The deadline too: the fake timers do not run, and the wait still ends,
+  // by the clock of the page, which the fake timers fake too.
+  const start = realNow();
+  await expect(page.getByText("Never").findElement({ timeout: 60 })).rejects.toThrow(
+    /Cannot find element/,
+  );
+  expect(realNow() - start).toBeGreaterThanOrEqual(55);
 });
 
 test("rejects at once for more than one, with strict", async () => {

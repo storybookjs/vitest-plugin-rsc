@@ -1512,13 +1512,13 @@ export function endAriaCaches() {
 
 // The elements whose name can come of their text alone: none of them has a
 // text alternative of its own in step 2e, but a button by its labels.
-const kPlainNameTagNames = new Set(["A", "BUTTON", "H1", "H2", "H3", "H4", "H5", "H6", "LI"]);
+const kPlainNameTagNames = new Set(["A", "BUTTON", "H1", "H2", "H3", "H4", "H5", "H6"]);
 
 /**
  * The accessible name of an element of text alone, as
  * `getElementAccessibleName()` computes it for one that is not hidden, or
- * `undefined` for any other element: an `<a>`, a `<button>` without a label,
- * a heading or a list item whose role takes its name from its content, with
+ * `undefined` for any other element: an `<a>`, a `<button>` without a label
+ * or a heading, whose role takes its name from its content, with
  * no `aria-label`, `aria-labelledby` or `aria-owns`, no element in it, no
  * shadow root, and some text. Not in Playwright: the same name, sooner. A
  * hidden element's name is "", which a query of its role leaves out anyway.
