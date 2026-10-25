@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { normalizePath, type Plugin, type ViteDevServer } from "vite";
-import { answerPage } from "../websocket-bridge.ts";
+import { answerPage } from "../page-bridge.ts";
 import { routesAheadEvent, type RoutesAheadNews } from "./routes-ahead-shared.ts";
 
 // The first page load of a tab waits for the dev server to compile its route:

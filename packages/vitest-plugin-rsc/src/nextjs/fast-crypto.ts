@@ -11,6 +11,7 @@
 // Only in a test run of Vitest, with the option: see plugin.ts.
 
 import fs from "node:fs";
+import { isBuiltin } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizePath } from "vite";
@@ -125,7 +126,7 @@ const moduleOfSpecifier = new Map(
 /**
  * The name of the stand-in module for an import of a server layer, if it has
  * one: a package that hashes passwords, or `node:crypto`, whose module is the
- * plugin's own with the stand-ins in it, `nodeCryptoFile`.
+ * layer's own with the stand-ins in it, `nodeCrypto`.
  */
 export function fastCryptoModuleOf(source: string): string | undefined {
   if (source === "crypto" || source === "node:crypto") return "node-crypto";
@@ -133,20 +134,29 @@ export function fastCryptoModuleOf(source: string): string | undefined {
 }
 
 /**
- * The code of a stand-in module by its name: for `node-crypto`, the plugin's
- * `node:crypto`, the file `nodeCryptoFile`, with its `pbkdf2`, `scrypt` and
- * `argon2` the stand-ins.
+ * The code of a stand-in module by its name: for `node-crypto`, the layer's
+ * `node:crypto`, `nodeCrypto`, with its `pbkdf2`, `scrypt` and `argon2` the
+ * stand-ins. That is the file of the package's module in a browser, and
+ * Node's own in a worker of Node.js (node-builtins.ts).
  */
-export function fastCryptoModule(name: string, nodeCryptoFile: string): string | undefined {
+export function fastCryptoModule(name: string, nodeCrypto: string): string | undefined {
   const from = JSON.stringify(fastCryptoFile());
   if (name === "node-crypto") {
-    const own = JSON.stringify(nodeCryptoFile);
+    const own = JSON.stringify(nodeCrypto);
     const names = ["pbkdf2", "pbkdf2Sync", "scrypt", "scryptSync", "argon2", "argon2Sync"];
+    // Node's own module is no file of a build: a pre-bundle that requires
+    // this module has its names only where they are named here, not from
+    // an `export *` of it. They are the names of this process's Node.js.
+    const reexports = isBuiltin(nodeCrypto)
+      ? `export const { ${Object.keys(process.getBuiltinModule("node:crypto"))
+          .filter((key) => /^[A-Za-z_$][\w$]*$/.test(key) && !names.includes(key))
+          .join(", ")} } = own;\n`
+      : `export * from ${own};\n`;
     return (
       `import own from ${own};\n` +
       `import { Buffer } from "node:buffer";\n` +
       `import { nodeCrypto } from ${from};\n` +
-      `export * from ${own};\n` +
+      reexports +
       `const fast = nodeCrypto(Buffer);\n` +
       `export const { ${names.join(", ")} } = fast;\n` +
       `export default { ...own, ...fast };\n`

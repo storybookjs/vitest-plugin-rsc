@@ -16,6 +16,7 @@ import {
   setRouterOutlivesPage,
   sendRequest,
   unlessAborted,
+  type Sending,
 } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import {
@@ -27,7 +28,6 @@ import {
 } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
 import { speedFeature } from "./speed-features.ts";
-import { noRouter } from "./host-document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 import type { PageStore } from "./page-store.ts";
@@ -41,6 +41,18 @@ const startTimeout = 20_000;
 // A test's own timers may be fake.
 const setTimeout = globalThis.setTimeout;
 const clearTimeout = globalThis.clearTimeout;
+
+/**
+ * A navigation without a page of the app, which has the router, under
+ * Vitest: a component that a test file with `"use client"` rendered has none.
+ */
+export function noRouter(url: URL): Error {
+  return new Error(
+    `vitest-plugin-rsc: a link or a form navigated to ${url.href}, and there is no page of the ` +
+      `app to navigate in: no page of renderServer() is open, and a test file with "use client" ` +
+      `has none. Test navigation in a page of renderServer(), in a test file without "use client".`,
+  );
+}
 
 /**
  * A page of the app, from the first line of its load until it is left, with
@@ -531,7 +543,7 @@ async function startInKeptApp(page: Page, client: Client, payload?: Uint8Array):
 async function sendPageLoad(
   url: URL,
   init: RequestInit,
-  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
+  sending: Pick<Sending, "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
   // With the request, not before it: in fidelity mode, a question for the

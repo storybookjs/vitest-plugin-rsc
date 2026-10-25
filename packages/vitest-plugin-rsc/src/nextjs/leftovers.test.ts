@@ -1,6 +1,9 @@
 import { expect, onTestFinished, test, vi } from "vitest";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 
+// The page's channels are its window's: a browser's global.
+vi.stubGlobal("window", globalThis);
+
 // Long enough for a message that a port would deliver.
 const nextTask = () => new Promise((resolve) => setTimeout(resolve, 10));
 

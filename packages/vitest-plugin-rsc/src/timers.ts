@@ -10,10 +10,14 @@
 /** The key of the timers on a module's `import.meta`. */
 export const timersKey = "__vitest_plugin_rsc_timers__";
 
-/** The globals that start a timer. */
+/**
+ * The globals that start a timer. `setImmediate` is Node's, which a page has
+ * in a worker of Node.js, and React's scheduler takes over `setTimeout`.
+ */
 export const timerNames = [
   "setTimeout",
   "setInterval",
+  "setImmediate",
   "requestAnimationFrame",
   "requestIdleCallback",
 ] as const;

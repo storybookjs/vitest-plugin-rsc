@@ -1,5 +1,7 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Buffer } from "node:buffer";
 import env from "virtual:vitest-plugin-rsc/next-env";
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import {
   asyncFunctionHooks,
   enterAmbientScope,
@@ -14,8 +16,9 @@ import { registry, type Opened } from "./registry.ts";
 // A browser drops `cookie` from the headers of a Request and `set-cookie` from
 // those of a Response. A server has to see both, so the server layers get
 // these subclasses, which keep the headers they were given.
-const NativeRequest = Request;
-const NativeResponse = Response;
+// Those of the global the server runs on: the page's in a browser, Node's
+// own in its worker, where the page is a realm of its own.
+const { Request: NativeRequest, Response: NativeResponse, Headers } = globalThis;
 
 function headersOf(init: { headers?: HeadersInit } | undefined, input?: unknown): Headers {
   if (init?.headers) return new Headers(init.headers);
@@ -132,6 +135,9 @@ class ServerResponse extends NativeResponse {
 
 registry.Request = ServerRequest;
 registry.Response = ServerResponse;
+registry.Headers = Headers;
+// The directory of the server's own files, which is the host's: see page-host.ts.
+registry.serverDir = () => pageHost.serverDir;
 registry.enterRequestScope = enterAmbientScope;
 registry.openedByRequest = new SequentialAsyncLocalStorage<Opened | undefined>();
 registry.asyncFunctionHooks = asyncFunctionHooks;
@@ -156,10 +162,10 @@ registry.performWork = (request, performWork) => {
 };
 
 // Next patches the `fetch` of its server to cache and dedupe. That must not
-// be the `fetch` of the page, which is the browser's.
-const nativeFetch = globalThis.fetch;
-registry.fetch = (input, init) => nativeFetch(input, init);
-registry.network = (input, init) => nativeFetch(input, init);
+// be the `fetch` of the page, which is the browser's: the host's
+// (`serverFetch()` of page-host.ts).
+registry.fetch = (input, init) => pageHost.serverFetch(input, init);
+registry.network = (input, init) => pageHost.serverFetch(input, init);
 
 // Node.js has these as globals. A browser has none of them.
 const scope = globalThis as Record<string, any>;
@@ -174,8 +180,16 @@ scope.global.process ??= scope.process;
 scope.Buffer ??= Buffer;
 
 // Node's `Buffer#indexOf` takes any Uint8Array, and Next's stream code relies
-// on it. The polyfill only takes a Buffer.
-for (const method of ["indexOf", "lastIndexOf"] as const) {
+// on it. The polyfill only takes a Buffer. Node's own, which the server layers
+// have in a worker of Node.js (node-builtins.ts), is left as it is.
+const takesUint8Array = (() => {
+  try {
+    return Buffer.from([0, 1]).indexOf(new Uint8Array([1])) === 1;
+  } catch {
+    return false;
+  }
+})();
+for (const method of takesUint8Array ? [] : (["indexOf", "lastIndexOf"] as const)) {
   const original = Buffer.prototype[method] as (...args: unknown[]) => number;
   Buffer.prototype[method] = function (this: Buffer, value: unknown, ...rest: unknown[]) {
     if (value instanceof Uint8Array && !Buffer.isBuffer(value)) {
@@ -186,8 +200,9 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
 }
 // base64url, which Node.js has since 15 and the polyfill does not: Prisma's
 // client reads its query plans with it. It is base64 with `-` and `_`, and
-// without padding. An encoding's name is any case, as in Node.js.
-{
+// without padding. An encoding's name is any case, as in Node.js. Node's own
+// `Buffer` has it.
+if (!Buffer.isEncoding("base64url")) {
   const isBase64url = (encoding: unknown) =>
     typeof encoding === "string" && encoding.toLowerCase() === "base64url";
   const base64 = (text: string) => text.replaceAll("-", "+").replaceAll("_", "/");
@@ -226,24 +241,26 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
     return write.apply(this, [base64(text), ...args]);
   };
 }
-scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
+// The platform's: the page's own in a browser, and Node's in a worker of
+// Node.js, by the package's `async-hooks` that `node:async_hooks` is.
+scope.AsyncLocalStorage ??= AsyncLocalStorage;
 
-// Immediates of the speed feature `immediates`: a task each, by a message of one
-// channel, which no browser delays as it does a timeout. Each by a symbol of
-// its own, which is no id of a timer.
+// Immediates of the speed feature `immediates`: a task each, after the
+// microtasks, which the host runs (`serverImmediate()` of page-host.ts). Each
+// by a symbol of its own, which is no id of a timer, with what cancels it.
 const immediates = new Map<symbol, () => void>();
-const channel = new MessageChannel();
-channel.port1.onmessage = () => {
-  const [id, run] = immediates.entries().next().value ?? [];
-  if (id === undefined) return;
-  immediates.delete(id);
-  run!();
-};
 function immediate(callback: (...args: unknown[]) => void, args: unknown[]): symbol {
   const id = Symbol("immediate");
-  immediates.set(id, () => callback(...args));
-  channel.port2.postMessage(null);
+  const cancel = pageHost.serverImmediate(() => {
+    immediates.delete(id);
+    callback(...args);
+  });
+  immediates.set(id, cancel);
   return id;
+}
+function clearImmediateOf(id: symbol): boolean {
+  immediates.get(id)?.();
+  return immediates.delete(id);
 }
 
 // What Next's Node.js server asks of its process. The `process` is the page's
@@ -263,15 +280,16 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
   // A task of its own, after the microtasks: what Next's Node.js server waits
   // for between the stages of a render. Server code gets these two in place
   // of the globals (server-code.ts), so there is no global `setImmediate`. Not
-  // a timer of the test, which may be fake.
+  // a timer of the test, which may be fake. In Node.js Node's own, as on
+  // `next start`, in every mode (`immediatesOfRuntime` of page-host.ts).
   const nativeSetTimeout = globalThis.setTimeout;
   const nativeClearTimeout = globalThis.clearTimeout;
   registry.setImmediate = (callback, ...args) =>
-    registry.speedFeatures?.immediates
+    pageHost.immediatesOfRuntime || registry.speedFeatures?.immediates
       ? immediate(callback, args)
       : nativeSetTimeout(callback, 0, ...args);
   registry.clearImmediate = (id) =>
-    typeof id === "symbol" ? immediates.delete(id) : nativeClearTimeout(id as number);
+    typeof id === "symbol" ? clearImmediateOf(id) : nativeClearTimeout(id as number);
 
   // Server code's `setTimeout` (server-code.ts), the global as the code calls
   // it, also a fake one of the test. React renders Flight and HTML for the
@@ -289,7 +307,7 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
       : // As Node.js, which takes no code in a string.
         globalThis.setTimeout(callback as (...args: unknown[]) => void, delay, ...args);
   registry.clearTimeout = (id) =>
-    typeof id === "symbol" ? immediates.delete(id) : globalThis.clearTimeout(id as number);
+    typeof id === "symbol" ? clearImmediateOf(id) : globalThis.clearTimeout(id as number);
 
   // Node's own `Buffer` has these, and busboy reads the parts of a form with
   // them. Every layer has its own copy of the `Buffer` polyfill, and each is a

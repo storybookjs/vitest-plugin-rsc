@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { ViteDevServer } from "vite";
 import { expect, onTestFinished, test } from "vitest";
+import { answerOf } from "../page-bridge.ts";
 import { routesAheadEvent, type RoutesAheadNews } from "./routes-ahead-shared.ts";
 import { routesAheadPlugin } from "./routes-ahead.ts";
 
@@ -11,25 +12,15 @@ import { routesAheadPlugin } from "./routes-ahead.ts";
 // the routes it compiled.
 function run(root: string) {
   const compiled: string[] = [];
-  let tell:
-    | ((news: RoutesAheadNews & { id: string }, client: unknown) => Promise<void>)
-    | undefined;
-  const vite = {
-    ws: {
-      on: (event: string, handler: typeof tell) => event === routesAheadEvent && (tell = handler),
-    },
-    config: { logger: { error() {} } },
-  } as unknown as ViteDevServer;
+  const vite = { config: { logger: { error() {} } } } as unknown as ViteDevServer;
   const plugin = routesAheadPlugin({
     root: () => root,
     compile: async (_vite, entry) => void compiled.push(entry),
   });
   (plugin.configureServer as (server: ViteDevServer) => void)(vite);
-  let id = 0;
-  const page = (news: RoutesAheadNews) =>
-    new Promise<void>((resolve) => {
-      void tell!({ id: String(++id), ...news }, { send: () => resolve() });
-    });
+  const page = async (news: RoutesAheadNews) => {
+    await answerOf(vite, routesAheadEvent, news);
+  };
   return { compiled, page };
 }
 
