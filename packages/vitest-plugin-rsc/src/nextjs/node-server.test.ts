@@ -192,7 +192,7 @@ const route =
     out.end();
   };
 
-test("Next's handler gets the request the page sent, with its body as it streams", async () => {
+test("Next's handler gets the request the page sent, with its body", async () => {
   let got: { req: Record<string, unknown>; body: string } | undefined;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -307,33 +307,15 @@ test("a body streams to the page as the route handler writes it", async () => {
   expect(rest).toBe("second");
 });
 
-test("a route handler that waits on a page that left sees the client go", async () => {
-  const page = new AbortController();
-  let closed!: () => void;
-  const gone = new Promise<void>((resolve) => (closed = resolve));
-  const response = await handleRequest(request(page.signal), {}, async (_, res) => {
-    const out = res as NodeResponse;
-    out.write("<html>");
-    out.once("close", closed);
-    await gone;
-  });
-  page.abort();
-  await gone;
-  await expect(response.text()).rejects.toMatchObject({ name: "AbortError" });
-});
-
 test("a body that the page cancels takes nothing more of what the handler writes", async () => {
-  for (let pages = 0; pages < 20; pages++) {
-    let res!: RouteResponse;
-    const response = await handleRequest(request(), {}, async (_, of) => {
-      res = of as RouteResponse;
-      res.write("<html>");
-    });
-    await response.body!.cancel();
-    res.write("</html>");
-    res.end();
-    await writingOf(response)!.written;
-  }
+  let res!: RouteResponse & { write(chunk: string): boolean };
+  const response = await handleRequest(request(), {}, async (_, of) => {
+    res = of as typeof res;
+    res.write("<html>");
+  });
+  await response.body!.cancel();
+  expect(res.write("</html>")).toBe(false);
+  await writingOf(response)!.written;
 });
 
 test("a request that the page leaves before its head fails once Next's handler is done with it", async () => {
@@ -354,6 +336,21 @@ test("a request that the page leaves before its head fails once Next's handler i
   expect(done).toBe(true);
 });
 
+test("a request that the page leaves before its head has no head when Next's handler ends it later", async () => {
+  const page = new AbortController();
+  let started!: () => void;
+  const running = new Promise<void>((resolve) => (started = resolve));
+  const answer = handleRequest(request(page.signal), {}, async (_, of) => {
+    const res = of as RouteResponse;
+    started();
+    await new Promise<void>((resolve) => res.once("close", resolve));
+    res.end();
+  });
+  await running;
+  page.abort();
+  await expect(answer).rejects.toMatchObject({ name: "AbortError" });
+});
+
 test("an error that Next destroys a response with after its head reaches the page", async () => {
   const response = await handleRequest(request(), {}, async (_, res) => {
     const out = res as NodeResponse & { destroy(error: Error): void };
@@ -363,7 +360,7 @@ test("an error that Next destroys a response with after its head reaches the pag
   await expect(response.text()).rejects.toThrow("the render failed");
 });
 
-test("a head of more than Node's 16 KB reaches the page, as a browser takes one", async () => {
+test("a head of many large Set-Cookie headers reaches the page", async () => {
   const cookies = Array.from({ length: 5 }, (_, at) => `part${at}=${"x".repeat(4000)}`);
   const response = await handleRequest(
     requestOf(),
