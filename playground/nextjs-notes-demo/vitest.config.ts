@@ -112,10 +112,10 @@ const browserProject = (name: string, mode: Mode) =>
 // Node.js run. The same plugins: without Browser Mode the plugin is the
 // page's host itself (SB-2419). Its server runs on Node.js itself, with
 // Node's `AsyncLocalStorage`, which components/async-context.node.test.tsx
-// probes, with `page` of dom-locators for the one of `vitest/browser`. With
-// `cacheDevServer` a page load asks the dev server nothing of its modules,
-// and the page takes the news of a change, which the host hears on a stream
-// of its own: see components/changing-probe.node.test.tsx.
+// probes, with `page` of dom-locators for the one of `vitest/browser`. In a
+// pool of its own, whose page gets its modules from Vitest's RPC and sees a
+// change of a file at its next page load, or with `cacheDevServer` at the
+// next test file: see packages/vitest-plugin-rsc/src/utils.node-host.test.ts.
 //
 // A `.tcp.node.test` file is the TCP project's: the app's own `lib/db.ts`, on
 // node-postgres, without the mock, reaches Postgres over TCP: PGlite, served
@@ -128,8 +128,7 @@ const nodeProject = (
     overTcp = false,
     mode = "fidelity",
     cacheDevServer = mode === "fast",
-    files,
-  }: { overTcp?: boolean; mode?: Mode; cacheDevServer?: boolean; files?: string[] } = {},
+  }: { overTcp?: boolean; mode?: Mode; cacheDevServer?: boolean } = {},
 ) =>
   defineProject({
     root,
@@ -160,14 +159,11 @@ const nodeProject = (
         host: { packages: ["dom-locators", "@testing-library/jest-dom"] },
         cacheDevServer,
       }),
-      // For components/changing-probe.node.test.tsx.
-      fileChangeService(),
     ],
     test: {
       name,
-      provide: { cacheDevServer },
       // test/page-leaks.test.tsx runs in Chromium and here alike.
-      include: files ?? [
+      include: [
         overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}",
         ...(overTcp ? [] : ["test/page-leaks.test.tsx"]),
       ],
@@ -187,13 +183,7 @@ const nodeProject = (
 
 export const nextjsNotesProjects = [
   nodeProject("nextjs-notes-demo-happy-dom", "happy-dom", { cacheDevServer: true }),
-  // In fast mode the probes of the stores, not yet the pages: the pages of
-  // app/notes/page.node.test.tsx time out in fast mode. Not because of the
-  // database's timers, which vitest.setup.node.ts keeps on one clock.
-  nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", {
-    mode: "fast",
-    files: ["components/async-context.node.test.tsx"],
-  }),
+  nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", { mode: "fast" }),
   nodeProject("nextjs-notes-demo-jsdom", "jsdom"),
   nodeProject("nextjs-notes-demo-tcp", "happy-dom", { overTcp: true }),
   browserProject("nextjs-notes-demo-browser", "fidelity"),

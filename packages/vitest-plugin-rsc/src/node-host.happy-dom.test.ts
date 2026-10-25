@@ -8,8 +8,8 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 // API stays happy-dom's, and its interceptor hands the requests that happy-dom
 // sends itself, like those of `XMLHttpRequest`, to what answers them.
 
-// What worker-web-apis.ts keeps with `--import`, which this test has not: the
-// server's web APIs are not what it is about.
+// What worker-web-apis.ts keeps in the plugin's entry of a worker, which this
+// test has not: the server's web APIs are not what it is about.
 vi.hoisted(() => {
   (globalThis as Record<PropertyKey, unknown>)[Symbol.for("vitest-plugin-rsc:worker-web-apis")] =
     globalThis;
@@ -40,7 +40,7 @@ settings.fetch.interceptor = {
 };
 
 const asked: Request[] = [];
-const handsOver = nodeHost("http://127.0.0.1:1", os.tmpdir()).interceptRequests(async (request) => {
+const handsOver = nodeHost(os.tmpdir()).interceptRequests(async (request) => {
   asked.push(request);
   if (request.url.includes("/network") || request.url.includes("/mocked")) return undefined;
   // An answer that fails as its request is aborted, as the app's does.

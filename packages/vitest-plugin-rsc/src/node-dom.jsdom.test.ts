@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import "./node-dom.ts";
 
 // What the Node host gives jsdom of a browser's DOM that jsdom has not.
@@ -17,4 +17,22 @@ test("the boxes of a range: none", () => {
   const range = document.createRange();
   expect(Array.from(range.getClientRects())).toEqual([]);
   expect(range.getBoundingClientRect().width).toBe(0);
+});
+
+test("a stylesheet and its preload load once, which jsdom never answers itself", async () => {
+  const events: string[] = [];
+  const links = [
+    { rel: "preload", as: "style", href: "/a.css" },
+    { rel: "stylesheet", href: "/a.css" },
+  ].map((attributes) => {
+    const link = document.createElement("link");
+    for (const [name, value] of Object.entries(attributes)) link.setAttribute(name, value);
+    link.addEventListener("load", () => events.push(`load ${link.rel}`));
+    link.addEventListener("error", () => events.push(`error ${link.rel}`));
+    return link;
+  });
+  onTestFinished(() => links.forEach((link) => link.remove()));
+  document.head.append(...links);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(events).toEqual(["load preload", "load stylesheet"]);
 });

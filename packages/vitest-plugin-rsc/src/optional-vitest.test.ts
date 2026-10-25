@@ -24,8 +24,17 @@ const manifest = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"
   peerDependenciesMeta: Record<string, { optional?: boolean }>;
 };
 
-/** What only Vitest loads: the setup files that the plugin gives it by their path. */
-const setupFiles = ["nextjs/setup-browser.js", "nextjs/setup-node.js"];
+/**
+ * What only Vitest loads: the setup files that the plugin gives it by their
+ * path, and the pool of a page in a worker of Node.js with the entry of its
+ * worker, which the plugin loads by its path in Vitest's config (index.ts).
+ */
+const vitestFiles = [
+  "nextjs/setup-browser.js",
+  "nextjs/setup-node.js",
+  "worker-pool.js",
+  "workers/forks.js",
+];
 
 const isVitest = (specifier: string) => /^(?:vitest|@vitest\/[^/]+)(?:\/|$)/.test(specifier);
 
@@ -102,25 +111,25 @@ describe.skipIf(runsSource)("the build", () => {
 
   // Or in a chunk of what the setup files share, like setup.ts, which only
   // they import.
-  test("imports Vitest in the setup files only", () => {
+  test("imports Vitest in the files that only Vitest loads", () => {
     const importing = builtFiles.filter((file) =>
       importsOf(path.join(distDir, file)).some(isVitest),
     );
     expect(importing).toContain("nextjs/setup-browser.js");
     for (const file of importing) {
-      if (setupFiles.includes(file)) continue;
+      if (vitestFiles.includes(file)) continue;
       expect(importersOf(file), file).not.toEqual([]);
       expect(
-        importersOf(file).filter((importer) => !setupFiles.includes(importer)),
+        importersOf(file).filter((importer) => !vitestFiles.includes(importer)),
         file,
       ).toEqual([]);
     }
   });
 
-  test("has no other file import the setup files", () => {
+  test("has no other file import the files that only Vitest loads", () => {
     const importing = builtFiles.filter((file) =>
       importsOf(path.join(distDir, file)).some((specifier) =>
-        setupFiles.some((setupFile) => specifier.endsWith(`/${path.basename(setupFile)}`)),
+        vitestFiles.some((vitestFile) => specifier.endsWith(`/${path.basename(vitestFile)}`)),
       ),
     );
     expect(importing).toEqual([]);
