@@ -8,7 +8,7 @@ How to get the quickest feedback loop for the end-to-end scenarios of a Next.js 
 > - On #251: both modes and every speed feature, `watchDom` in both modes, the wait for the next change of the document (#266), the data layer of the notes apps (#262), one CommonJS object per ES module in the pre-bundles (#264), the patch of `@vitest/mocker` (#258), the profile config at any number of workers (#271), the stylesheets of a route asked once per run (#268), the server layer compiled while Chromium launches (#275), the benchmark's signed-in user from a signed cookie (#276), the `import.meta` of a module once per file (#277), and the benchmark on Bun.
 > - On draft pull requests: `dom-locators` (#255), and the host of the page in Node.js without a browser (#261, and #267 for the benchmark in happy-dom and jsdom). Without a pull request: a preload of the app's client during the setup files (`wip/lifecycle-3-preload`).
 >
-> The headline numbers come from one build, **#251 with #255, #276 and the host in Node.js merged in**: the walls of a run with 1 and 4 workers. In the headline build the `dom-locators` tests sign in without the signed cookie of #276, so their requests still look the session up; the `user-event` tests have it. The time of each kind of request and the cookie's gain come from an A/B of that build without and with the cookie in its `dom-locators` tests, in another session. The host in Node.js also changes the browser's side of the plugin; what that does to a run in Chromium isn't measured on its own. A section that uses an earlier build says which.
+> The headline numbers come from one build, **#251 with #276, `dom-locators` (#255) and the host in Node.js merged in**: the walls of a run with 1 and 4 workers, and the time of each kind of request. Both columns of the benchmark sign in through one helper, with the signed cookie of #276. The host in Node.js also changes the browser's side of the plugin; what that does to a run in Chromium isn't measured on its own. A section that uses an earlier build says which.
 
 - [The quickest loop](#the-quickest-loop)
 - [What a test costs](#what-a-test-costs)
@@ -28,7 +28,7 @@ On the 500 tests of the notes benchmark, on an M1 Pro:
 
 - **Wait with `expect.element()` and `expect.poll()`, without an `interval`.** With `watchDom`, on in both modes, they look again on the next change of the page: a run of fidelity mode takes about 26 s instead of 60. See [Waiting for the page](#waiting-for-the-page).
 - **Fast mode for the loop, fidelity mode in CI.** Its features take about 16 ms off each test of fidelity mode: on an earlier build, a run of 24.5 s took about 16.6 s. See [The two modes](#the-two-modes).
-- **4 workers.** 6.85 s instead of 14.28 s, with `dom-locators`. See [Workers](#workers).
+- **4 workers.** 6.85 s instead of 14.21 s, with `dom-locators`. See [Workers](#workers).
 - **Clicks and queries in the page.** A click of Vitest's goes to Playwright and back, about 50 ms; one of `user-event` takes 0.1 ms. `dom-locators` (draft #255) takes another 2.0 ms off a test. See [The test's own code](#the-tests-own-code).
 - **Vitest on Bun.** A run of one test file starts its first test 0.88 s sooner than on Node.js with `pnpm exec`. See [The start of a run](#the-start-of-a-run).
 - **A warm dependency cache, and a `cacheDir` per config.** Without a cache, one file takes about 1 s longer. See [A cold cache](#a-cold-cache).
@@ -39,9 +39,9 @@ Every number on this page ran Next and React in production, `vitestPluginNext({ 
 
 ## What a test costs
 
-A run of the 500 tests in fast mode, with 1 worker, takes **14.28 ± 0.08 s with `dom-locators`** and **at most 14.99 ± 0.23 s with the clicks and fills of Testing Library's `user-event`**, 3 runs each after a warmup. Of a run with `dom-locators`, Vitest's `Duration` is 13.6–13.7 s, of which the tests take 93% and the setup of the test files 5%: about 25 ms per test. The `user-event` runs came right after a profiled run, on a busier machine, so read theirs as an upper bound.
+A run of the 500 tests in fast mode, with 1 worker, takes **14.21 ± 0.16 s with `dom-locators`** and **at most 15.55 ± 0.23 s with the clicks and fills of Testing Library's `user-event`**, 3 runs each after a warmup. Of a run with `dom-locators`, Vitest's `Duration` is 13.4–13.7 s, of which the tests take 93% and the setup of the test files 6%: about 25 ms per test. The `user-event` runs ran on a busier machine, so read theirs as an upper bound. A wall from one moment holds to about a second, as the machine drifts; a gain holds only from an interleaved A/B, see [Measure your own app](#measure-your-own-app).
 
-The `dom-locators` tests of the headline build sign in without the signed cookie of #276, so the two columns aren't a comparison of the clicks alone. With the cookie in the `dom-locators` tests too, a run takes 0.75 s less by the median, 14.83 → 14.08 s, and 0.48 s less by the mean, 14.85 ± 0.32 → 14.37 ± 0.55 s: 1.0–1.5 ms per test, faster in each of 5 interleaved rounds, on the headline build without and with the cookie in its `dom-locators` tests. The cookie took 1.4 ms off a test of the `user-event` column. That session ran the column without the cookie 0.57 s slower than the 14.28 s above; only the difference carries over.
+The signed cookie of #276 took 0.75 s off a run of the `dom-locators` column by the median, 14.83 → 14.08 s, and 0.48 s by the mean, 14.85 ± 0.32 → 14.37 ± 0.55 s: 1.0–1.5 ms per test, faster in each of 5 interleaved rounds, on the headline build before and after its tests signed in with the cookie. It took 1.4 ms off a test of the `user-event` column.
 
 ### Where the time goes
 
@@ -66,17 +66,17 @@ What stays is the app's own stack: its database, Next, React, Flight and Chrome 
 
 ### Per request
 
-With the cookie, 44% of the tests' time is in requests of the page, and 56% is the page itself: the clicks, Next's router, decoding Flight, React and the assertions. The server's side of each request:
+Of the tests' time, 45% is in requests of the page, and 55% is the page itself: the clicks, Next's router, decoding Flight, React and the assertions. The server's side of each request:
 
 |                                       | page load | navigation | Server Action |
 | ------------------------------------- | --------: | ---------: | ------------: |
 | per test                              |      1.32 |       2.28 |          2.13 |
-| the server's ms each                  |       1.5 |        1.3 |           2.5 |
-| before Flight: routing, the action    |       0.7 |        0.5 |           1.5 |
-| the Flight render                     |       0.8 |        0.8 |           0.8 |
+| the server's ms each                  |       1.7 |        1.4 |           2.8 |
+| before Flight: routing, the action    |       0.8 |        0.5 |           1.8 |
+| the Flight render                     |       0.9 |        0.9 |           0.9 |
 | after Flight, until the response ends |         0 |          0 |           0.1 |
 
-That's one timings run of the `dom-locators` column on the headline build, with the cookie in its tests too, at a resolution of 0.1 ms. Without the cookie, a request takes 0.10 ms more for a page load, 0.16 for a navigation and 0.31 for a Server Action, as it looks the session up. With the render that follows, the CPU profile above, on its earlier build, puts a page load at about 3.8 ms, a navigation at 3.0 and a Server Action at 4.2. What the database takes of each request is in [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests).
+That's one timings run of the `dom-locators` column on the headline build, with the CPU profiler on, at a resolution of 0.1 ms. In the A/B of the cookie, a request without it took 0.10 ms more for a page load, 0.16 for a navigation and 0.31 for a Server Action, as it looked the session up. With the render that follows, the CPU profile above, on its earlier build, puts a page load at about 3.8 ms, a navigation at 3.0 and a Server Action at 4.2. What the database takes of each request is in [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests).
 
 In that profile, the flows are the run: their 350 tests take 88% of the test time, at 38 ms per test, with 1.4 page loads, 3.2 navigations and 2.8 Server Actions each. A short test takes 10 ms: mostly one page load and one assertion.
 
@@ -290,10 +290,10 @@ Vitest runs test files in parallel on its workers, and every worker has its own 
 
 | workers | wall, s (3 runs each) |
 | ------- | --------------------: |
-| 1       |          14.28 ± 0.08 |
-| 4       |           6.85 ± 0.09 |
+| 1       |          14.21 ± 0.16 |
+| 4       |           6.85 ± 0.16 |
 
-So 4 workers take the run from 14.3 to 6.9 s. 6 add nothing: on an earlier build, before #262, a run took 7.19 ± 0.39 s with 6 workers and 7.14 ± 0.09 s with 4. A series on an earlier build still, also before #262, with 2 workers too, shows why:
+So 4 workers take the run from 14.2 to 6.9 s. 6 add nothing: on an earlier build, before #262, a run took 7.19 ± 0.39 s with 6 workers and 7.14 ± 0.09 s with 4. A series on an earlier build still, also before #262, with 2 workers too, shows why:
 
 | workers                     |    1 |    2 |    4 |    6 |
 | --------------------------- | ---: | ---: | ---: | ---: |
@@ -364,14 +364,15 @@ To trust a number:
 - **Compare on one machine, interleaved.** Run A and B in turns, 3 to 5 times each, and compare the medians. CI runners of one kind differed by 40% in one A/B, so compare runs within one job, not jobs.
 - **Warm up after a change.** The first run after a change of the config, the dependencies or the plugin optimizes the dependencies again, 1.5–3.5 s more.
 - **Keep the machine quiet.** Another Vitest run on the machine slowed a run by up to 1.5 s; the rest of a desktop varies it by 3–5%.
+- **Measure a reference beside the number.** The same build took 14.28 s in one session and 15.25 s by the median an hour later: a wall from one moment holds to about a second, a difference only within one interleaved session. Next to the build it replaced, in one interleaved session, the headline build took 1.09 s less by the median, faster in each of 5 rounds, where the walls measured an hour apart differed by 0.07 s.
 - **Look at the kind, not just the wall.** A change should move the phase it targets, and the timings show which. A run that's slower everywhere is the machine.
-- **Check that a change is in effect where you measure.** A change of the app is in the column whose tests use it: on the headline build, the signed cookie of #276 is in the `user-event` tests, whose helper signs in with it, and not in the `dom-locators` tests, whose copy of that helper doesn't. The timings show it: the requests' queries stay where they were.
+- **Check that a change is in effect where you measure.** A change of the app is in the column whose tests use it: in one build, the signed cookie of #276 reached the `user-event` tests and not the `dom-locators` tests, whose copy of the sign-in helper didn't set it. The timings showed it: the requests' queries stayed where they were.
 
 ## How the numbers were measured
 
 Unless a section says otherwise, a number comes from the 500 tests of the notes benchmark, [`playground/vitest-vs-playwright-notes`](../playground/vitest-vs-playwright-notes/README.md): a notes app on Postgres with Drizzle, with accounts, sessions, search, favorites and forms, in 22 test files. 150 tests open one page or submit one form; 350 are flows of 8 to 25 interactions each. They ran with Next and React in production, Vitest on Bun, 1 worker and a warm dependency cache, on an M1 Pro with 8 performance and 2 efficiency cores and 32 GB.
 
-The headline build is #251 after #275, with `dom-locators` (#255), the benchmark's signed cookie (#276) and the host in Node.js (#261, #267) merged in; its `dom-locators` tests sign in without the cookie. A section that ran on an earlier build of #251 names the pull requests it ran before.
+The headline build is #251 with #276, before #277, with `dom-locators` (#255) and the host in Node.js (#261, #267) merged in. A section that ran on an earlier build of #251 names the pull requests it ran before.
 
 A wall time is the mean of 3 to 5 runs with [hyperfine](https://github.com/sharkdp/hyperfine), or of an interleaved A/B. A run of the whole suite varies by 3–5% between identical runs on that machine, so a difference under about 2 ms per test is noise at that count. Some series ran through a script that added 0.5 s to every wall; a difference between two of their runs holds, and their walls appear here only as differences, or as "about" with the 0.5 s taken off.
 
