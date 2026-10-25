@@ -106,3 +106,76 @@ export function findOnEveryChange(locator: object): void {
   }
   proto.findElement = Object.assign(find, { [onEveryChange]: true });
 }
+
+// `expect.element()` of a locator looks again `expect.poll.interval` after a
+// matcher fails on the element it found: a text that a Server Action changes,
+// a class that a click sets. With `watchDom` every look after the first
+// waits for the next change of the DOM instead, or `findInterval` for what
+// changes without one, like the value or the focus of an input. Not of an
+// element, which the matcher reads again as it is: that one keeps Vitest's
+// interval.
+const onEveryChangeAfterMatch = Symbol.for("vitest-plugin-rsc:match-on-every-change");
+
+/** With `watchDom`, has `expect.element()` of a locator look again on the next change of the DOM. */
+export function matchOnEveryChange(expect: { element?: unknown }): void {
+  if (!speedFeature("watchDom")) return;
+  const vitests = expect.element as
+    | ((this: unknown, target: unknown, options?: { interval?: number }) => unknown)
+    | undefined;
+  if (typeof vitests !== "function" || onEveryChangeAfterMatch in vitests) return;
+  function element(this: unknown, target: unknown, options?: { interval?: number }) {
+    const locator =
+      typeof target === "object" &&
+      target !== null &&
+      !(target instanceof Element) &&
+      typeof (target as { findElement?: unknown }).findElement === "function";
+    if (!locator || options?.interval !== undefined) return vitests!.call(this, target, options);
+    return vitests!.call(this, looksAfterChange(target), { ...options, interval: 0 });
+  }
+  expect.element = Object.assign(element, { [onEveryChangeAfterMatch]: true });
+}
+
+// The looks of one `expect.element()`: the locator, each of whose looks after
+// the first waits until the DOM has changed since the one before, or
+// `findInterval`. A look of Vitest's is one of these three.
+const looks = new Set<PropertyKey>(["findElement", "query", "elements"]);
+
+function looksAfterChange<T extends object>(locator: T): T {
+  // A test's own timers may be fake.
+  const setTimeout = globalThis.setTimeout;
+  const clearTimeout = globalThis.clearTimeout;
+  let changed: Promise<void> | undefined;
+  // Watches from one look on, until the DOM changes or `findInterval` is over.
+  const watch = () =>
+    new Promise<void>((resolve) => {
+      const done = () => {
+        observer.disconnect();
+        clearTimeout(timer);
+        resolve();
+      };
+      const observer = new MutationObserver(done);
+      const timer = setTimeout(done, findInterval);
+      observer.observe(document, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+    });
+  // Bound to the locator, whose class has private fields.
+  return new Proxy(locator, {
+    get(target, key) {
+      const value = Reflect.get(target, key, target) as unknown;
+      if (typeof value !== "function") return value;
+      if (!looks.has(key)) return value.bind(target);
+      return async (...args: unknown[]) => {
+        if (changed) await changed;
+        try {
+          return await value.apply(target, args);
+        } finally {
+          changed = watch();
+        }
+      };
+    },
+  });
+}
