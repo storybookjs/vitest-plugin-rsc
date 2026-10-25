@@ -7,8 +7,8 @@ import { notes } from "#db/schema.ts";
 import { signedInAs, testUser } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
-// Tests of page.test.tsx in a Node.js worker with happy-dom: see the node
-// project of vitest.config.ts.
+// Tests of page.test.tsx in a Node.js worker with happy-dom or jsdom: see the
+// node projects of vitest.config.ts.
 
 // Testing Library's `screen` is of the `<body>` there was as it loaded, and a
 // page has a `<body>` of its own, as after a page load: the queries are of
