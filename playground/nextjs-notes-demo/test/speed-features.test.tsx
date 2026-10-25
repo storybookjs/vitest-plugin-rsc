@@ -1,4 +1,4 @@
-import { expect, inject, onTestFinished, test, vi } from "vitest";
+import { beforeAll, expect, inject, onTestFinished, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { verifyPassword } from "better-auth/crypto";
 import type { NextBuild, SpeedOptions } from "vitest-plugin-rsc/nextjs/plugin";
@@ -69,6 +69,13 @@ function markApp(): () => boolean {
   next.keptApp = true;
   return () => (window as { next?: { keptApp?: boolean } }).next?.keptApp === true;
 }
+
+// The first page of the probe's route, which Vite compiles, and which can
+// change modules of the browser layer as it does: in a hook, which may take
+// longer than a test on a busy machine.
+beforeAll(async () => {
+  await renderServer({ url: "/speed-features" });
+});
 
 // The evaluation of the module of the probe that renders the page.
 const probeModule = async () => {
