@@ -1,7 +1,9 @@
-// The values of form controls: `fill()`, `clear()` and `selectOptions()` as
-// Playwright's, and the edits of text that a key makes, each with the events
-// Chrome dispatches for it and with the value set past React's tracker.
+// The values of form controls: `fill()`, `clear()`, `selectOptions()` and
+// `upload()` as Playwright's, and the edits of text that a key makes, each
+// with the events Chrome dispatches for it and with the value set past
+// React's tracker.
 
+import { eventView } from "./environment.ts";
 import { UnsupportedError, escapeHatch } from "./errors.ts";
 import { editing, focus } from "./focus.ts";
 
@@ -28,6 +30,36 @@ function setValue(element: TextControl | HTMLSelectElement, value: string): void
 const typeInto = new Set(["", "email", "number", "password", "search", "tel", "text", "url"]);
 const setInto = new Set(["color", "date", "time", "datetime-local", "month", "range", "week"]);
 
+/** Whether the text of an element is edited in place: `isContentEditable`, by the attribute in jsdom, which has not that. */
+export function isContentEditable(element: Element): boolean {
+  const own = (element as HTMLElement).isContentEditable;
+  if (own !== undefined) return own;
+  const editable = element.closest("[contenteditable]");
+  return !!editable && editable.getAttribute("contenteditable")?.toLowerCase() !== "false";
+}
+
+/**
+ * Selects `start` to `end` of a text control, unless that is its selection
+ * already: a DOM of Node.js fires `select` for any `setSelectionRange()`,
+ * where Chrome fires none for a caret.
+ */
+export function setSelection(
+  element: TextControl,
+  start: number,
+  end: number,
+  direction?: "forward" | "backward",
+): void {
+  if (element.selectionStart === null) return;
+  if (
+    element.selectionStart === start &&
+    element.selectionEnd === end &&
+    (direction === undefined || element.selectionDirection === direction)
+  ) {
+    return;
+  }
+  element.setSelectionRange(start, end, direction);
+}
+
 /** Whether a control takes text, which a key edits. */
 export function isTextControl(element: Element): element is TextControl {
   return (
@@ -36,7 +68,8 @@ export function isTextControl(element: Element): element is TextControl {
   );
 }
 
-const inputEvent = (inputType: string, data: string | null, cancelable: boolean) =>
+/** A `beforeinput` (`cancelable`) or an `input`, an `Event` in a DOM without `InputEvent`. */
+export const inputEvent = (inputType: string, data: string | null, cancelable: boolean) =>
   typeof InputEvent === "function"
     ? new InputEvent(cancelable ? "beforeinput" : "input", {
         bubbles: true,
@@ -81,7 +114,7 @@ export function editText(
   editing(element);
   setValue(element, value);
   const caret = from + inserted.length;
-  if (element.selectionStart !== null) element.setSelectionRange(caret, caret);
+  setSelection(element, caret, caret);
   element.dispatchEvent(inputEvent(inputType, data === null ? null : inserted, false));
 }
 
@@ -112,7 +145,7 @@ export function fill(element: Element, text: string): void {
     return;
   }
   if (!isTextControl(element)) {
-    if ((element as HTMLElement).isContentEditable) {
+    if (isContentEditable(element)) {
       throw new UnsupportedError(
         `fill() of a contenteditable element is not in dom-locators yet: ${escapeHatch}.`,
       );
@@ -124,14 +157,16 @@ export function fill(element: Element, text: string): void {
     if (Number.isNaN(Number(text))) throw new Error("Cannot type text into input[type=number]");
   }
   focus(element);
-  element.select();
+  // Of nothing, a DOM of Node.js fires `select`, and Chrome none.
+  if (element.value) element.select();
   // All of the text is selected, where the control may not say so.
   const all: [number, number] = [0, element.value.length];
   if (text) {
     editText(element, "insertText", text, (_value, start, end) => [start, end], all);
     return;
   }
-  const init = { ...deleteKey, bubbles: true, cancelable: true, composed: true, view: window };
+  const view = eventView(element.ownerDocument);
+  const init = { ...deleteKey, bubbles: true, cancelable: true, composed: true, view };
   if (element.dispatchEvent(new KeyboardEvent("keydown", init))) {
     editText(element, "deleteContentForward", null, (_value, start, end) => [start, end], all);
   }
@@ -155,6 +190,11 @@ export function insertText(element: TextControl, inputType: string, text: string
   editText(element, inputType, text, (_value, start, end) => [start, end]);
 }
 
+/** An option's `label`, as the HTML standard has it, which happy-dom's leaves at the attribute: the attribute, else the text. */
+function labelOf(option: HTMLOptionElement): string {
+  return option.getAttribute("label") ?? option.text;
+}
+
 /** A value of `selectOptions()`: an option's value or label, or the option. */
 export type SelectValue = string | Element;
 
@@ -170,7 +210,7 @@ export function selectOptions(element: Element, values: SelectValue[]): (() => v
   for (const value of values) {
     const option = options.find((option) =>
       typeof value === "string"
-        ? option.value === value || option.label === value
+        ? option.value === value || labelOf(option) === value
         : option === value,
     );
     if (!option || option.disabled) return undefined;
@@ -184,4 +224,30 @@ export function selectOptions(element: Element, values: SelectValue[]): (() => v
     element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   };
+}
+
+/**
+ * Playwright's `setInputFiles()` of files of the page: the files of a file
+ * input, then `input` and `change`. A DOM without `DataTransfer`, jsdom's,
+ * has no way to set them.
+ */
+export function setInputFiles(element: Element, files: File[]): void {
+  if (element.nodeName !== "INPUT") throw new Error("Not an <input> element");
+  const input = element as HTMLInputElement;
+  if ((input.getAttribute("type") || "").toLowerCase() !== "file") {
+    throw new Error("Not an input[type=file] element");
+  }
+  if (files.length > 1 && !input.multiple) {
+    throw new Error("Non-multiple file input can only accept single file");
+  }
+  if (typeof DataTransfer !== "function") {
+    throw new UnsupportedError(
+      `upload() in a DOM without DataTransfer is not in dom-locators: ${escapeHatch}.`,
+    );
+  }
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
 }

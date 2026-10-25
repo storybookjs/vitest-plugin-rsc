@@ -2,9 +2,15 @@
 // that it is visible, enabled and, for typing, editable. A check that fails
 // is looked at again, as the DOM changes, until the action's timeout.
 
-import { defaultTimeout } from "./environment.ts";
+import { defaultTimeout, isRendered } from "./environment.ts";
 import { elementNotFound, notActionable, strictModeViolation } from "./errors.ts";
-import { getElementComputedStyle, isElementVisible } from "./dom-utils.ts";
+import {
+  getElementComputedStyle,
+  hasVisibleBox,
+  isElementVisible,
+  parentElementOrShadowHost,
+} from "./dom-utils.ts";
+import { isContentEditable } from "./form-controls.ts";
 import { getAriaDisabled, getAriaRole } from "./role-utils.ts";
 import { waitUntil } from "./wait.ts";
 
@@ -24,27 +30,38 @@ export interface ActionOptions {
   timeout?: number;
 }
 
-/** An action's options, of which the package models `timeout` alone: anything else throws. */
-export function checkActionOptions(action: string, options: object | undefined): void {
+/** The options of an action that Playwright's takes with `force`. */
+export interface ForceOptions extends ActionOptions {
+  /** Whether to act on the element once it is there, without the checks of its state. */
+  force?: boolean;
+}
+
+/** An action's options, of which the package models `keys`: anything else throws. */
+export function checkActionOptions(
+  action: string,
+  options: object | undefined,
+  keys: readonly string[] = ["timeout"],
+): void {
   for (const key of Object.keys(options ?? {})) {
-    if (key !== "timeout") {
+    if (!keys.includes(key)) {
       throw new TypeError(
-        `${action} has no option "${key}" in dom-locators, which takes timeout alone: use vitest/browser's locator for it.`,
+        `${action} has no option "${key}" in dom-locators, which takes ${keys.join(", ")}: use vitest/browser's locator for it.`,
       );
     }
   }
 }
 
 /**
- * The element of `target` once it passes `checks`, retargeted by `retarget`.
- * Rejects at once for more than one element, and after the timeout with
- * "cannot find" or with the check that failed last.
+ * The element of `target` once it passes `checks`, or once it is there for
+ * `force`, retargeted by `retarget`. Rejects at once for more than one
+ * element, and after the timeout with "cannot find" or with the check that
+ * failed last.
  */
 export function actionable(
   target: Target,
   action: string,
   checks: Check[],
-  options: ActionOptions = {},
+  options: ForceOptions = {},
   retarget: (element: Element) => Element = (element) => element,
 ): Promise<Element> {
   let reason: string | undefined;
@@ -57,7 +74,7 @@ export function actionable(
         return undefined;
       }
       const element = retarget(elements[0]!);
-      reason = failedCheck(element, checks);
+      reason = options.force ? undefined : failedCheck(element, checks);
       return reason === undefined ? { value: element } : undefined;
     },
     options.timeout ?? defaultTimeout(),
@@ -80,14 +97,20 @@ function failedCheck(element: Element, checks: Check[]): string | undefined {
 
 /**
  * Whether an element is visible, as Playwright's: a box of some size, and no
- * `visibility: hidden`. In a DOM without layout, like jsdom's, by its style
- * alone: no `display: none` on it or above it, and no `visibility: hidden`.
+ * `visibility: hidden`. In a DOM that does not render, jsdom's or
+ * happy-dom's, by its style alone: no `display: none` on it or above it,
+ * through the hosts of shadow roots, and no `visibility: hidden`.
  */
 export function isVisible(element: Element): boolean {
-  if (typeof element.checkVisibility === "function") return isElementVisible(element);
+  if (isRendered(element.ownerDocument)) {
+    // Playwright's answer, without the computed style where a visible box tells it.
+    if (!hasVisibleBox(element)) return isElementVisible(element);
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
   const style = getElementComputedStyle(element);
   if (style && style.visibility !== "" && style.visibility !== "visible") return false;
-  for (let node: Element | null = element; node; node = node.parentElement) {
+  for (let node: Element | undefined = element; node; node = parentElementOrShadowHost(node)) {
     if (getElementComputedStyle(node)?.display === "none") return false;
   }
   return true;
@@ -126,7 +149,7 @@ function isReadonly(element: Element): boolean {
  * label it is in, as Playwright's `fill()` and `selectOption()` find it.
  */
 export function followLabel(element: Element): Element {
-  if (!element.matches("input, textarea, select") && !(element as HTMLElement).isContentEditable) {
+  if (!element.matches("input, textarea, select") && !isContentEditable(element)) {
     const label = element.closest("label");
     if (label?.control) return label.control;
   }

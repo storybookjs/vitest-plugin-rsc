@@ -1,8 +1,9 @@
 // What the package takes from its host: the running test's deadline and the
 // locator settings of Vitest's config, when Vitest's browser runner is
-// there, and the settings of `configure()` otherwise. The one module that
-// reads Vitest, and only through the global of its browser runner, so that
-// the package runs in any DOM, with or without Vitest.
+// there, and the settings of `configure()` otherwise; and whether the DOM
+// it runs in renders, as a browser's does and one of Node.js does not. The
+// one module that reads Vitest, and only through the global of its browser
+// runner, so that the package runs in any DOM, with or without Vitest.
 
 /** The settings of `configure()`. */
 export interface DomLocatorsOptions {
@@ -50,11 +51,25 @@ type BrowserRunner = {
 const browserRunner = () =>
   (globalThis as { __vitest_browser_runner__?: BrowserRunner }).__vitest_browser_runner__;
 
+// The global of Vitest's worker in Node.js, where the deadline is not
+// there: the running test, with its timeout and when it started.
+type Worker = { current?: { timeout?: number; result?: { startTime?: number } } };
+const worker = () => (globalThis as { __vitest_worker__?: Worker }).__vitest_worker__;
+// Vitest's margin of `TaskDeadline.derive()`.
+const deadlineMargin = 100;
+// The test's own `Date` may be fake.
+const now = Date.now.bind(Date);
+
 /** How long a wait without a timeout of the caller's may take: the test's time left, else `configure()`'s. */
 export function defaultTimeout(): number {
   try {
     const derived = browserRunner()?.runner?._deadline?.derive?.();
     if (typeof derived === "number" && Number.isFinite(derived)) return derived;
+    const test = worker()?.current;
+    const start = test?.result?.startTime;
+    if (test?.timeout && test.timeout > 0 && typeof start === "number") {
+      return Math.max(Math.floor(start + test.timeout - now()) - deadlineMargin, 1);
+    }
   } catch {
     // A runner of another shape: the configured timeout.
   }
@@ -73,4 +88,31 @@ export function exactByDefault(): boolean {
 export function testIdAttribute(): string {
   if (settings.testIdAttributeSet) return settings.testIdAttribute;
   return browserRunner()?.config?.browser?.locators?.testIdAttribute ?? settings.testIdAttribute;
+}
+
+const rendered = new WeakMap<Document, boolean>();
+
+/**
+ * Whether `document` is laid out and styled as a browser does it: its root
+ * element is as wide as the window. A DOM of Node.js, jsdom's or
+ * happy-dom's, lays nothing out, so every box is empty, and has no styles of
+ * pseudo-elements: what is visible is told by the style alone, and a click
+ * lands on the element itself. Read once per document, as it does not change.
+ */
+export function isRendered(document: Document): boolean {
+  let value = rendered.get(document);
+  if (value === undefined) {
+    value = document.documentElement.clientWidth > 0;
+    rendered.set(document, value);
+  }
+  return value;
+}
+
+/**
+ * The `view` of the events of `document`: its window, but none in a DOM
+ * that does not render, as Vitest's jsdom environment gives a window that
+ * jsdom's events do not take.
+ */
+export function eventView(document: Document): Window | null {
+  return isRendered(document) ? document.defaultView : null;
 }

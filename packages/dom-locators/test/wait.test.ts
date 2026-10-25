@@ -39,21 +39,27 @@ test("looks once per batch of changes of the DOM", async () => {
   expect(looks).toHaveBeenCalledTimes(3);
 });
 
-test("looks every 50 ms for a change that is no change of the DOM", async () => {
-  main().innerHTML = '<button class="later">Save</button>';
-  const style = document.createElement("style");
-  document.head.append(style);
-  style.sheet!.insertRule(".later { display: none }");
-  const locator = page.getByRole("button", { name: "Save" });
-  const found = locator.findElement({ timeout: 1000 });
-  await nextTask();
-  // A rule of a stylesheet: no record of a MutationObserver.
-  style.sheet!.deleteRule(0);
-  const start = performance.now();
-  expect(await found).toBe(document.querySelector("button"));
-  expect(performance.now() - start).toBeLessThan(150);
-  style.remove();
-});
+// happy-dom restyles an element for a change of the DOM, not of a stylesheet's rules.
+const restylesForRules = !navigator.userAgent.includes("HappyDOM");
+
+test.runIf(restylesForRules)(
+  "looks every 50 ms for a change that is no change of the DOM",
+  async () => {
+    main().innerHTML = '<button class="later">Save</button>';
+    const style = document.createElement("style");
+    document.head.append(style);
+    style.sheet!.insertRule(".later { display: none }");
+    const locator = page.getByRole("button", { name: "Save" });
+    const found = locator.findElement({ timeout: 1000 });
+    await nextTask();
+    // A rule of a stylesheet: no record of a MutationObserver.
+    style.sheet!.deleteRule(0);
+    const start = performance.now();
+    expect(await found).toBe(document.querySelector("button"));
+    expect(performance.now() - start).toBeLessThan(150);
+    style.remove();
+  },
+);
 
 test("a caller's timeout wins", async () => {
   const start = performance.now();
