@@ -14,6 +14,7 @@ import {
   projectsHostPageInNode,
   servesPageInNode,
 } from "./page-in-node.ts";
+import { mapOfRelatedLookup } from "./related-lookup.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
@@ -91,14 +92,16 @@ export function vitestPluginRSC(): Plugin[] {
   let serverFiles = "";
   return [
     pageViteClientPlugin(),
-    ...referencingTestFilesLast(
-      vitePluginRscMinimal({
-        environment: {
-          browser: "react_client",
-          rsc: "client",
-        },
-        defineEncryptionKey: encryptionKey,
-      }),
+    ...mapOfRelatedLookup(
+      referencingTestFilesLast(
+        vitePluginRscMinimal({
+          environment: {
+            browser: "react_client",
+            rsc: "client",
+          },
+          defineEncryptionKey: encryptionKey,
+        }),
+      ),
     ),
     // `vite build`, and what a dev server has instead: see static-build.ts.
     staticBuild({

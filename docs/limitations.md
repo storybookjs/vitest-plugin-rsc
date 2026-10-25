@@ -61,7 +61,7 @@ Looking for every edge case, with the reason behind it? See [Not Yet](internals/
 ## Watch mode
 
 - A new `page`, `layout`, `loading`, `error`, `not-found` or `default` file added while Vitest runs isn't picked up until you restart Vitest.
-- `vitest --changed` and `vitest related` can't tell which routes a test opens. See [Watch mode](nextjs-guide.md#watch-mode).
+- `vitest --changed` and `vitest related` find a test by the URL it passes to `renderServer()` or `handleRequest()`. Not by where the proxy sends that URL, by a rule of `next.config` that depends on a header or a cookie of the test, or by where the test navigates from there. See [Watch mode](nextjs-guide.md#watch-mode).
 
 ## Memory
 

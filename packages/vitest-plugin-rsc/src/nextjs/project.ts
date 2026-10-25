@@ -113,6 +113,14 @@ export type NextProject = {
   middlewareFile: string | undefined;
   /** What the server does with a request before a route gets it. */
   routing: NextRouting;
+  /**
+   * The page name of the route the server answers a URL with, as nothing has
+   * run, without headers or cookies: with `proxy`, after the redirects and
+   * rewrites of `next.config`, and the middleware takes every request on as it
+   * is. Nothing for a URL of no route, or one that a redirect sends to another
+   * origin.
+   */
+  pageOf(url: URL, options: { proxy: boolean }): Promise<string | undefined>;
   /** What a build writes to `.next/routes-manifest.json`, which Next's route module reads. */
   routesManifest: RoutesManifest;
   /** The keys of draft mode, which a build makes and writes to `.next/`. */
@@ -311,7 +319,7 @@ export async function loadNextProject(
   // The app: its routes, its middleware, and the server in front of them.
   const app = await discoverAppRoutes(context);
   const middleware = await findMiddleware(context);
-  const { routing, routesManifest, unmatchedRoutes } = await buildRouting(
+  const { routing, routesManifest, unmatchedRoutes, pageOf } = await buildRouting(
     context,
     app,
     middleware,
@@ -336,6 +344,7 @@ export async function loadNextProject(
     newExports,
     middlewareFile: middleware.middlewareFile,
     routing,
+    pageOf,
     routesManifest,
     preview: context.previewProps,
     env: context.env,
