@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0-alpha.1](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.4.0-alpha.0...v0.4.0-alpha.1) (2026-10-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* `vitestPluginNext()` has to come after `vitestPluginRSC()` in the plugins. It throws otherwise.
+
+### Features
+
+* vitest --changed and vitest related find the tests that open a route ([#310](https://github.com/storybookjs/vitest-plugin-rsc/issues/310)) ([ae41f49](https://github.com/storybookjs/vitest-plugin-rsc/commit/ae41f490aec17715c8b02a0e6f71510fd582ba1d))
+
+
+### Bug Fixes
+
+* a change of the plugin's resolution or compile of a dependency renews the optimizer's cache ([#236](https://github.com/storybookjs/vitest-plugin-rsc/issues/236)) ([c82ca41](https://github.com/storybookjs/vitest-plugin-rsc/commit/c82ca41fdfc400133878cc0813867df9c70c8b42))
+* a page that is left runs none of its timers ([#232](https://github.com/storybookjs/vitest-plugin-rsc/issues/232)) ([4089863](https://github.com/storybookjs/vitest-plugin-rsc/commit/4089863162285d1d8ea5eaa2c46d33f70aa3202b))
+* a plugin of the test project sees a test file with "use client" as written ([#231](https://github.com/storybookjs/vitest-plugin-rsc/issues/231)) ([631ce28](https://github.com/storybookjs/vitest-plugin-rsc/commit/631ce28cf7eb62f4dba29d60887456ed06d2480b))
+* Next's own module loads instrumentation.ts, and a stand-in gets a stub for a new export of Next ([#248](https://github.com/storybookjs/vitest-plugin-rsc/issues/248)) ([a5e9a5b](https://github.com/storybookjs/vitest-plugin-rsc/commit/a5e9a5ba3980af49007109d18f942ad00bb98095))
+* revalidation and navigation of a prerendered route, after [#235](https://github.com/storybookjs/vitest-plugin-rsc/issues/235) ([#242](https://github.com/storybookjs/vitest-plugin-rsc/issues/242)) ([13d7aa0](https://github.com/storybookjs/vitest-plugin-rsc/commit/13d7aa0942d52408db30260bc0fb065b0e469431))
+* the optimizer of a server layer finds its dependencies in its scan ([#241](https://github.com/storybookjs/vitest-plugin-rsc/issues/241)) ([23666ba](https://github.com/storybookjs/vitest-plugin-rsc/commit/23666ba346eab31f0a39306bc402cc5a16c25aac))
+
 ## [0.4.0-alpha.0](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.3.0...v0.4.0-alpha.0) (2026-10-22)
 
 
