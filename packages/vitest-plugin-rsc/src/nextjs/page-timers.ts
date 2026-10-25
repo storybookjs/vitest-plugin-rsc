@@ -16,7 +16,15 @@ import { fileOfModule } from "./client-files.ts";
 // test file with `"use client"`, which the layer evaluates too: its timers
 // are the host's, which a spy of the test is on.
 
-const define = Object.fromEntries(
+/**
+ * Those uses, to the module runner's. Also for the dependency optimizer of the
+ * browser layer, by its `transform.define`: the bundler replaces them in every module of the
+ * pre-bundle, natively and in parallel, and the result stays on disk, where
+ * the plugin below would compile each pre-bundled file again in every run.
+ * None of them is a file of the host, and the packages of the host are not
+ * in it (`vitest-plugin-rsc:next-host-packages`).
+ */
+export const pageTimersDefine = Object.fromEntries(
   timerNames.map((name) => [name, `${ssrImportMetaKey}.${timersKey}.${name}`]),
 );
 
@@ -24,7 +32,8 @@ const mentionsTimer = new RegExp(`\\b(?:${timerNames.join("|")})\\b`);
 
 /**
  * For the modules of the browser layer, by the name of its environment, but
- * those of a file that `isHostFile()`.
+ * those of a file that `isHostFile()`, and the pre-bundled dependencies,
+ * which have `pageTimersDefine`.
  */
 export function pageTimersPlugin(
   environment: string,
@@ -32,16 +41,21 @@ export function pageTimersPlugin(
 ): Plugin {
   return {
     name: "vitest-plugin-rsc:next-page-timers",
-    // JavaScript by then, also a pre-bundled dependency.
+    // JavaScript by then, also a dependency of a static build.
     enforce: "post",
     applyToEnvironment: ({ name }) => name === environment,
     transform: {
       filter: { code: mentionsTimer },
       async handler(code, id) {
+        const { environment } = this;
+        if (environment.mode === "dev" && environment.depsOptimizer?.isOptimizedDepFile(id)) return;
         const file = fileOfModule(id);
         if (file !== undefined && isHostFile(file)) return;
         try {
-          return await transformWithOxc(code, normalizePath(id), { lang: "js", define });
+          return await transformWithOxc(code, normalizePath(id), {
+            lang: "js",
+            define: pageTimersDefine,
+          });
         } catch (error) {
           const reason = String(error instanceof Error ? error.message : error);
           this.warn(

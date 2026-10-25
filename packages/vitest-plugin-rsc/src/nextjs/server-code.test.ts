@@ -76,10 +76,10 @@ test("reads fetch, Request and Response from the server", async () => {
 
 test("has React's Flight server in the rsc layer queue a microtask with the server's queueMicrotask", async () => {
   const serverCode = createServerCode(registry);
-  const compile = async (layer: "rsc" | "ssr", file: string) =>
+  const compile = async (file: string) =>
     (
       await serverCode
-        .optimizerPlugin(layer)
+        .optimizerPlugin()
         .transform.call(
           { warn: vi.fn() },
           `var schedule = queueMicrotask; function performWork(request) {}`,
@@ -90,16 +90,15 @@ test("has React's Flight server in the rsc layer queue a microtask with the serv
     `/app/node_modules/next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.edge.${build}.js`;
 
   for (const build of ["development", "production"]) {
-    expect(await compile("rsc", flightServer(build))).toContain(
+    expect(await compile(flightServer(build))).toContain(
       `var schedule = ${registry}.queueMicrotask;`,
     );
   }
   // No other module, and not the layer that renders HTML.
-  expect(await compile("ssr", flightServer("development"))).toBeUndefined();
-  expect(await compile("rsc", "/app/node_modules/next/dist/server/next.js")).toBeUndefined();
+  expect(serverCode.optimizerDefine("ssr")).not.toHaveProperty("queueMicrotask");
+  expect(await compile("/app/node_modules/next/dist/server/next.js")).toBeUndefined();
   expect(
     await compile(
-      "rsc",
       "/app/node_modules/@vitejs/plugin-rsc/dist/vendor/react-server-dom/cjs/react-server-dom-webpack-server.edge.development.js",
     ),
   ).toBeUndefined();
@@ -107,7 +106,7 @@ test("has React's Flight server in the rsc layer queue a microtask with the serv
 
 test("has each step of a render of React's Flight server run with the stores of its first", async () => {
   const serverCode = createServerCode(registry);
-  const { transform } = serverCode.optimizerPlugin("rsc");
+  const { transform } = serverCode.optimizerPlugin();
   const file =
     "/app/node_modules/next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.edge.production.js";
   const code = `function performWork(request) { retryTask(request); }`;
@@ -145,7 +144,7 @@ test("leaves code alone that names none of them", async () => {
 });
 
 // Pre-bundles modules the way Vite's dependency optimizer does: Rolldown, with
-// the plugin of a server layer.
+// the define of the ssr layer.
 async function prebundle(modules: Record<string, string>): Promise<string> {
   const serverCode = createServerCode(registry);
   const build = await rolldown({
@@ -157,8 +156,8 @@ async function prebundle(modules: Record<string, string>): Promise<string> {
           importer ? path.posix.join(path.posix.dirname(importer), source) : source,
         load: (id) => modules[id],
       },
-      serverCode.optimizerPlugin("ssr"),
     ],
+    transform: { define: serverCode.optimizerDefine("ssr") },
   });
   const { output } = await build.generate({ format: "esm" });
   return output[0].code;
@@ -183,9 +182,31 @@ test("keeps the text of a function in a pre-bundled package of several modules",
   expect(text!.replace(/\s+/g, " ")).toBe(script);
 });
 
+test("has the bundler compile every module of the ssr layer's pre-bundle as server code, and of no other layer", async () => {
+  const code = await prebundle({
+    "/dependency/index.js": `
+      import shim from "./shim.cjs";
+      const load = (fetch) => fetch();
+      globalThis.result = [fetch("/"), load(() => "own"), shim.width(), typeof Response];`,
+    "/dependency/shim.cjs": `module.exports = { width: () => (typeof window === "undefined" ? 0 : 1) };`,
+  });
+
+  runInThisContext(code);
+
+  expect((globalThis as unknown as { result: unknown[] }).result).toEqual([
+    "server fetch",
+    "own",
+    0,
+    "function",
+  ]);
+  const serverCode = createServerCode(registry);
+  expect(serverCode.optimizerDefine("rsc")).toEqual({});
+  expect(serverCode.optimizerDefine("browser")).toEqual({});
+});
+
 test("pre-bundles a file that is not plain JavaScript as it is, with a warning", async () => {
   const warn = vi.fn();
-  const { transform } = createServerCode(registry).optimizerPlugin("ssr");
+  const { transform } = createServerCode(registry).optimizerPlugin();
 
   const result = await transform.call(
     { warn },
@@ -512,7 +533,8 @@ test("compiles Next's own handler of a Server Action as the ssr optimizer pre-bu
   const build = await rolldown({
     input: file,
     external: (_source, importer) => importer !== undefined,
-    plugins: [serverCode.optimizerPlugin("ssr"), serverCode.asyncFunctionsOptimizerPlugin("ssr")],
+    plugins: [serverCode.asyncFunctionsOptimizerPlugin("ssr")],
+    transform: { define: serverCode.optimizerDefine("ssr") },
     logLevel: "silent",
   });
   const { output } = await build.generate({ format: "esm" });
