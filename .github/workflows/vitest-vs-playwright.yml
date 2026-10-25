@@ -7,12 +7,33 @@ name: Vitest vs Playwright
 # playground/vitest-vs-playwright-notes a notes app with accounts and 500
 # tests: see their README.md. Each job writes what its steps took to the
 # summary of the run, and every test with its time to its log.
+#
+# A pull request runs it when it changes what the numbers or the tests
+# depend on: the two apps and the vite-cache.ts they import, dom-locators,
+# the plugin and its build (not their unit tests), the dependencies, Node.js,
+# or this workflow. Not for a change of docs, of a .md file or of another
+# playground: a run takes about 40 minutes of runners. Any other change can
+# run it by hand, once the workflow is on main.
 on:
   pull_request:
     paths:
       - playground/vitest-vs-playwright/**
       - playground/vitest-vs-playwright-notes/**
-      - packages/vitest-plugin-rsc/**
+      - "!playground/vitest-vs-playwright*/**/*.md"
+      - playground/test-helpers/vite-cache.ts
+      - packages/dom-locators/src/**
+      - packages/dom-locators/package.json
+      - packages/dom-locators/tsconfig.json
+      - packages/vitest-plugin-rsc/src/**
+      - "!packages/vitest-plugin-rsc/src/**/*.test.ts"
+      - "!packages/vitest-plugin-rsc/src/**/*.test.tsx"
+      - packages/vitest-plugin-rsc/package.json
+      - packages/vitest-plugin-rsc/tsdown.config.ts
+      - packages/vitest-plugin-rsc/tsconfig.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - patches/**
+      - .nvmrc
       - .github/workflows/vitest-vs-playwright.yml
   workflow_dispatch:
 
@@ -43,8 +64,10 @@ jobs:
         # 2 to 3 s sooner than `pnpm exec vitest` on Node.js; the tests then
         # take the same time. See the playgrounds' README.md. `node` runs it on
         # Node.js instead, in production only: the same tests, to compare.
-        # `dom` runs them without a browser, in a worker of Node.js with the
-        # DOM of happy-dom or jsdom (`VITEST_DOM`), on Node.js.
+        # `dom` runs them without a browser, in a worker with the DOM of
+        # happy-dom or jsdom (`VITEST_DOM`): happy-dom on Bun and on Node.js,
+        # jsdom on Node.js only, as Vitest's environment of jsdom does not
+        # start on Bun.
         include:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
@@ -52,6 +75,7 @@ jobs:
           - { app: vitest-vs-playwright-notes, tests: dom-locators, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast, node: true }
+          - { app: vitest-vs-playwright-notes, tests: dom-locators, mode: fast, dom: happy-dom }
           - {
               app: vitest-vs-playwright-notes,
               tests: dom-locators,

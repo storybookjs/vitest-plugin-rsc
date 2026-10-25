@@ -5,7 +5,7 @@ import { normalizePath, type DevEnvironment, type Plugin, type ViteDevServer } f
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
-import { changedAfter, versionOf } from "./module-versions.ts";
+import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
@@ -15,14 +15,16 @@ import {
   answerPageOverWebSocket,
   answerPageWith,
   listenForPage,
+  tellPages,
 } from "./page-bridge.ts";
 import {
   changedEvent,
   invokeEvent,
-  pageRequestPath,
   versionEvent,
+  modulesChangedEvent,
   webSocketInfoPath,
   type ChangedQuestion,
+  type ModulesChanged,
 } from "./page-protocol.ts";
 
 type ReactClientInvokePayload = Parameters<
@@ -118,14 +120,25 @@ export function vitestPluginRSC(): Plugin[] {
       },
       async load(id) {
         if (id !== `\0${pageHostId}` || !devServer) return;
-        const url = `${await listenForPage(devServer)}${pageRequestPath}`;
+        const origin = await listenForPage(devServer);
         return (
           `import { nodeHost } from ${JSON.stringify(ownFile("node-host"))};\n` +
-          `export default nodeHost(${JSON.stringify(url)});\n`
+          `export default nodeHost(${JSON.stringify(origin)});\n`
         );
       },
       configureServer(server) {
         devServer = server;
+        // The pages hear of every change of the modules of an environment,
+        // before any answer that the server makes after it: so a page
+        // compares versions where it would ask for them. See `heardVersions`
+        // in utils.ts.
+        onInvalidation(server, (environment) => {
+          const changed: ModulesChanged = {
+            environment,
+            version: versionOf(server.environments[environment]?.moduleGraph),
+          };
+          tellPages(server, modulesChangedEvent, changed);
+        });
         // The ids of the modules of an environment that Vite invalidated
         // after a version of them, for a runner of the page that has that
         // version: see `takeChangedModules()` in utils.ts.

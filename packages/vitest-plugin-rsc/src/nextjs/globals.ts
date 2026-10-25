@@ -134,6 +134,11 @@ class ServerResponse extends NativeResponse {
 
 registry.Request = ServerRequest;
 registry.Response = ServerResponse;
+// Of the same web APIs as the server's streams, which Next's server pipes
+// with a signal of its own: in a DOM of Node.js the global ones are the
+// DOM's, which Node's streams take and Bun's native `pipeTo()` does not.
+registry.AbortController = pageHost.serverWebApis.AbortController;
+registry.AbortSignal = pageHost.serverWebApis.AbortSignal;
 registry.enterRequestScope = enterAmbientScope;
 registry.openedByRequest = new SequentialAsyncLocalStorage<Opened | undefined>();
 registry.asyncFunctionHooks = asyncFunctionHooks;

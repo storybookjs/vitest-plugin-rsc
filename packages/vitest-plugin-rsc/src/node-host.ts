@@ -1,18 +1,13 @@
-import type { Agent, IncomingMessage } from "node:http";
 import { createNavigation } from "./navigation-shim.ts";
+import { channelTo } from "./node-channel.ts";
 import "./node-dom.ts";
 import type { PageHost, WebApis } from "./page-host.ts";
 
 // The host of a page in a worker of Node.js, with a DOM of happy-dom or
 // jsdom: Vitest without Browser Mode, which has no WebSocket to the dev
-// server. Its requests go to the plugin's own listener of HTTP on the
-// loopback (`listenForPage()` in page-bridge.ts), with Node's own `http`, not
-// the page's `fetch`, which a test can mock, like MSW does. The plugin makes
-// the host with the listener's URL (index.ts).
-
-// Not an import, which the page's runner would resolve as a module of the
-// app's layer.
-const http = process.getBuiltinModule("node:http");
+// server: its channel is the plugin's own listener of HTTP on the loopback
+// (node-channel.ts). The plugin makes the host with the listener's origin
+// (index.ts).
 
 // What worker-web-apis.ts kept of Node's own, as Vitest loads it first in the
 // worker (index.ts).
@@ -114,49 +109,15 @@ function bodyOf(body: FormData | Blob, headers: Headers): RequestInit & { duplex
 // The DOM has no Navigation API: see navigation-shim.ts.
 const navigation = createNavigation(window);
 
-/** The host of the page, whose dev server listens at `url`. */
-export function nodeHost(url: string): PageHost {
-  // A page asks for hundreds of modules at once: over a few connections, each
-  // kept for the next request.
-  const agent: Agent = new http.Agent({ keepAlive: true });
+/** The host of the page, whose dev server listens at `origin`. */
+export function nodeHost(origin: string): PageHost {
+  const { request, listen } = channelTo(origin);
   return {
-    request: (event, data) => post(agent, url, JSON.stringify({ event, data })),
+    request,
+    listen,
     navigation,
     loadsStylesheets: false,
     serverWebApis: webApis,
     fromPage,
   };
-}
-
-// The listener answers every request: no timeout of the page's own.
-function post(agent: Agent, url: string, body: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const request = http.request(
-      url,
-      { method: "POST", agent, headers: { "content-type": "application/json" } },
-      (response: IncomingMessage) => {
-        const chunks: Buffer[] = [];
-        response.on("data", (chunk: Buffer) => chunks.push(chunk));
-        response.on("error", reject);
-        response.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          if (response.statusCode !== 200) {
-            reject(
-              new Error(
-                `vitest-plugin-rsc: the dev server answered ${response.statusCode}: ${text}`,
-              ),
-            );
-            return;
-          }
-          try {
-            resolve(JSON.parse(text));
-          } catch (error) {
-            reject(error);
-          }
-        });
-      },
-    );
-    request.on("error", reject);
-    request.end(body);
-  });
 }
