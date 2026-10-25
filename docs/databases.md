@@ -82,15 +82,15 @@ And because the database lives in the tab, Storybook can have it too. With [`@st
 
 ## A fast data layer in tests
 
-In a test, your server runs in the same tab as the test, and so does the database. A query is no round trip over a network: it is CPU time on the tab's main thread, the thread that also clicks and renders. A run of the 500 tests of the notes benchmark (`playground/vitest-vs-playwright-notes`) sends about 8,800 queries, 17 to 18 for each test:
+In a test, your server runs in the same tab as the test, and so does the database. A query is no round trip over a network: it is CPU time on the tab's main thread, the thread that also clicks and renders. A run of the 500 tests of the notes benchmark (`playground/vitest-vs-playwright-notes`) sends about 9,000 queries, 18 for each test, and they take 2.6 s of its 13.4 s of tests, on an M1 Pro:
 
-| in a run of the 500 tests      | count | queries each |
-| ------------------------------ | ----: | -----------: |
-| Server Actions                 | 1,065 |          3.3 |
-| navigations                    | 1,141 |          1.8 |
-| page loads                     |   662 |          1.9 |
-| the tests' own seeds and reads |   500 |            3 |
-| `resetDb()`, before each test  |   500 |            1 |
+| in a run of the 500 tests      | count | queries each | database, ms each |
+| ------------------------------ | ----: | -----------: | ----------------: |
+| Server Actions                 | 1,065 |          3.5 |              1.08 |
+| navigations                    | 1,141 |          1.8 |              0.65 |
+| page loads                     |   662 |          1.9 |              0.52 |
+| the tests' own seeds and reads |   500 |            3 |              0.50 |
+| `resetDb()`, before each test  |   500 |            1 |              0.28 |
 
 About 70% of a query's time is Postgres itself, running in WebAssembly; the rest is the driver and the ORM. So what makes a data layer fast in production makes it fast here: fewer queries, and less work around each. The notes apps do four things.
 
@@ -106,11 +106,11 @@ export const getOptionalUser = cache(async () => {
 
 With Better Auth, a lookup is a check of the cookie's signature and two queries, the session and then its user, so a render of the notes demo runs two queries where it ran four. A Server Action isn't a render, so `cache()` does nothing there: the action looks the user up itself, and so does the render of the page it redirects to.
 
-**Don't query what you already have.** The benchmark's notes page counted the user's notes next to listing them. Without a search, the list has every note, so its length is the count: the page counts only for a search. That is one query less on about 1,150 renders of `/notes` in a run of the benchmark: its page loads and navigations, and the renders after a delete, a sign-up or a sign-in, which redirect to it.
+**Don't query what you already have.** The benchmark's notes page counted the user's notes next to listing them. Without a search, the list has every note, so its length is the count: the page counts only for a search. That is one query less on about 1,150 renders of `/notes` in a run of the benchmark: its page loads and navigations, and the renders after a delete, a sign-up or a sign-in, which redirect to it. The database's time per test went down by 0.24 ms.
 
-**Prepare the queries of every request.** Drizzle's [`.prepare()`](https://orm.drizzle.team/docs/perf-queries) builds the SQL of a query once, where a query built in place builds it on every call. On a server, node-postgres also has Postgres parse it once per connection. PGlite parses every query again, so in a test the gain is Drizzle's: 14–33 µs a query.
+**Prepare the queries of every request.** Drizzle's [`.prepare()`](https://orm.drizzle.team/docs/perf-queries) builds the SQL of a query once, where a query built in place builds it on every call. On a server, node-postgres also has Postgres parse it once per connection. PGlite parses every query again, so in a test the gain is Drizzle's. In the benchmark, a page load and a navigation take 0.1 ms less and a Server Action 0.19 ms less, about 0.7 ms per test.
 
-**Reset the tables in one round trip.** The notes apps send one string of `DELETE`s, where `TRUNCATE` would rewrite the files of every table and its indexes, and the recipes send the `DELETE`s and `INSERT`s that put back the rows of their migrations. A few rows are gone in about the time of one query, before each test.
+**Reset the tables in one round trip.** The notes apps send one string of `DELETE`s, where `TRUNCATE` would rewrite the files of every table and its indexes, and the recipes send the `DELETE`s and `INSERT`s that put back the rows of their migrations. A few rows are gone in 0.28 ms, before each test.
 
 The rest is done already:
 
