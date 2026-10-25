@@ -389,6 +389,13 @@ async function openPage(
     // reports the error that takes the node's place as the page hydrates.
     if (!opening?.opened.node?.layouts) opening?.nodeOnPage?.replaced();
   }
+  // The version of the modules that the app starts with, or an older one:
+  // see `kept`. Its runner takes the modules of a check after it. Before the
+  // document is in: from then until the page is open, a link or a form of it
+  // has no page to navigate in.
+  const modules = page.inKeptApp ? await versionOfModules("react_client") : 0;
+  await checkFetchedModules();
+  superseded();
   await loadDocument(html, response.url, container, after, page.inKeptApp);
   superseded();
   const { inKeptApp } = page;
@@ -408,11 +415,6 @@ async function openPage(
   // module graph of its own for the browser layer. A page that is left keeps
   // no module graph: what of it stays, like an error whose stack has the
   // frames that loaded a module, cannot reach its modules through the runner.
-  // The version of the modules that it starts with, or an older one: see
-  // `kept`. Its runner takes the modules of a check after it.
-  const modules = inKeptApp ? await versionOfModules("react_client") : 0;
-  await checkFetchedModules();
-  superseded();
   const runner = createEnvironmentRunner("react_client");
   deferForApp(() => void runner.close());
   // The browser's Flight client reads properties off `__webpack_require__`
