@@ -208,7 +208,8 @@ jobs:
         run: >-
           pnpm exec vitest run --configLoader native -c vitest.profile.config.ts --maxWorkers 1
           tests/vitest-user-event/note-create.test.tsx
-          tests/vitest-user-event/flow-edit-chain.test.tsx
+          tests/vitest-user-event/flow-edit-chain-1.test.tsx
+          tests/vitest-user-event/flow-edit-chain-2.test.tsx
       - name: Sum up the traces
         run: python3 test/trace-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
