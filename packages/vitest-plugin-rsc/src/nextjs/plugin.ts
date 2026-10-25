@@ -1187,7 +1187,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // Vitest is as the browser launches. Not the rsc layer: it is the
         // `client` environment, which also serves Vitest's own pages, and
         // with no cache of pre-bundled dependencies yet, Vite holds those
-        // back until no module of the environment is being compiled.
+        // back until no module of the environment is being compiled. A mock
+        // reaches neither of the two layers, and Vitest replaces a mocked
+        // module in the browser, before its request reaches the server: a
+        // module compiled ahead is no module the page has loaded.
         const warmup = (entry: string) => (testRun ? { warmup: [ownFile(entry)] } : {});
         const builtLayer = (layer: NextLayer) =>
           isBuild && {
