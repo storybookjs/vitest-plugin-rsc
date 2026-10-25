@@ -1,7 +1,7 @@
-import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
-import { forgetTestFileAnswers } from "./speed-features.ts";
+import { forgetTestFileAnswers, pollOnEveryChange } from "./speed-features.ts";
 import { keepHostDocument } from "./host-document.ts";
 import { leaveKeptAppWithPage, noRouter } from "./page.ts";
 import { registry } from "./registry.ts";
@@ -83,4 +83,8 @@ export async function setUpTestFiles(setupFiles: readonly string[]): Promise<voi
     await (clientFile ? cleanup() : newBrowserContext());
     await linkStylesheetsOf(nodeFiles);
   });
+
+  // The speed feature `watchDom` polls again on the next change of the
+  // document, in any DOM: see speed-features.ts.
+  pollOnEveryChange(expect, () => vi.isFakeTimers());
 }

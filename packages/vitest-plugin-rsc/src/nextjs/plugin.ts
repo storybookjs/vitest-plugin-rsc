@@ -58,6 +58,7 @@ import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { optimizerCacheKey } from "./optimizer-cache-key.ts";
 import { createCommonJsPlugin } from "./commonjs.ts";
+import { esmRequirePlugin } from "./esm-require.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { pageTimersPlugin } from "./page-timers.ts";
@@ -1065,6 +1066,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
               nextPatchesPlugin(),
+              esmRequirePlugin(),
               ...(layer === "browser"
                 ? []
                 : [
