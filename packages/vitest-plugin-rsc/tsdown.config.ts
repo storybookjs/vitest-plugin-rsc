@@ -110,8 +110,6 @@ export default defineConfig([
       // Imported by their files: see `pageHostId` of src/index.ts.
       "src/browser-host.ts",
       "src/node-host.ts",
-      // Loaded by Node.js with `--import`: see src/worker-web-apis.ts.
-      "src/worker-web-apis.ts",
       "src/async-hooks.ts",
       "src/testing-library.tsx",
       "src/testing-library-client.tsx",

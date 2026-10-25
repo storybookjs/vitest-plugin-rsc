@@ -20,8 +20,10 @@ export type PageHost = {
    * of `request()`: an answer that the server sent after a piece of news
    * resolves after `news` heard it, and a piece of news that the server sent
    * after an answer comes after the answer resolved, or with `missed()`.
+   * None in a worker of Node.js, whose page hears of a change of the modules
+   * at the next run of Vitest (`modules`).
    */
-  listen(news: PageNews): void;
+  listen?(news: PageNews): void;
   /**
    * Where the runners of the page get the modules of an environment, where
    * not over `request()`: in a worker of Node.js from Vitest's own RPC, see

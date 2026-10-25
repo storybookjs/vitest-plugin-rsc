@@ -278,7 +278,7 @@ export function forgetHeardVersions(): void {
   asking = new Map();
 }
 
-pageHost.listen({
+pageHost.listen?.({
   heard(event, data) {
     if (event !== modulesChangedEvent) return;
     const { environment, version } = (data ?? {}) as Partial<ModulesChanged>;

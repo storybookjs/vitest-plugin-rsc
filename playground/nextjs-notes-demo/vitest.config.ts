@@ -104,10 +104,10 @@ const browserProject = (name: string, mode: Mode) =>
 // The tests of the app in a Node.js worker, with happy-dom or jsdom for the
 // document, where the browser projects run in Chromium, in fidelity mode, as
 // the benchmark's columns of a DOM of Node.js run in fast mode. The same plugins: without
-// Browser Mode the plugin is the page's host itself (SB-2419). With
-// `cacheDevServer` a page load asks the dev server nothing of its modules,
-// and the page takes the news of a change, which the host hears on a stream
-// of its own: see components/changing-probe.node.test.tsx.
+// Browser Mode the plugin is the page's host itself (SB-2419), in a pool of
+// its own, whose page gets its modules from Vitest's RPC and sees a change of
+// a file at the next run, as the test's own modules do: see
+// packages/vitest-plugin-rsc/src/utils.node-host.test.ts.
 const nodeProject = (name: string, environment: "happy-dom" | "jsdom", cacheDevServer: boolean) =>
   defineProject({
     root,
@@ -131,12 +131,9 @@ const nodeProject = (name: string, environment: "happy-dom" | "jsdom", cacheDevS
         browserModules: ["**/node_modules/@testing-library/**"],
         cacheDevServer,
       }),
-      // For components/changing-probe.node.test.tsx.
-      fileChangeService(),
     ],
     test: {
       name,
-      provide: { cacheDevServer },
       include: ["**/*.node.test.{ts,tsx}"],
       exclude: ["e2e/**", "node_modules"],
       environment,

@@ -1,5 +1,5 @@
-// Loaded with `--import` in a worker of Vitest without Browser Mode, before
-// Vitest sets up its environment: the web APIs of Node.js, which a DOM like
+// Loaded by the plugin's entry of a worker of Node.js (workers/forks.ts),
+// before Vitest sets up its environment: the web APIs of Node.js, which a DOM like
 // happy-dom replaces with its own, kept for the layers of the server, as
 // node-host.ts gives them to the page. See `webApisKey` there. And the typed
 // arrays of the worker's realm, which Vitest's environment of jsdom replaces

@@ -1,17 +1,17 @@
 import { createNavigation } from "./navigation-shim.ts";
-import { channelTo } from "./node-channel.ts";
 import "./node-dom.ts";
 import type { PageHost, WebApis } from "./page-host.ts";
 import { vitestModules } from "./vitest-modules.ts";
+import { askOverWorkerChannel } from "./worker-channel.ts";
 
 // The host of a page in a worker of Node.js, with a DOM of happy-dom or
 // jsdom: Vitest without Browser Mode, which has no WebSocket to the dev
-// server: its channel is the plugin's own listener of HTTP on the loopback
-// (node-channel.ts). The plugin makes the host with the listener's origin
-// (index.ts).
+// server. The page gets its modules from Vitest's own RPC
+// (vitest-modules.ts), and asks the rest on the worker's channel to Vitest's
+// process (worker-channel.ts), which the plugin's pool answers.
 
-// What worker-web-apis.ts kept of Node's own, as Vitest loads it first in the
-// worker (index.ts).
+// What worker-web-apis.ts kept of Node's own, as the plugin's entry of the
+// worker loads it first (workers/forks.ts).
 const webApisKey = Symbol.for("vitest-plugin-rsc:worker-web-apis");
 const webApis: WebApis =
   (globalThis as unknown as Record<PropertyKey, WebApis | undefined>)[webApisKey] ??
@@ -110,12 +110,10 @@ function bodyOf(body: FormData | Blob, headers: Headers): RequestInit & { duplex
 // The DOM has no Navigation API: see navigation-shim.ts.
 const navigation = createNavigation(window);
 
-/** The host of the page, whose dev server listens at `origin`. */
-export function nodeHost(origin: string): PageHost {
-  const { request, listen } = channelTo(origin);
+/** The host of the page in this worker. */
+export function nodeHost(): PageHost {
   return {
-    request,
-    listen,
+    request: askOverWorkerChannel,
     modules: vitestModules(),
     navigation,
     loadsStylesheets: false,

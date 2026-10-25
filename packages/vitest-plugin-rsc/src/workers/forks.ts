@@ -1,14 +1,20 @@
-import { init, runBaseTests, setupEnvironment } from "vitest/worker";
+// Node's own web APIs, kept for the server's layers before Vitest sets up
+// the environment, whose DOM replaces them: see worker-web-apis.ts.
+import "../worker-web-apis.ts";
 import type { WorkerGlobalState } from "vitest";
+import { init, runBaseTests, setupEnvironment } from "vitest/worker";
+import { isAnswer } from "../page-protocol.ts";
 import type { WorkerRun } from "../worker-run.ts";
 
 // The entry of a worker of Node.js whose page the plugin hosts: Vitest's own
 // entry of its forks pool, over the public `init()` of `vitest/worker`
-// (`@experimental`), and one thing more: as a run starts, the page's runtime
-// gets Vitest's RPC and what the run says, see worker-run.ts. Vitest's `ForksPoolWorker`
-// forks it as `<distPath>/workers/forks.js`: see worker-pool.ts.
+// (`@experimental`). And the page's: as a run starts, the page's runtime gets
+// Vitest's RPC and what the run says (worker-run.ts), and the answers to its
+// questions on the worker's channel are its own, which Vitest does not hear
+// (worker-channel.ts). Vitest's `ForksPoolWorker` forks it as
+// `<distPath>/workers/forks.js`: see worker-pool.ts.
 
-// `workerRunKey` of worker-run.ts: this file imports no module of the page.
+// `workerRunKey` of worker-run.ts, whose module is the page's.
 const workerRunKey = Symbol.for("vitest-plugin-rsc:worker-run");
 
 if (!process.send) {
@@ -50,10 +56,25 @@ const handOver = ({ rpc, ctx }: WorkerGlobalState) => {
   if (ctx.invalidates?.length) run.changed.push(ctx.invalidates);
 };
 
+// Vitest's listeners of messages, as they hear them: without the answers to
+// the page's questions (worker-channel.ts).
+type Listener = (message: unknown) => void;
+const vitestListeners = new WeakMap<Listener, Listener>();
+const heardByVitest = (listener: Listener) => {
+  let heard = vitestListeners.get(listener);
+  if (!heard) {
+    heard = (message) => {
+      if (!isAnswer(message)) listener(message);
+    };
+    vitestListeners.set(listener, heard);
+  }
+  return heard;
+};
+
 init({
   post: (message) => processSend(message),
-  on: (listener) => processOn("message", listener),
-  off: (listener) => processOff("message", listener),
+  on: (listener) => processOn("message", heardByVitest(listener)),
+  off: (listener) => processOff("message", heardByVitest(listener)),
   teardown: () => {
     processRemoveAllListeners("message");
     processOff("error", onError);

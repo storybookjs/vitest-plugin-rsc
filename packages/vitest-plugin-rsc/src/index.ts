@@ -10,8 +10,10 @@ import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
 import { builtinsKey, type ProvidedBuiltins } from "./worker-run.ts";
+import type { PageAnswers } from "./worker-pool.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 import {
+  answerOf,
   answerPage,
   answerPageOverWebSocket,
   answerPageWith,
@@ -119,12 +121,11 @@ export function vitestPluginRSC(): Plugin[] {
         // the page to fetch.
         return inNode && devServer ? `\0${pageHostId}` : ownFile("browser-host");
       },
-      async load(id) {
+      load(id) {
         if (id !== `\0${pageHostId}` || !devServer) return;
-        const origin = await listenForPage(devServer);
         return (
           `import { nodeHost } from ${JSON.stringify(ownFile("node-host"))};\n` +
-          `export default nodeHost(${JSON.stringify(origin)});\n`
+          `export default nodeHost();\n`
         );
       },
       configureServer(server) {
@@ -230,7 +231,9 @@ export function vitestPluginRSC(): Plugin[] {
         };
       },
     },
-    ...workerPlugins(),
+    // What the page in a worker asks, the plugin's own dev server answers:
+    // Vitest's project may have another object for it.
+    ...workerPlugins((event, data) => answerOf(devServer!, event, data)),
     dependencySourceMapPlugin(),
     dependencyTransformPlugin(),
     createReactClientCoveragePlugin(),
@@ -347,13 +350,18 @@ function hostsPageInNode(test: TestOptions | undefined): boolean {
 
 // The pool of a page in a worker of Node.js: Vitest's forks, with the
 // plugin's entry of the worker (worker-pool.ts), which hands the page Vitest's
-// own RPC to the dev server. Loaded by its path, as only Vitest loads a file
-// that imports Vitest: a host other than Vitest has the plugin without it.
-async function withNodeHostPool(pool: TestOptions["pool"]): Promise<{ name: string }> {
-  const { nodeHostPool } = (await import(pathToFileURL(ownFile("worker-pool")).href)) as {
-    nodeHostPool: { name: string };
-  };
-  if (pool === undefined || pool === "forks" || pool === nodeHostPool) return nodeHostPool;
+// own RPC to the dev server, and answers its questions with the answers of
+// page-bridge.ts. Loaded by its path, as only Vitest loads a file that
+// imports Vitest: a host other than Vitest has the plugin without it.
+async function withNodeHostPool(
+  pool: TestOptions["pool"],
+  answers: PageAnswers,
+): Promise<{ name: string }> {
+  const { createNodeHostPool, nodeHostPoolName } = (await import(
+    pathToFileURL(ownFile("worker-pool")).href
+  )) as typeof import("./worker-pool.ts");
+  const ours = typeof pool === "object" && pool.name === nodeHostPoolName;
+  if (pool === undefined || pool === "forks" || ours) return createNodeHostPool(answers);
   const name = typeof pool === "string" ? pool : pool.name;
   throw new Error(
     `vitest-plugin-rsc: a project whose page is in a worker of Node.js, without Browser Mode, ` +
@@ -364,7 +372,7 @@ async function withNodeHostPool(pool: TestOptions["pool"]): Promise<{ name: stri
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function workerPlugins(): Plugin[] {
+function workerPlugins(answers: PageAnswers): Plugin[] {
   // Whether the config is of a page in a worker: then only these do anything.
   let inWorker = false;
   const before = new Map<string, unknown>();
@@ -377,7 +385,7 @@ function workerPlugins(): Plugin[] {
           const { test } = config as { test?: TestOptions };
           inWorker = hostsPageInNode(test);
           if (!test || !inWorker) return;
-          test.pool = await withNodeHostPool(test.pool);
+          test.pool = await withNodeHostPool(test.pool, answers);
           // The pre-bundles of its own: the projects of a root that run in a
           // browser bundle the same dependencies, from other entries.
           const root = config.root ?? process.cwd();
@@ -391,10 +399,6 @@ function workerPlugins(): Plugin[] {
               /\/node_modules\/@vitejs\/plugin-rsc\//,
             ];
           }
-          // Node's own web APIs, kept for the server's layers before the DOM
-          // replaces them: see worker-web-apis.ts.
-          const webApis = pathToFileURL(ownFile("worker-web-apis")).href;
-          test.execArgv = [...(test.execArgv ?? []), "--import", webApis];
           // What the optimizer of the rsc layer scans: the test files and the
           // setup files, which Vitest names with Browser Mode only. Without
           // them it finds their dependencies as a test imports them, and
