@@ -1,6 +1,7 @@
 import { createNavigation } from "./navigation-shim.ts";
 import { channelTo } from "./node-channel.ts";
 import "./node-dom.ts";
+import { serverHttpOf } from "./node-http.ts";
 import type { PageHost, WebApis } from "./page-host.ts";
 import { runtimeRequestInit } from "./runtime-request-init.ts";
 
@@ -144,5 +145,7 @@ export function nodeHost(origin: string, serverFiles: string): PageHost {
       const immediate = nodeSetImmediate(callback);
       return () => nodeClearImmediate(immediate);
     },
+    // Node's own, over a connection in memory for each request.
+    serverHttp: serverHttpOf(webApis),
   };
 }

@@ -5,6 +5,8 @@
 // import it as `virtual:vitest-plugin-rsc/page-host`, and nothing else of the
 // page tells the two apart.
 
+import type { ServerRequest } from "./nextjs/registry.ts";
+
 export type PageHost = {
   /**
    * Sends `data` to the dev server at `event`, and resolves with what it
@@ -64,7 +66,34 @@ export type PageHost = {
    * cancels it.
    */
   serverImmediate(callback: () => void): () => void;
+  /**
+   * Has `respond`, Next's request handler, answer `request` on Node's own
+   * `http`, as `next start` does: in a worker of Node.js over a socket in
+   * memory (node-http.ts). None in a browser, which has no `http`: there
+   * Next's stand-in of a response takes the request (nextjs/node-server.ts).
+   */
+  readonly serverHttp?: ServerHttp;
 };
+
+/**
+ * Sends `request` to `respond` as an `http.IncomingMessage` and an
+ * `http.ServerResponse`, and resolves with the response once its head is
+ * there, while `respond` goes on to write the body.
+ */
+export type ServerHttp = (request: ServerRequest, respond: Respond) => Promise<Served>;
+
+/** Next's request handler of a route, on the `req` and `res` of a request. */
+export type Respond = (req: unknown, res: unknown) => Promise<unknown>;
+
+/** The response to a request, and how its body is written, if it has one. */
+export type Served = { response: Response; writing: Writing | undefined };
+
+/**
+ * How the body of a response is written: `written` resolves once it ends,
+ * whole or not, and `stop` ends it as a page that is left does. The server
+ * writes on whether it is read or not: nothing waits for a reader.
+ */
+export type Writing = { written: Promise<void>; stop: () => void };
 
 /** What the page hears of the dev server unasked: see `listen()`. */
 export type PageNews = {

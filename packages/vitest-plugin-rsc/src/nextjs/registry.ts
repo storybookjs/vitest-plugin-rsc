@@ -9,6 +9,7 @@ import type { Stylesheets } from "./styles-shared.ts";
 // Each graph has its own copy of this module. They share the object.
 
 import type { SequentialAsyncLocalStorage } from "../async-local-storage.ts";
+import type { ServerHttp } from "../page-host.ts";
 import type { SpeedFeatures } from "./mode.ts";
 
 export type ServerRequest = {
@@ -176,6 +177,11 @@ export type NextRegistry = {
    * `""` in a browser, a temporary directory in Node.js (page-host.ts).
    */
   serverDir(): string;
+  /**
+   * The host's own `http`, on which Next's request handlers answer: Node's
+   * in a worker of Node.js, none in a browser (page-host.ts, node-server.ts).
+   */
+  serverHttp: ServerHttp | undefined;
   /**
    * Next's build's verdict on a route of the app, by its page name and its
    * pathname, in the rsc layer: nothing for a route it renders at every
