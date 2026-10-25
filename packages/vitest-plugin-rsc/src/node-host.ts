@@ -1,15 +1,16 @@
 import { createNavigation } from "./navigation-shim.ts";
-import { channelTo } from "./node-channel.ts";
 import "./node-dom.ts";
 import { serverHttpOf } from "./node-http.ts";
 import type { PageHost, WebApis } from "./page-host.ts";
 import { runtimeRequestInit } from "./runtime-request-init.ts";
+import { vitestModules } from "./vitest-modules.ts";
+import { askOverWorkerChannel } from "./worker-channel.ts";
 
 // The host of a page in a worker of Node.js, with a DOM of happy-dom or
 // jsdom: Vitest without Browser Mode, which has no WebSocket to the dev
-// server: its channel is the plugin's own listener of HTTP on the loopback
-// (node-channel.ts). The plugin makes the host with the listener's origin
-// (index.ts).
+// server. The page gets its modules from Vitest's own RPC
+// (vitest-modules.ts), and asks the rest on the worker's channel to Vitest's
+// process (worker-channel.ts), which the plugin's pool answers.
 
 // Not an import, which the page's runner would resolve as a module of the
 // app's layer.
@@ -20,8 +21,8 @@ const { setImmediate: nodeSetImmediate, clearImmediate: nodeClearImmediate } =
   process.getBuiltinModule("node:timers");
 const path = process.getBuiltinModule("node:path");
 
-// What worker-web-apis.ts kept of Node's own, as Vitest loads it first in the
-// worker (index.ts).
+// What worker-web-apis.ts kept of Node's own, as the plugin's entry of the
+// worker loads it before Vitest sets up the DOM (workers/forks.ts).
 const webApisKey = Symbol.for("vitest-plugin-rsc:worker-web-apis");
 const webApis: WebApis =
   (globalThis as unknown as Record<PropertyKey, WebApis | undefined>)[webApisKey] ??
@@ -102,15 +103,11 @@ function serverDirOfWorker(serverFiles: string): string {
   return (serverDir ??= fs.mkdtempSync(path.join(serverFiles, "worker-")));
 }
 
-/**
- * The host of the page, whose dev server listens at `origin`, with the
- * server's files of the run in `serverFiles`.
- */
-export function nodeHost(origin: string, serverFiles: string): PageHost {
-  const { request, listen } = channelTo(origin);
+/** The host of the page in this worker, with the server's files of the run in `serverFiles`. */
+export function nodeHost(serverFiles: string): PageHost {
   return {
-    request,
-    listen,
+    request: askOverWorkerChannel,
+    modules: vitestModules(),
     navigation,
     loadsStylesheets: false,
     serverWebApis: webApis,
