@@ -8,6 +8,7 @@ import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
+import { moduleFilesPlugin } from "./module-files.ts";
 import { mapOfRelatedLookup } from "./related-lookup.ts";
 import {
   hostsPageInNode,
@@ -273,6 +274,7 @@ export function vitestPluginRSC(): Plugin[] {
     // What the page in a worker asks, the plugin's own dev server answers:
     // Vitest's project may have another object for it.
     ...workerPlugins(page, (event, data) => answerOf(devServer!, event, data)),
+    moduleFilesPlugin(page),
     dependencySourceMapPlugin(),
     dependencyTransformPlugin(),
     createReactClientCoveragePlugin(),
