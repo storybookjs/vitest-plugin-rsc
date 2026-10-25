@@ -87,7 +87,12 @@ export function vitestPluginRSC(): Plugin[] {
             version: versionOf(server.environments[environment]?.moduleGraph),
           };
           const message = JSON.stringify({ type: "custom", event: modulesChangedEvent, data });
-          for (const page of pages) page.send(message);
+          for (const page of pages) {
+            // A socket that is closing: the page asks again on its next one.
+            try {
+              page.send(message);
+            } catch {}
+          }
         });
         // The ids of the modules of an environment that Vite invalidated
         // after a version of them, for a runner of the page that has that

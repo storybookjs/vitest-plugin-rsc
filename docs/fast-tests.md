@@ -80,31 +80,26 @@ The flows are the run: their 350 tests take 88% of the test time, at 38 ms per t
 
 [Fidelity mode](nextjs-guide.md#fast-mode), the default, gives up nothing for speed: a test sees what a browser shows of your app. Fast mode turns on every speed feature. On the benchmark, a run takes 23.6 s in fidelity mode and 15.7–16.3 s in fast mode. Each speed feature is an option of its own, so you can pick what to give up:
 
-| feature          | gives up                                                                                      | fidelity without `watchDom`: on alone, ms per test saved | fast: off alone, ms per test added | default, fidelity / fast |
-| ---------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------: | ---------------------------------: | ------------------------ |
-| `watchDom`       | nothing                                                                                       |                                                       74 |                                 70 | on / on                  |
-| `cacheDevServer` | an answer of the dev server that changes while a test file runs; none does                    |                                                     13.9 |                                6.2 | off / on                 |
-| `keepApp`        | a fresh page per test, the server's HTML, a hydration mismatch, the dev overlay               |                                                      4.5 |                                5.4 | off / on                 |
-| `fastCrypto`     | password hashes of the real algorithm, like one in a fixture                                  |                                                      2.1 |                                1.8 | off / on                 |
-| `flightLoads`    | the document as the `response`, a 404 or 500 status of a page, `next/font`'s size-adjust meta |                                     1.2 (over `keepApp`) |                                1.2 | off / on                 |
-| `skipPrefetch`   | the requests of prefetches, and the routes rendered from them                                 |                                                      1.0 |                                1.4 | off / on                 |
-| `immediates`     | the delay a browser adds to a timeout of 0 between the steps of a render                      |                                                     −0.7 |                                0.4 | off / on                 |
+| feature        | gives up                                                                                      | fidelity without `watchDom`: on alone, ms per test saved | fast: off alone, ms per test added | default, fidelity / fast |
+| -------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------: | ---------------------------------: | ------------------------ |
+| `watchDom`     | nothing                                                                                       |                                                       74 |                                 70 | on / on                  |
+| `keepApp`      | a fresh page per test, the server's HTML, a hydration mismatch, the dev overlay               |                                                      4.5 |                                5.4 | off / on                 |
+| `fastCrypto`   | password hashes of the real algorithm, like one in a fixture                                  |                                                      2.1 |                                1.8 | off / on                 |
+| `flightLoads`  | the document as the `response`, a 404 or 500 status of a page, `next/font`'s size-adjust meta |                                     1.2 (over `keepApp`) |                                1.2 | off / on                 |
+| `skipPrefetch` | the requests of prefetches, and the routes rendered from them                                 |                                                      1.0 |                                1.4 | off / on                 |
+| `immediates`   | the delay a browser adds to a timeout of 0 between the steps of a render                      |                                                     −0.7 |                                0.4 | off / on                 |
 
 The fidelity column turns one feature on over fidelity mode with `watchDom` off, and compares the wall of 3 runs each, on #251 before #262. Without `watchDom`, a test waits for Vitest's 20 ms steps, which hide part of what the other features save; the same table over today's fidelity mode, with `watchDom` on, isn't here yet. The fast column turns one feature off in fast mode, and compares the test time of one run each. A difference under about 2 ms per test is within the noise of either: that's every row from `fastCrypto` down. The [Fast mode](nextjs-guide.md#fast-mode) section of the guide says what each feature does.
 
 What the table says:
 
 - **`watchDom` is most of the difference, and gives up nothing.** That's why it's on in both modes. Its 74 ms here and the 68 ms of [Waiting for the page](#waiting-for-the-page) come from two series of runs.
-- **`cacheDevServer` is next.** A request of the page asks the dev server about the stylesheets and modules of its route: with the answers kept, a Server Action costs 1.3 ms less, a navigation 0.7, a page load 0.5. On draft #268, a page asks for the stylesheets of a route once per run in both modes, which takes 2.9 ms per test off fidelity mode with `watchDom` (23.55 → 22.08 s, 5 runs each, σ ≤ 0.5 s). What `cacheDevServer` saves on top of that isn't measured yet.
+- **The dev server's answers are kept in both modes.** A page used to ask the dev server about the modules of its route on every request in fidelity mode, and once per test file with the speed feature `cacheDevServer`. Now the dev server tells the page of every change of its modules, and the page keeps its answers while they stay: that took 2.3 s off the 500 tests in fidelity mode with `watchDom` (20.73 → 18.44 s by the median, 5 runs each), the level of `cacheDevServer`, which now has no effect.
 - **`keepApp` and `flightLoads` remove the HTML of a page load:** reading it to the end costs 0.7–1.2 ms per page load, and what follows the Flight payload 0.6 ms.
 - **Prefetches run beside the test.** With `watchDom` off, fidelity mode sends 3,357 prefetches in a run, 10 s of request time, but they take only 0.4 s of the tests' time. With `watchDom` on, it sends 1,240–1,410, as the tests end sooner.
 - **`immediates` measures nothing**, in either mode: no phase of a request and no wait moves.
 
-So for a quick loop, take fast mode as a whole, or fidelity mode with the features whose price you accept. `cacheDevServer` gives up nothing a test can see:
-
-```ts
-vitestPluginNext({ mode: "fidelity", cacheDevServer: true });
-```
+So for a quick loop, take fast mode as a whole, or fidelity mode with the features whose price you accept.
 
 A suite that passes in fast mode should pass in fidelity mode too. Keep CI in fidelity mode, so it tells you when one doesn't.
 
@@ -289,7 +284,7 @@ The benchmark's configs are in [`playground/vitest-vs-playwright-notes`](../play
 - **The timings of every request**: `VITEST_PROFILE=timings` writes `timings/`, and `python3 test/timings-summary.py` splits each page load, navigation and Server Action into its phases on the server, with the queries of the database in each.
 - **The primitives**: `vitest run -c vitest.bench.config.ts --maxWorkers 1` times a page load, a navigation, a Server Action, a click, a query and a query of the database a hundred times each, and `python3 bench/compare.py old.json new.json` puts two runs side by side. See the [benchmark's README](../playground/vitest-vs-playwright-notes/README.md).
 
-The benchmark's config also prices one speed feature: `VITEST_PLUGIN_RSC_FEATURES="keepApp=false"` turns one off over `VITEST_PLUGIN_RSC_MODE`, and `"cacheDevServer"` turns one on.
+The benchmark's config also prices one speed feature: `VITEST_PLUGIN_RSC_FEATURES="keepApp=false"` turns one off over `VITEST_PLUGIN_RSC_MODE`, and `"fastCrypto"` turns one on.
 
 To trust a number:
 

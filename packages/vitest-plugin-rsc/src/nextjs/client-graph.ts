@@ -9,6 +9,7 @@ import {
   checkFetchedModules,
   createEnvironmentRunner,
   environmentModule,
+  forgetHeardVersions,
   takeChangedModules,
   versionsOfAnswers,
 } from "../utils.ts";
@@ -174,6 +175,9 @@ let catchingUp: Promise<void> = Promise.resolve();
 // change in the rsc layer.
 async function catchUp(graph: ModuleRunner): Promise<void> {
   // The server's modules as they are now: the graph outlives a page load.
+  // Asked, not as the page heard of them: a host loads a file again after
+  // a change that it heard of on a connection of its own, like Vite's HMR.
+  forgetHeardVersions();
   await checkFetchedModules();
   const { evaluatedModules } = graph;
   const changed = new Set<EvaluatedModuleNode>();

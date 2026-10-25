@@ -95,30 +95,36 @@ const {
   checkFetchedModules,
   createEnvironmentRunner,
   forgetHeardVersions,
-  modulesChanged,
+  versionOfModules,
   versionsOfAnswers,
 } = await import("./utils.ts");
 
 test("asks for the versions of the modules once, and then hears of a change from the server", async () => {
-  const first = await checkFetchedModules();
-  expect(first).toContain("client:1");
-  expect(first).toContain("react_client:1");
+  await checkFetchedModules();
+  expect(await versionsOfAnswers()).toBe("client:1 react_client:1");
   expect(versionsAsked.sort()).toEqual(["client", "react_client"]);
 
   versionsAsked.length = 0;
-  expect(await checkFetchedModules()).toBe(first);
-  expect(await versionsOfAnswers()).toBe("client:1 react_client:1");
+  await checkFetchedModules();
   change("client", 2);
-  const now = await checkFetchedModules();
-  expect(now).toContain("client:2");
+  expect(await versionsOfAnswers()).toBe("client:2 react_client:1");
   expect(versionsAsked).toEqual([]);
-  expect(modulesChanged(first, now)).toBe(true);
-  expect(modulesChanged(now, `${now} ssr:1`)).toBe(false);
 
-  // As a test file ends: the next check asks the server.
+  // As a test file ends: the next check asks the server, also for a version
+  // it heard of since.
   forgetHeardVersions();
-  expect(await checkFetchedModules()).toBe(now);
+  change("react_client", 2);
+  await checkFetchedModules();
   expect(versionsAsked.sort()).toEqual(["client", "react_client"]);
+
+  // An answer that was on its way as the file ended counts for the file before.
+  versionsAsked.length = 0;
+  forgetHeardVersions();
+  const before = versionOfModules("client");
+  forgetHeardVersions();
+  await before;
+  await versionOfModules("client");
+  expect(versionsAsked).toEqual(["client", "client"]);
 });
 
 test("fetches the modules of a page load again after a change, also one that came during a load", async () => {

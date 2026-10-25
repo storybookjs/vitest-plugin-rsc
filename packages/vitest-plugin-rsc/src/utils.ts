@@ -270,16 +270,22 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // them from the dev server, which tells the page of every change of them on
 // its socket, before any answer it makes after it: see `onInvalidation()` in
 // module-versions.ts. The socket brings both in the order the server sent
-// them, so the one that arrives last is the latest. Forgotten when the socket
-// closes, which may have missed a change, and as a test file ends: a change
-// can reach the server through another connection than the page's, like the
-// one that runs the test file again after it, and the first check of a file
-// asks the server, after the change.
+// them, so the one that arrives last is the latest.
+//
+// The page reads a version here once it has asked for it, in `asked`, and
+// asks again after `forgetHeardVersions()`: as a test file ends, and when its
+// socket closes, which may have missed a change. A change that reaches the
+// server through another connection than the page's, like Vitest's own or a
+// request of HTTP, is ordered by such a question: its answer comes after
+// every change the server made before it. Between two, the page sees it once
+// the server's news of it has arrived.
 const heardVersions = new Map<string, number>();
+let asked = new Set<string>();
 
 /** Has the page ask the dev server for the versions of its modules again: see `heardVersions`. */
 export function forgetHeardVersions(): void {
-  heardVersions.clear();
+  // A question that is on its way counts for the versions of before.
+  asked = new Set();
 }
 
 /**
@@ -288,12 +294,16 @@ export function forgetHeardVersions(): void {
  * The one the page heard of, or else the server's answer.
  */
 export function versionOfModules(environment: string): Promise<number> {
+  // The modules of a build do not change.
+  if (builtLayers?.[environment]) return Promise.resolve(0);
   const heard = heardVersions.get(environment);
-  if (heard !== undefined) return Promise.resolve(heard);
-  const asked = requestOverWebSocket(versionEvent, { environment }) as Promise<number>;
-  return asked.then((version) => {
-    // Unless a change arrived after the answer.
-    if (!heardVersions.has(environment)) heardVersions.set(environment, version);
+  if (heard !== undefined && asked.has(environment)) return Promise.resolve(heard);
+  const askedNow = asked;
+  const answer = requestOverWebSocket(versionEvent, { environment }) as Promise<number>;
+  // Before the next message of the socket, so before a change after it.
+  return answer.then((version) => {
+    heardVersions.set(environment, version);
+    askedNow.add(environment);
     return version;
   });
 }
@@ -347,22 +357,12 @@ function versionsOf(environments: [string, Promise<number> | undefined][]): Prom
 }
 
 /**
- * Whether the dev server has changed any of the modules of `checked`, an
- * answer of `checkFetchedModules()`, by `now`, a later one.
- */
-export function modulesChanged(checked: string, now: string): boolean {
-  const versions = new Set(now.split(" "));
-  return checked.split(" ").some((version) => !versions.has(version));
-}
-
-/**
  * Checks whether the modules that were fetched are still the server's
  * modules, for the runners of `createEnvironmentRunner()`, and starts the
  * runners after it with new ones if not. Before a page load: a file can
- * change while the tests run. Resolves with the versions of the modules of
- * the environments of the page: see `modulesChanged()`.
+ * change while the tests run.
  */
-export function checkFetchedModules(): Promise<string> {
+export function checkFetchedModules(): Promise<void> {
   const fetched = new Map(
     Array.from(fetchedModulesOf, ([environment, modules]) => [
       environment,
@@ -373,7 +373,9 @@ export function checkFetchedModules(): Promise<string> {
     ]),
   );
   const environments = [...new Set([...answeredEnvironments, ...fetched.keys()])].sort();
-  return versionsOf(environments.map((environment) => [environment, fetched.get(environment)]));
+  return versionsOf(
+    environments.map((environment) => [environment, fetched.get(environment)]),
+  ).then(() => {});
 }
 
 type FetchModulePayload = { data: { name: string; data: [string?, string?, FetchOptions?] } };
@@ -693,9 +695,11 @@ async function openReactClientWebSocket() {
 
   socket.addEventListener("message", handleWebSocketMessage);
   socket.addEventListener("close", () => {
+    // Also one that closes after the next has opened: it may have missed a
+    // change.
+    forgetHeardVersions();
     if (webSocket === socket) {
       webSocket = undefined;
-      heardVersions.clear();
     }
     rejectPendingInvokes(new Error("React client websocket connection closed"));
   });

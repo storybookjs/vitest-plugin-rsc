@@ -9,7 +9,8 @@ type ModulesChanged = { environment: string; version: number };
  * `content` says so: see file-change-service.ts. Resolves once the page has
  * heard of it from the dev server, which the request here does not wait for:
  * as after a change that the watcher sees, the page hears of it on its own
- * socket. The page opens that as it loads its first page.
+ * socket, which the setup file of the plugin opens. The event it waits for
+ * is the plugin's, not an API of it.
  */
 export async function fileChanged(file: string, content?: string): Promise<void> {
   const heard = new Map<string, number>();

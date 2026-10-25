@@ -108,12 +108,10 @@ export type SpeedOptions = {
    */
   watchDom?: boolean;
   /**
-   * Experimental, and without an effect. The page keeps what the dev server
+   * @deprecated Without an effect. The page keeps what the dev server
    * answers about the stylesheets and the modules of a test for as long as
    * the modules stay, in both modes: the dev server tells the page of every
    * change of them, so there is nothing to ask once per test file instead.
-   *
-   * Default: `true` in fast mode, `false` in fidelity mode.
    */
   cacheDevServer?: boolean;
   /**

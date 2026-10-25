@@ -6,7 +6,7 @@ import {
   checkFetchedModules,
   createEnvironmentRunner,
   environmentModule,
-  modulesChanged,
+  versionOfModules,
 } from "../utils.ts";
 import {
   leftTheApp,
@@ -158,9 +158,9 @@ type Client = typeof import("./client.tsx");
 // from one of them, like after a `<form>` without JavaScript, renders in it
 // too. It is left with the first page that does not, like one of
 // `renderServer({ url, ssr: true })`, with the first page after a change of
-// the modules it has, or as the test file ends: see `leaveKeptApp()`.
-// `modules` are the versions of those, see `checkFetchedModules()`.
-let kept: { client: Client; modules: string; leave(): void } | undefined;
+// the modules of the browser layer, or as the test file ends: see
+// `leaveKeptApp()`. `modules` is the version of those it started with.
+let kept: { client: Client; modules: number; leave(): void } | undefined;
 
 /**
  * Leaves the kept app, if any: its root, its module graph, what its modules
@@ -273,12 +273,13 @@ export async function loadPage(
     page.signal.throwIfAborted();
     // A page that is not one of the kept app starts an app of its own, and so
     // does one when there is none, like after a first page whose app did not
-    // start, or when the dev server has changed modules that the app has:
-    // what that app added to the `<head>` goes first. The app would run the
-    // modules it has next to the new ones, like a second React.
-    if (!inKeptApp || !kept || modulesChanged(kept.modules, await checkFetchedModules())) {
-      leaveKeptApp();
-    }
+    // start, or when the dev server has changed modules of the browser layer
+    // since the app started: what that app added to the `<head>` goes first.
+    // The app would run the modules it has next to the new ones, like a
+    // second React.
+    const changed = inKeptApp && kept && kept.modules !== (await versionOfModules("react_client"));
+    page.signal.throwIfAborted();
+    if (!inKeptApp || !kept || changed) leaveKeptApp();
 
     // Once the node that was in it is gone.
     if (opening?.container?.hasChildNodes()) {
@@ -398,8 +399,8 @@ async function openPage(
   // module graph of its own for the browser layer. A page that is left keeps
   // no module graph: what of it stays, like an error whose stack has the
   // frames that loaded a module, cannot reach its modules through the runner.
-  // The versions of the modules that it starts with, or older: see `kept`.
-  const modules = inKeptApp ? await checkFetchedModules() : "";
+  // The version of the modules that it starts with, or an older one: see `kept`.
+  const modules = inKeptApp ? await versionOfModules("react_client") : 0;
   superseded();
   const runner = createEnvironmentRunner("react_client");
   deferForApp(() => void runner.close());
