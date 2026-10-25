@@ -2,7 +2,6 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Buffer } from "node:buffer";
 import env from "virtual:vitest-plugin-rsc/next-env";
 import pageHost from "virtual:vitest-plugin-rsc/page-host";
-import { runtimeRequestInit } from "../runtime-request-init.ts";
 import {
   asyncFunctionHooks,
   enterAmbientScope,
@@ -17,8 +16,9 @@ import { registry, type Opened } from "./registry.ts";
 // A browser drops `cookie` from the headers of a Request and `set-cookie` from
 // those of a Response. A server has to see both, so the server layers get
 // these subclasses, which keep the headers they were given.
-// Those of the host: the page's in a browser, Node's own in its worker.
-const { Request: NativeRequest, Response: NativeResponse, Headers } = pageHost.serverWebApis;
+// Those of the global the server runs on: the page's in a browser, Node's
+// own in its worker, where the page is a realm of its own.
+const { Request: NativeRequest, Response: NativeResponse, Headers } = globalThis;
 
 function headersOf(init: { headers?: HeadersInit } | undefined, input?: unknown): Headers {
   if (init?.headers) return new Headers(init.headers);
@@ -35,16 +35,6 @@ class ServerRequest extends NativeRequest {
   #headers: Headers;
 
   constructor(input: RequestInfo | URL, init?: RequestInit) {
-    // A request of the DOM's, like one that a test makes with happy-dom's
-    // `Request` for `handleRequest()`: what it is, as the server's.
-    if (input instanceof Request && !(input instanceof NativeRequest)) {
-      const { url, method, headers, body, signal, redirect, credentials } = input;
-      init = { method, headers: [...headers], body, signal, redirect, credentials, ...init };
-      input = url;
-    }
-    // A body or a signal of the DOM's, like a form or the signal of a page
-    // load that a test gives a request of the server's.
-    init = runtimeRequestInit(init, pageHost.serverWebApis);
     // A browser wants `duplex` for a streamed body. Server runtimes, which
     // Next's code is written for, do not.
     // Node's `Request` also takes a Node.js stream for a body, and Next's
@@ -148,11 +138,6 @@ registry.Response = ServerResponse;
 registry.Headers = Headers;
 // The directory of the server's own files, which is the host's: see page-host.ts.
 registry.serverDir = () => pageHost.serverDir;
-// Of the same web APIs as the server's streams, which Next's server pipes
-// with a signal of its own: in a DOM of Node.js the global ones are the
-// DOM's, which Node's streams take and Bun's native `pipeTo()` does not.
-registry.AbortController = pageHost.serverWebApis.AbortController;
-registry.AbortSignal = pageHost.serverWebApis.AbortSignal;
 registry.enterRequestScope = enterAmbientScope;
 registry.openedByRequest = new SequentialAsyncLocalStorage<Opened | undefined>();
 registry.asyncFunctionHooks = asyncFunctionHooks;
@@ -177,14 +162,10 @@ registry.performWork = (request, performWork) => {
 };
 
 // Next patches the `fetch` of its server to cache and dedupe. That must not
-// be the `fetch` of the page, which is the browser's.
-const nativeFetch = pageHost.serverWebApis.fetch;
-registry.fetch = (input, init) => nativeFetch(input, init);
-// With a body or a signal of the DOM's as the runtime's: what the server
-// sends on may be the page's, like the signal of its request on a rewrite to
-// another origin, or a form that a Server Action got.
-registry.network = (input, init) =>
-  nativeFetch(input, runtimeRequestInit(init, pageHost.serverWebApis));
+// be the `fetch` of the page, which is the browser's: the host's
+// (`serverFetch()` of page-host.ts).
+registry.fetch = (input, init) => pageHost.serverFetch(input, init);
+registry.network = (input, init) => pageHost.serverFetch(input, init);
 
 // Node.js has these as globals. A browser has none of them.
 const scope = globalThis as Record<string, any>;
@@ -299,11 +280,12 @@ function clearImmediateOf(id: symbol): boolean {
   // A task of its own, after the microtasks: what Next's Node.js server waits
   // for between the stages of a render. Server code gets these two in place
   // of the globals (server-code.ts), so there is no global `setImmediate`. Not
-  // a timer of the test, which may be fake.
+  // a timer of the test, which may be fake. In Node.js Node's own, as on
+  // `next start`, in every mode (`immediatesOfRuntime` of page-host.ts).
   const nativeSetTimeout = globalThis.setTimeout;
   const nativeClearTimeout = globalThis.clearTimeout;
   registry.setImmediate = (callback, ...args) =>
-    registry.speedFeatures?.immediates
+    pageHost.immediatesOfRuntime || registry.speedFeatures?.immediates
       ? immediate(callback, args)
       : nativeSetTimeout(callback, 0, ...args);
   registry.clearImmediate = (id) =>

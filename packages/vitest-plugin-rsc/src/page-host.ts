@@ -42,12 +42,25 @@ export type PageHost = {
    */
   readonly loadsStylesheets: boolean;
   /**
-   * The web APIs of the server's layers, whose requests and responses keep
-   * the headers that a browser's drop (nextjs/globals.ts): the page's own in
-   * a browser, and in Node.js the runtime's own, which a DOM there replaces
-   * on the global the page and the server share.
+   * The server's `fetch` to the network, as Node's is Next's on `next start`.
+   * In a browser the page's own, as the page loads, before the plugin puts
+   * one of its own in its place (nextjs/browser-context.ts): a mock of the
+   * network there is a service worker. In a worker of Node.js with a window
+   * of its own, the worker's global at each call, so a mock that patches it
+   * after the page loaded, like MSW's `setupServer()`, sees the server's
+   * requests.
    */
-  readonly serverWebApis: WebApis;
+  serverFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  /**
+   * Compiles `body` as the body of an async function of `params` in the
+   * page's realm, whose globals are the window's: for the modules of the
+   * browser layer (utils.ts). In a browser the page's own realm, which the
+   * server's layers share; in a worker of Node.js the window's context of
+   * `node:vm` (happy-dom-environment.ts), where the server's layers keep the
+   * worker's global, with Node's web APIs. The function's source is laid out
+   * as `new AsyncFunction(...params, body)` lays it out, line for line.
+   */
+  compileInPage(params: readonly string[], body: string): (...args: unknown[]) => Promise<unknown>;
   /**
    * Has `answer` answer the requests of the page that do not go through its
    * `fetch`, which the page replaces (browser-context.ts), from now on: where
@@ -67,13 +80,20 @@ export type PageHost = {
   readonly serverDir: string;
   /**
    * Runs `callback` in a task of its own after the microtasks, as a server's
-   * `setImmediate()`, for the speed feature `immediates`: by a message of one
-   * channel in a browser, which no browser delays as it does a timeout, and
-   * by Node's own `setImmediate()` in a worker of Node.js, which keeps the
-   * stores of Node's `AsyncLocalStorage`, as a message does not. Returns what
-   * cancels it.
+   * `setImmediate()`, for the speed feature `immediates`, and in Node.js for
+   * every immediate of the server: by a message of one channel in a browser,
+   * which no browser delays as it does a timeout, and by Node's own
+   * `setImmediate()` in a worker of Node.js, which keeps the stores of Node's
+   * `AsyncLocalStorage`, as a message does not. Returns what cancels it.
    */
   serverImmediate(callback: () => void): () => void;
+  /**
+   * Whether `serverImmediate()` is the runtime's own `setImmediate()`, which
+   * Next's server has on `next start`: then server code takes it in every
+   * mode. A browser has none, and its server code takes a timeout of no
+   * delay, but for the speed feature `immediates`.
+   */
+  readonly immediatesOfRuntime: boolean;
 };
 
 /**
@@ -94,17 +114,4 @@ export type PageNews = {
    * brought it before an answer that the server sent before it.
    */
   missed(): void;
-};
-
-/** The web APIs that a server and a browser both have, and Node.js its own of. */
-export type WebApis = {
-  Request: typeof Request;
-  Response: typeof Response;
-  Headers: typeof Headers;
-  FormData: typeof FormData;
-  Blob: typeof Blob;
-  File: typeof File;
-  AbortController: typeof AbortController;
-  AbortSignal: typeof AbortSignal;
-  fetch: typeof fetch;
 };

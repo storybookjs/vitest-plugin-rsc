@@ -50,9 +50,9 @@ export function recordListeners(target: EventTarget): Leftovers {
   };
 }
 
-/** Records the message channels that are opened, until `stop()`. */
+/** Records the message channels that the page opens, until `stop()`. */
 export function recordMessageChannels(): Leftovers {
-  const Native = globalThis.MessageChannel;
+  const Native = window.MessageChannel;
   const opened: MessageChannel[] = [];
   let recording = true;
   const Recorded = class MessageChannel extends Native {
@@ -61,10 +61,10 @@ export function recordMessageChannels(): Leftovers {
       if (recording) opened.push(this);
     }
   };
-  globalThis.MessageChannel = Recorded;
+  window.MessageChannel = Recorded;
   const stop = () => {
     recording = false;
-    if (globalThis.MessageChannel === Recorded) globalThis.MessageChannel = Native;
+    if (window.MessageChannel === Recorded) window.MessageChannel = Native;
   };
   return {
     stop,

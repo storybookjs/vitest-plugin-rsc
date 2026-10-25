@@ -186,8 +186,9 @@ export function createNavigation(window: Window): EventTarget {
 }
 
 // The entries a form submits, with the button that submits it, as a browser
-// has them.
+// has them: a `FormData` of the form's window.
 function formDataOf(form: HTMLFormElement, submitter: HTMLElement | null): FormData {
+  const { FormData } = form.ownerDocument.defaultView ?? window;
   try {
     return new FormData(form, submitter);
   } catch {

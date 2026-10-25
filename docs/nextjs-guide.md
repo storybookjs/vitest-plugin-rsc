@@ -418,7 +418,7 @@ See [Web Storage](internals/next-routes.md#web-storage) for the finer points.
 
 ## Caching and revalidation
 
-Cached `fetch`, tags, `revalidateTag()`, `updateTag()` and `refresh()` all work. Use [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) to answer the outgoing `fetch`. The [notes demo](../playground/nextjs-notes-demo) has a full setup.
+Cached `fetch`, tags, `revalidateTag()`, `updateTag()` and `refresh()` all work. Use [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) to answer the outgoing `fetch`; [without Browser Mode](#without-browser-mode), with happy-dom, `setupServer()` of `msw/node` in the setup file. The [notes demo](../playground/nextjs-notes-demo) has a full setup.
 
 ```tsx
 import { refresh, revalidatePath, revalidateTag, updateTag } from "next/cache";
@@ -849,7 +849,14 @@ export default defineConfig({
 });
 ```
 
-What still differs from `next start`: the test, your server and the page share one process, with its globals, `process.env` and a test's fake timers; a request to your app is a call, not a request over a socket, so code that calls your app's own URL with `http` rather than `fetch` reaches Vite's dev server, not your app; MSW's `setupServer()` sees the page's `fetch`, but not a `fetch` of your server code, which goes to the network; and the [disk](#the-disk-without-browser-mode) is your machine's.
+What still differs from `next start`: the test, your server and the page share one process, with its globals, `process.env` and a test's fake timers; a request to your app is a call, not a request over a socket, so code that calls your app's own URL with `http` rather than `fetch` reaches Vite's dev server, not your app; MSW's `setupServer()` sees the page's `fetch`, and with happy-dom a `fetch` of your server code too, but not with jsdom, where it goes to the network; and the [disk](#the-disk-without-browser-mode) is your machine's.
+
+With happy-dom the page has a realm of its own, as in a browser: its `fetch`, `Request`, `Response`, `FormData`, `Blob` and `File` are the window's, and your server's are Node's own. A test file has the document as a global, as with Vitest's environment, so `screen`, `userEvent` and jest-dom's matchers work as in Browser Mode, but its `fetch`, `File`, `Blob`, `FormData` and `Request` are your server's:
+
+- make an object for the page with the window's class, like `new window.File(["…"], "note.txt")` for a file input;
+- a spy on `globalThis.fetch` sees your server's requests to the network, and one on `window.fetch` the page's.
+
+jsdom keeps one realm for the test, your server and the page, as Vitest's environment makes it: there a route handler's `new Response(new Blob(["…"]))` answers `"[object Blob]"`, as its `Blob` is jsdom's and its `Response` Node's.
 
 ### The disk without Browser Mode
 
