@@ -16,6 +16,7 @@ import {
   setRouterOutlivesPage,
   sendRequest,
   unlessAborted,
+  type Sending,
 } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import {
@@ -544,7 +545,7 @@ async function startInKeptApp(page: Page, client: Client, payload?: Uint8Array):
 async function sendPageLoad(
   url: URL,
   init: RequestInit,
-  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
+  sending: Pick<Sending, "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
   // With the request, not before it: in fidelity mode, a question for the

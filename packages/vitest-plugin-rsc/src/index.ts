@@ -1,4 +1,6 @@
 import "./compile-cache.ts";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizePath, type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
@@ -8,12 +10,16 @@ import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
 import { ownCodeKey } from "./own-code.ts";
+import { hostsPageInNode } from "./page-in-node.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
 import { answerFromTransformCache, invokeEnvironment } from "./transform-cache.ts";
+import { builtinsKey, type ProvidedBuiltins } from "./worker-run.ts";
+import type { PageAnswers } from "./worker-pool.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 import {
+  answerOf,
   answerPage,
   answerPageOverWebSocket,
   answerPageWith,
@@ -80,6 +86,8 @@ export function vitestPluginRSC(): Plugin[] {
   // any other host, like Storybook or a static build, the page is in a
   // browser.
   let inNode = false;
+  // The directory of the server's files of the run, in a worker of Node.js.
+  let serverFiles = "";
   return [
     pageViteClientPlugin(),
     ...referencingTestFilesLast(
@@ -100,7 +108,11 @@ export function vitestPluginRSC(): Plugin[] {
     {
       name: "rsc:run-in-browser",
       // Vitest's hook, which awaits what it returns.
-      configureVitest: (async ({ project, defineCacheKeyGenerator }: VitestPluginContext) => {
+      configureVitest: (async ({
+        vitest,
+        project,
+        defineCacheKeyGenerator,
+      }: VitestPluginContext) => {
         inNode = hostsPageInNode(project.config);
         // Vitest keeps what it compiled on disk for the next run, by a key
         // without the place and the version of the optimizer's pre-bundles,
@@ -117,8 +129,17 @@ export function vitestPluginRSC(): Plugin[] {
             ownCodeKey(),
           ].join(":"),
         );
-        if (inNode) await startWorkerPage(project);
-        else if (project.config.browser.enabled) await answerFromTransformCache(project);
+        if (!inNode) {
+          if (project.config.browser.enabled) await answerFromTransformCache(project);
+          return;
+        }
+        // The server's own files of the run, like the cache of Next's build:
+        // each worker has a directory in it (node-host.ts). This process
+        // removes it, as a worker that Vitest stops does not run its `exit`.
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-"));
+        serverFiles = dir;
+        vitest.onClose(() => fs.rmSync(dir, { recursive: true, force: true }));
+        await startWorkerPage(project);
       }) as unknown as () => void,
       resolveId(source) {
         if (source !== pageHostId) return;
@@ -126,12 +147,11 @@ export function vitestPluginRSC(): Plugin[] {
         // the page to fetch.
         return inNode && devServer ? `\0${pageHostId}` : ownFile("browser-host");
       },
-      async load(id) {
+      load(id) {
         if (id !== `\0${pageHostId}` || !devServer) return;
-        const origin = await listenForPage(devServer);
         return (
           `import { nodeHost } from ${JSON.stringify(ownFile("node-host"))};\n` +
-          `export default nodeHost(${JSON.stringify(origin)});\n`
+          `export default nodeHost(${JSON.stringify(serverFiles)});\n`
         );
       },
       configureServer(server) {
@@ -160,9 +180,10 @@ export function vitestPluginRSC(): Plugin[] {
           if (!invoke.payload) return undefined;
           const name = invoke.environment ?? "react_client";
           const environment = server.environments[name];
-          return environment && name !== "client"
-            ? describeModule(environment, await invokeEnvironment(environment, invoke.payload))
-            : { error: { message: `No environment "${name}" to run in the page` } };
+          if (!environment || name === "client") {
+            return { error: { message: `No environment "${name}" to run in the page` } };
+          }
+          return describeModule(environment, await invokeEnvironment(environment, invoke.payload));
         });
         answerPageWith(server, versionEvent, ({ environment }: { environment?: string }) =>
           versionOf(server.environments[environment ?? "react_client"]?.moduleGraph),
@@ -194,6 +215,10 @@ export function vitestPluginRSC(): Plugin[] {
               dev: {
                 preTransformRequests: false,
               },
+              // A browser's conditions, also in a worker of Node.js, where the
+              // pre-bundles of this environment have Vite's empty module for
+              // a module of Node.js. `vitestPluginNext()`, which gives the
+              // server Node's own modules there, gives it Node's conditions.
               resolve: {
                 conditions: withConfiguredSourceConditions(config, ["browser", "react-server"]),
               },
@@ -237,7 +262,9 @@ export function vitestPluginRSC(): Plugin[] {
         };
       },
     },
-    ...workerPlugins(),
+    // What the page in a worker asks, the plugin's own dev server answers:
+    // Vitest's project may have another object for it.
+    ...workerPlugins((event, data) => answerOf(devServer!, event, data)),
     dependencySourceMapPlugin(),
     dependencyTransformPlugin(),
     createReactClientCoveragePlugin(),
@@ -261,9 +288,11 @@ type VitestProject = TestProject & {
   config: {
     environmentOptions?: Record<string, Record<string, unknown> | undefined>;
   };
+  provide(key: string, value: unknown): void;
 };
 // What Vitest gives `configureVitest`.
 type VitestPluginContext = {
+  vitest: { onClose(close: () => void): void };
   project: VitestProject;
   defineCacheKeyGenerator?: (
     generate: (context: { environment: DevEnvironment }) => string,
@@ -290,6 +319,18 @@ async function startWorkerPage(project: VitestProject): Promise<void> {
     ...(settings.navigation as object | undefined),
   };
   await optimizersSettled(project.vite);
+  // What a runner of each environment leaves to Node.js, which the page's
+  // runners ask its environment for, and Vitest's RPC does not answer: see
+  // vitest-modules.ts. As Vite's environment answers `getBuiltins`.
+  const builtins: ProvidedBuiltins = {};
+  for (const [name, environment] of Object.entries(project.vite.environments)) {
+    builtins[name] = environment.config.resolve.builtins.map((builtin) =>
+      typeof builtin === "string"
+        ? { type: "string", value: builtin }
+        : { type: "RegExp", source: builtin.source, flags: builtin.flags },
+    );
+  }
+  project.provide(builtinsKey, builtins);
 }
 
 // A worker of Node.js imports a pre-bundled dependency by the version that
@@ -315,24 +356,33 @@ async function optimizersSettled(server: ViteDevServer): Promise<void> {
 
 type TestOptions = {
   browser?: { enabled?: boolean };
+  pool?: string | { name: string };
   environment?: string;
   include?: string[];
   setupFiles?: string | string[];
-  execArgv?: string[];
   server?: { deps?: { inline?: (string | RegExp)[] | true } };
 };
 
-// A page in a worker of Node.js, with a DOM of its own: a project of Vitest
-// without Browser Mode, in the environment of happy-dom or jsdom. Only there
-// the plugin is the page's host (node-host.ts), with what that host needs:
-// the listener for the page, the settings of the worker and its own
-// pre-bundles. Another host, like Storybook, a static build or a project of
-// Browser Mode, has none of it, and neither has a project of Node.js without
-// a DOM, which renders no page. By its config, which a plugin like
-// `vitestPluginNext()` gives `test` for any host.
-const domEnvironments = new Set(["happy-dom", "jsdom"]);
-function hostsPageInNode(test: TestOptions | undefined): boolean {
-  return !test?.browser?.enabled && domEnvironments.has(test?.environment ?? "");
+// The pool of a page in a worker of Node.js: Vitest's forks, with the
+// plugin's entry of the worker (worker-pool.ts), which hands the page Vitest's
+// own RPC to the dev server, and answers its questions with the answers of
+// page-bridge.ts. Loaded by its path, as only Vitest loads a file that
+// imports Vitest: a host other than Vitest has the plugin without it.
+async function withNodeHostPool(
+  pool: TestOptions["pool"],
+  answers: PageAnswers,
+): Promise<{ name: string }> {
+  const { createNodeHostPool, nodeHostPoolName } = (await import(
+    pathToFileURL(ownFile("worker-pool")).href
+  )) as typeof import("./worker-pool.ts");
+  const ours = typeof pool === "object" && pool.name === nodeHostPoolName;
+  if (pool === undefined || pool === "forks" || ours) return createNodeHostPool(answers);
+  const name = typeof pool === "string" ? pool : pool.name;
+  throw new Error(
+    `vitest-plugin-rsc: a project whose page is in a worker of Node.js, without Browser Mode, ` +
+      `runs in the plugin's pool: Vitest's forks, with the plugin's entry of the worker. This ` +
+      `project sets \`test.pool\` to ${JSON.stringify(name)}: leave it out, or set it to "forks".`,
+  );
 }
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -349,7 +399,7 @@ function inline(test: TestOptions, ...patterns: RegExp[]): void {
   if (deps.inline !== true) deps.inline = [...(deps.inline ?? []), ...patterns];
 }
 
-function workerPlugins(): Plugin[] {
+function workerPlugins(answers: PageAnswers): Plugin[] {
   // Whether the config is of a page in a worker: then only these do anything.
   let inWorker = false;
   const before = new Map<string, unknown>();
@@ -358,12 +408,11 @@ function workerPlugins(): Plugin[] {
       name: "rsc:page-in-worker",
       config: {
         order: "post",
-        handler(config) {
+        async handler(config) {
           const { test } = config as { test?: TestOptions };
           inWorker = hostsPageInNode(test);
           if (!test) return;
           const root = config.root ?? process.cwd();
-          const viteCacheDir = path.resolve(root, config.cacheDir || "node_modules/.vite");
           if (!inWorker) {
             // In a browser, the pre-bundles of the page's runners, which
             // Vitest compiles for them only when it inlines them
@@ -371,6 +420,7 @@ function workerPlugins(): Plugin[] {
             // the browser imports itself. And the modules of this package
             // that they run.
             if (test.browser?.enabled) {
+              const viteCacheDir = path.resolve(root, config.cacheDir || "node_modules/.vite");
               inline(
                 test,
                 new RegExp(`^${escapeRegExp(normalizePath(viteCacheDir))}/deps_`),
@@ -379,14 +429,11 @@ function workerPlugins(): Plugin[] {
             }
             return;
           }
+          test.pool = await withNodeHostPool(test.pool, answers);
           // The pre-bundles of its own: the projects of a root that run in a
           // browser bundle the same dependencies, from other entries.
-          const cacheDir = path.resolve(viteCacheDir, "worker");
+          const cacheDir = path.resolve(root, config.cacheDir || "node_modules/.vite", "worker");
           inline(test, new RegExp(`^${escapeRegExp(normalizePath(cacheDir))}/`), ...ownPackages);
-          // Node's own web APIs, kept for the server's layers before the DOM
-          // replaces them: see worker-web-apis.ts.
-          const webApis = pathToFileURL(ownFile("worker-web-apis")).href;
-          test.execArgv = [...(test.execArgv ?? []), "--import", webApis];
           // What the optimizer of the rsc layer scans: the test files and the
           // setup files, which Vitest names with Browser Mode only. Without
           // them it finds their dependencies as a test imports them, and

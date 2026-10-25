@@ -7,6 +7,7 @@ import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import {
   createFilter,
+  defaultServerMainFields,
   normalizePath,
   parseAst,
   parseAstAsync,
@@ -19,6 +20,7 @@ import {
 } from "vite";
 import { escapePath } from "tinyglobby";
 import type { TestProject, Vitest } from "vitest/node";
+import { hostsPageInNode } from "../page-in-node.ts";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
@@ -35,7 +37,14 @@ import {
   serverReferenceInfo,
 } from "./compat/paths.ts";
 import { nextPatches } from "./compat/patches.ts";
-import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
+import {
+  browserMapping,
+  isNativeNodeModule,
+  isNodeModule,
+  nativeRequirePlugin,
+  nodeModuleOf,
+  type NodeModules,
+} from "./node-builtins.ts";
 import { fastCryptoModule, fastCryptoModuleOf, fastCryptoSetup } from "./fast-crypto.ts";
 import {
   resolveSpeedFeatures,
@@ -236,6 +245,7 @@ function createLayerResolver(
   getProject: () => NextProject,
   layer: NextLayer,
   fastCrypto: () => boolean,
+  nodeModules: () => NodeModules,
 ) {
   let aliases: Alias[] | undefined;
   const normalized = new Map<string, string | false>();
@@ -334,10 +344,10 @@ function createLayerResolver(
     const cached = normalized.get(source);
     if (cached !== undefined) return cached;
 
-    // A module of Node.js in the server layers: the package's own, before
-    // any alias of Next's for it, see node-builtins.ts. The browser layer
-    // gets Next's, as in Next.
-    const own = layer !== "browser" ? nodeModuleOf(source) : undefined;
+    // A module of Node.js in the server layers: the package's own, or Node's,
+    // before any alias of Next's for it, see node-builtins.ts. The browser
+    // layer gets Next's, as in Next.
+    const own = layer !== "browser" ? nodeModuleOf(source, nodeModules()) : undefined;
     if (own) {
       normalized.set(source, own);
       return own;
@@ -379,7 +389,14 @@ function createLayerResolver(
     const source = entry.slice(entry.lastIndexOf(">") + 1).trim();
     // An entry of the config is the app's.
     const target = normalize(source, true);
-    if (target === false || target.startsWith("\0") || isNodeModule(target)) return;
+    if (
+      target === false ||
+      target.startsWith("\0") ||
+      isNodeModule(target) ||
+      (layer !== "browser" && isNativeNodeModule(target))
+    ) {
+      return;
+    }
     // A package that Next depends on, like `styled-jsx`, found by its name
     // from Next. Not a file of Next, like its polyfill of `object-assign`.
     if (isDependencyOfNext(target)) return entry;
@@ -400,9 +417,16 @@ function createLayerResolver(
         // layers and the test files, with the speed feature `fastCrypto`: the
         // stand-ins. Not for a dependency whose `browser` field says what it
         // uses for `crypto`, which gets that, as without the option.
-        if (layer !== "browser" && fastCrypto()) {
+        // Not the stand-in's own import of the `node:crypto` it wraps, which
+        // in a worker of Node.js is that name too. And Node's own modules know
+        // no `browser` field.
+        if (layer !== "browser" && fastCrypto() && !importer?.startsWith(fastCryptoPrefix)) {
           const name = fastCryptoModuleOf(source);
-          if (name && (name !== "node-crypto" || browserMapping(source, importer) === undefined)) {
+          const native = nodeModules() === "native";
+          if (
+            name &&
+            (name !== "node-crypto" || native || browserMapping(source, importer) === undefined)
+          ) {
             return fastCryptoPrefix + name;
           }
         }
@@ -440,6 +464,11 @@ function createLayerResolver(
         const ofApp = !!importer && !normalizePath(importer).includes("/next/dist/");
         const target = normalize(specifier, ofApp);
         if (target === false) return emptyModuleId;
+        // Node's own, in a server layer, which the runner imports, and a
+        // pre-bundle leaves to it: an external, as `node:<name>`.
+        if (layer !== "browser" && isNativeNodeModule(target)) {
+          return { id: target, external: true };
+        }
         if (isNodeModule(target)) {
           // A dependency that says what it uses for the module in a browser
           // gets that: nothing, or Vite's resolution of a file of its own.
@@ -507,7 +536,10 @@ function createLayerResolver(
         if (name === "server-reference-info") return serverReferenceInfoShim;
         if (name === "dev-asset-prefix") return devAssetPrefixShim;
         if (id.startsWith(fastCryptoPrefix)) {
-          return fastCryptoModule(id.slice(fastCryptoPrefix.length), nodeModuleOf("node:crypto")!);
+          return fastCryptoModule(
+            id.slice(fastCryptoPrefix.length),
+            nodeModuleOf("node:crypto", nodeModules())!,
+          );
         }
         const { flightExports, version, newExports } = getProject();
         const nodeModule = nodePlatform.load(name, newExports[name], version);
@@ -815,6 +847,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // and the page of another host has no test file whose end forgets the
   // answers of the dev server.
   let speedFeatures: SpeedFeatures = { ...chosen, fastCrypto: false, cacheDevServer: false };
+  // What the server layers import for a module of Node.js, once the `config`
+  // hook knows where the page is: Node's own in a worker of Node.js, the
+  // package's stand-ins in a browser (node-builtins.ts). The two pre-bundle
+  // apart: a page in a worker has a `cacheDir` of its own (../index.ts).
+  let nodeModules: NodeModules = "stand-ins";
   let project: NextProject;
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
@@ -859,7 +896,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   const resolvers = Object.fromEntries(
     layers.map((layer) => [
       layer,
-      createLayerResolver(getProject, layer, () => speedFeatures.fastCrypto),
+      createLayerResolver(
+        getProject,
+        layer,
+        () => speedFeatures.fastCrypto,
+        () => nodeModules,
+      ),
     ]),
   ) as Record<NextLayer, LayerResolver>;
   // The CSS of the app, as the stylesheets of a route.
@@ -959,11 +1001,16 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           fastCrypto: chosen.fastCrypto && testRun,
           cacheDevServer: chosen.cacheDevServer && testRun,
         };
+        // Whether the page, and with it the server, is in a worker of Node.js.
+        const pageInNode = hostsPageInNode(
+          (config as { test?: Parameters<typeof hostsPageInNode>[0] }).test,
+        );
+        nodeModules = pageInNode ? "native" : "stand-ins";
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
           static: isBuild,
         });
-        serverCode.configure(project.root);
+        serverCode.configure(project.root, pageInNode ? "native" : "compiled");
         env = project.env;
         // A static build runs without Vitest, so it has no test files: every
         // file of the project is server code in the rsc layer, but for
@@ -1062,6 +1109,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             plugins: [
               // First: the other plugins see Next's production code.
               ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
+              ...(layer !== "browser" && nodeModules === "native" ? [nativeRequirePlugin()] : []),
               // The test runner is the page's own in the browser layer too,
               // like the `vitest` that vitest-browser-react imports: see
               // client-files.ts. Not a copy in what that layer pre-bundles.
@@ -1224,15 +1272,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...builtLayer("ssr"),
               consumer: "client",
               resolve: {
-                // Vite's conditions for a browser, which this is.
+                // Vite's conditions for the platform of the server: a
+                // browser's, or in a worker of Node.js Node's, with Vite's
+                // fields of a package for a server, as on `next start`.
                 conditions: [
                   ...(config.resolve?.conditions ?? []).filter(
                     (condition) => condition === "vitest-plugin-rsc-source",
                   ),
                   "module",
-                  "browser",
+                  pageInNode ? "node" : "browser",
                   "development|production",
                 ],
+                ...(pageInNode && { mainFields: [...defaultServerMainFields] }),
               },
               // The plugin's setup file loads the ssr layer, and the page asks
               // for its modules one after the other as it finds their
@@ -1301,6 +1352,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ),
               ),
             ];
+          }
+          // In a worker of Node.js, where the server layers import Node's own
+          // modules, the rsc layer resolves as Next's server on Node.js does,
+          // with the `node` condition in place of the browser's that
+          // ../index.ts gives it, and Vite's fields of a package for a
+          // server: a package with a build for each, like `jose` or `ws`, is
+          // its build for Node.js. In place, as above.
+          if (layer === "rsc" && nodeModules === "native" && config.resolve?.conditions) {
+            config.resolve.conditions = config.resolve.conditions.map((condition) =>
+              condition === "browser" ? "node" : condition,
+            );
+            config.resolve.mainFields = [...defaultServerMainFields];
           }
           // The plugin of ../index.ts has Vite make `process.env` an empty
           // object in the layers, for a dev server.
@@ -1592,6 +1655,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     createCommonJsPlugin(
       (environment) => layers.find((layer) => environmentOf[layer] === environment),
       serverCode.isAppCode,
+      (source, layer) =>
+        layer !== "browser" && isNativeNodeModule(nodeModuleOf(source, nodeModules) ?? ""),
     ),
     ...layers.map((layer) => ({
       ...resolvers[layer].plugin(),

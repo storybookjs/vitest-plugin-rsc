@@ -18,6 +18,63 @@ describe("the page's host", () => {
   });
 });
 
+describe("the pool of a page in a worker of Node.js", () => {
+  const configOf = async (test: Record<string, unknown>) => {
+    const config = getHookHandler(getPlugin("rsc:page-in-worker").config);
+    await config.call({} as never, { root: "/app", test } as never, {} as never);
+    return test;
+  };
+
+  test("is the plugin's, in happy-dom or jsdom without Browser Mode", async () => {
+    for (const environment of ["happy-dom", "jsdom"]) {
+      expect((await configOf({ environment })).pool).toMatchObject({ name: "vitest-plugin-rsc" });
+      expect((await configOf({ environment, pool: "forks" })).pool).toMatchObject({
+        name: "vitest-plugin-rsc",
+      });
+    }
+  });
+
+  test("is Vitest's for any other project", async () => {
+    expect((await configOf({ environment: "node" })).pool).toBeUndefined();
+    expect(
+      (await configOf({ environment: "happy-dom", browser: { enabled: true } })).pool,
+    ).toBeUndefined();
+  });
+
+  test("says so where the project sets another pool", async () => {
+    await expect(configOf({ environment: "happy-dom", pool: "threads" })).rejects.toThrow(
+      'This project sets `test.pool` to "threads": leave it out, or set it to "forks".',
+    );
+    await expect(
+      configOf({ environment: "jsdom", pool: { name: "custom", createPoolWorker() {} } }),
+    ).rejects.toThrow('sets `test.pool` to "custom"');
+  });
+});
+
+describe("the server's resolution", () => {
+  type Resolve = { conditions: string[]; mainFields?: string[] };
+  const resolveOf = (test: object) => {
+    const config = getHookHandler(getPlugin("rsc:run-in-browser").config) as unknown as (
+      config: object,
+    ) => { environments: { client: { resolve: Resolve } } };
+    return config({ test }).environments.client.resolve;
+  };
+
+  test("has a browser's conditions with the page in a browser", () => {
+    expect(resolveOf({ browser: { enabled: true }, environment: "happy-dom" })).toEqual({
+      conditions: ["browser", "react-server"],
+    });
+  });
+
+  // Node's are those of `vitestPluginNext()`, which gives the server Node's
+  // own modules: see nextjs/plugin.test.ts.
+  test("has a browser's conditions with the page in a worker of Node.js too", () => {
+    expect(resolveOf({ environment: "jsdom" })).toEqual({
+      conditions: ["browser", "react-server"],
+    });
+  });
+});
+
 describe("react_client optimizer", () => {
   test("scans the browser test files and shares their excludes", async () => {
     const configureOptimizer = getHookHandler(

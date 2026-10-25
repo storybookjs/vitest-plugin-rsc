@@ -40,7 +40,7 @@ test("hears the news before an answer that the server sent after it, and that it
     heard: (event, data) => heard.push([event, data]),
     missed: () => heard.push("missed"),
   };
-  browserHost.listen(news);
+  browserHost.listen!(news);
 
   expect(await browserHost.request("ask", {})).toBe(42);
   expect(heard).toEqual([["changed", 1]]);
