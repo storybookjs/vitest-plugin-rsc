@@ -228,9 +228,9 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
 }
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
 
-// Immediates of the speed feature `immediates`: a task each, by a message of one
-// channel, which no browser delays as it does a timeout. Each by a symbol of
-// its own, which is no id of a timer.
+// Immediates, of Node's `setImmediate` and of the speed feature `immediates`: a
+// task each, by a message of one channel, which no browser delays as it does a
+// timeout. Each by a symbol of its own, which is no id of a timer.
 const immediates = new Map<symbol, () => void>();
 const channel = new MessageChannel();
 channel.port1.onmessage = () => {
@@ -261,25 +261,22 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
   });
 
   // A task of its own, after the microtasks: what Next's Node.js server waits
-  // for between the stages of a render. Server code gets these two in place
-  // of the globals (server-code.ts), so there is no global `setImmediate`. Not
-  // a timer of the test, which may be fake.
+  // for between the stages of a render, and React's renderers between the
+  // steps of one (server-code.ts). An immediate, as on Node.js: a timeout of
+  // a browser waits at least 4 ms when a timeout started it, five deep, so a
+  // render of a page waited longer than it worked. Server code gets these two
+  // in place of the globals, so there is no global `setImmediate`. Not a
+  // timer of the test, which may be fake.
   const nativeSetTimeout = globalThis.setTimeout;
-  const nativeClearTimeout = globalThis.clearTimeout;
-  registry.setImmediate = (callback, ...args) =>
-    registry.speedFeatures?.immediates
-      ? immediate(callback, args)
-      : nativeSetTimeout(callback, 0, ...args);
-  registry.clearImmediate = (id) =>
-    typeof id === "symbol" ? immediates.delete(id) : nativeClearTimeout(id as number);
+  registry.setImmediate = (callback, ...args) => immediate(callback, args);
+  registry.clearImmediate = (id) => {
+    if (typeof id === "symbol") immediates.delete(id);
+  };
 
   // Server code's `setTimeout` (server-code.ts), the global as the code calls
-  // it, also a fake one of the test. React renders Flight and HTML for the
-  // edge with `setTimeout(work, 0)` between its steps, where on Node.js it
-  // takes `setImmediate`: a browser waits at least 4 ms for a timeout that a
-  // timeout started, five deep, so a render of a page waited longer than it
-  // worked. The speed feature `immediates` runs a timeout of no delay as an
-  // immediate, unless the test made the timers fake.
+  // it, also a fake one of the test. The speed feature `immediates` runs a
+  // timeout of no delay as an immediate, unless the test made the timers
+  // fake.
   registry.setTimeout = (callback, delay, ...args) =>
     registry.speedFeatures?.immediates &&
     !(Number(delay) > 0) &&

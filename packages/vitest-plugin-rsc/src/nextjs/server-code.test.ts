@@ -74,6 +74,20 @@ test("reads fetch, Request and Response from the server", async () => {
   );
 });
 
+test("has React's renderers for the edge take a step of a render as their builds for Node.js do, with setImmediate", async () => {
+  const source = `setTimeout(function () { performWork(request); }, 0);`;
+  for (const file of [
+    "/next/dist/compiled/react-dom/cjs/react-dom-server.edge.production.js",
+    "/@vitejs/plugin-rsc/dist/vendor/react-server-dom/cjs/react-server-dom-webpack-server.edge.development.js",
+  ]) {
+    const compiled = await compileServerCode(source, file, registry);
+    expect(compiled?.code).toContain(`${registry}.setImmediate(function`);
+  }
+  // Any other server code keeps its timeout.
+  const other = await compileServerCode(source, "/app/module.js", registry);
+  expect(other?.code).toContain(`${registry}.setTimeout(function`);
+});
+
 test("has React's Flight server in the rsc layer queue a microtask with the server's queueMicrotask", async () => {
   const serverCode = createServerCode(registry);
   const compile = async (layer: "rsc" | "ssr", file: string) =>
