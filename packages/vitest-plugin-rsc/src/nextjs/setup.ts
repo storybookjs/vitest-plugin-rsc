@@ -4,7 +4,7 @@ import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
 import { findOnEveryChange, forgetTestFileAnswers, pollOnEveryChange } from "./speed-features.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
-import { leaveKeptAppWithPage, preloadClient } from "./page.ts";
+import { leaveKeptAppWithPage } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
 // With the speed feature `fastCrypto`, PBKDF2 of the page's `crypto.subtle` is
@@ -66,12 +66,6 @@ afterAll(async () => {
 // may. In a setup file it does not count towards a test's timeout. A layer
 // that fails to load fails the test file here.
 await ssrLayer();
-// Then the modules of the app's client, which the first page load runs: the
-// dev server compiles them while the project's setup files and the test file
-// load, like a database that starts, where the page load would wait for that.
-// Whether the test file loads pages is known only once it has loaded. A page
-// load that needs one that failed gets its error.
-preloadClient().catch(() => {});
 
 // Without arguments: a hook gets the test's context, which is no options.
 afterEach(() => cleanup());

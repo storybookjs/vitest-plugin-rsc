@@ -65,21 +65,7 @@ class Socket extends EventTarget {
 vi.stubGlobal("WebSocket", Socket);
 vi.stubGlobal("window", { location: new URL("http://localhost:63315/") });
 vi.stubGlobal("fetch", async () => Response.json({ token: "t", path: "/socket" }));
-const { checkFetchedModules, checkedVersions, createEnvironmentRunner, preloadModules } =
-  await import("./utils.ts");
-
-test("preloads a module and its imports for the runner of the next page load", async () => {
-  await preloadModules("next_ssr", "/entry.js");
-  // The imports are on their way once the module has come.
-  await vi.waitFor(() => expect([...asked].sort()).toEqual(["/a.js", "/b.js", "/entry.js"]));
-
-  const runner = createEnvironmentRunner("next_ssr");
-  await runner.import("/entry.js");
-  expect(runner.evaluatedModules.getModuleById("/b.js")?.evaluated).toBe(true);
-  // From what the tab fetched: the server is asked for none of them again.
-  expect(asked).toHaveLength(3);
-  await runner.close();
-});
+const { checkFetchedModules, checkedVersions } = await import("./utils.ts");
 
 test("checks the versions of the modules the page keeps answers about before a page load", async () => {
   const first = await checkedVersions();

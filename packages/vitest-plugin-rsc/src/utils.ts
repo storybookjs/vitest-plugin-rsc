@@ -340,38 +340,6 @@ export function checkedVersions(): Promise<string> {
   return checked!;
 }
 
-/**
- * Fetches the module `id` of `environment`, and every module it imports, for
- * the runners of `createEnvironmentRunner()`, without evaluating any: what a
- * `<link rel="modulepreload">` is to a page load. The dev server compiles a
- * module the first time it is asked for it, so a page load whose modules were
- * preloaded meanwhile does not wait for that. Resolves once `id` has come,
- * and its imports are on their way; an error is the runner's that asks.
- */
-export async function preloadModules(environment: string, id: string): Promise<void> {
-  // A build has its modules in files: see `preloadRoute` in nextjs/rsc.ts.
-  if (builtLayers?.[environment]) return;
-  const modules = await fetchedModules(environment);
-  // As the runner asks: its builtins first, then the module, which it does not have.
-  const ask = (name: string, data: [string?, string?, FetchOptions?]) => {
-    const payload = { type: "custom", event: "vite:invoke", data: { id: "send", name, data } };
-    return fetchOnce(
-      environment,
-      payload as InvokePayload,
-      modules,
-      fetchKey(name, data[0], data[1]),
-    );
-  };
-  await Promise.all([
-    ask("getBuiltins", []),
-    ask("fetchModule", [
-      id,
-      undefined,
-      { cached: false, startOffset: pageLoadEvaluator.startOffset },
-    ]),
-  ]);
-}
-
 type FetchModulePayload = { data: { name: string; data: [string?, string?, FetchOptions?] } };
 type FetchOptions = { cached?: boolean; startOffset?: number };
 
