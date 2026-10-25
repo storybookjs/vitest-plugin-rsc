@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
-import { defineProject } from "vitest/config";
+import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type Mode } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
@@ -62,3 +62,6 @@ export const nextjsCacheComponentsDemoProjects = [
   nodeProject("nextjs-cache-components-demo-node", "fidelity"),
   nodeProject("nextjs-cache-components-demo-node-fast", "fast"),
 ];
+
+// For a run in this directory, as the root's config runs them.
+export default defineConfig({ test: { projects: nextjsCacheComponentsDemoProjects } });
