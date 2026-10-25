@@ -69,6 +69,23 @@ function namesOf(window: object): Set<string> {
 
 const isClassName = (name: string) => name[0] === name[0]!.toUpperCase();
 
+// The `FormData` of the worker's global, which the server keeps as Node's:
+// of a form of the page, which a test reads as in a browser, the window's,
+// where Node's takes no form. Either is one by `instanceof`.
+function formDataOfTest(node: typeof FormData, page: typeof FormData): typeof FormData {
+  function formData(form?: HTMLFormElement, submitter?: HTMLElement | null): FormData {
+    return form === undefined
+      ? (Reflect.construct(node, [], new.target ?? node) as FormData)
+      : new page(form, submitter);
+  }
+  formData.prototype = node.prototype;
+  Object.defineProperty(formData, "name", { value: "FormData" });
+  Object.defineProperty(formData, Symbol.hasInstance, {
+    value: (value: unknown) => value instanceof node || value instanceof page,
+  });
+  return formData as unknown as typeof FormData;
+}
+
 export default {
   name: "happy-dom",
   viteEnvironment: "client",
@@ -133,6 +150,11 @@ export default {
         },
       });
     }
+    const formData = Object.getOwnPropertyDescriptor(scope, "FormData");
+    scope.FormData = formDataOfTest(
+      scope.FormData as typeof FormData,
+      window.FormData as typeof FormData,
+    );
     return {
       async teardown() {
         const happy = (window as { happyDOM?: { abort(): Promise<void> } }).happyDOM;
@@ -143,6 +165,7 @@ export default {
           if (original) Object.defineProperty(scope, name, original);
           else Reflect.deleteProperty(scope, name);
         }
+        if (formData) Object.defineProperty(scope, "FormData", formData);
       },
     };
   },
