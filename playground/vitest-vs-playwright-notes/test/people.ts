@@ -16,8 +16,11 @@ export const grace: Person = {
   password: "battery staple",
 };
 
-/** The person with an email of their own, `ada+1a2b3c4d@example.com`: the same name and password. */
+/**
+ * The person with an email of their own, `ada+<a UUID>@example.com`: the same
+ * name and password.
+ */
 export function person(base: Person): Person {
   const [local, domain] = base.email.split("@");
-  return { ...base, email: `${local}+${crypto.randomUUID().slice(0, 8)}@${domain}` };
+  return { ...base, email: `${local}+${crypto.randomUUID()}@${domain}` };
 }

@@ -113,7 +113,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "VITEST_SECONDS_${{ matrix.mode == 'fast' && 'FAST' || 'FIDELITY' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
       # Fast mode with 4 workers, each a page with a database of its own: the
-      # counterpart of the Playwright job's run with 4 workers.
+      # counterpart of the Playwright job's run with 4 workers. With Vite's
+      # cache of the dependencies warm, which the run before filled: that
+      # run's time has their optimization in it, 1.5 to 3.5 s. The README's
+      # table has both from warm runs.
       - name: Run the tests with 4 workers, Next and React in production
         if: matrix.mode == 'fast' && !matrix.node
         run: |
@@ -357,6 +360,9 @@ jobs:
             printf "| Postgres in Docker | | %.1f |\n" "$DATABASE_SECONDS"
           } >> "$GITHUB_STEP_SUMMARY"
           for workers in ${{ matrix.workers }}; do
+            # From no compiles at all: `next dev` keeps them in .next/, which
+            # would hand one run the routes the run before compiled.
+            rm -rf .next
             start=$(date +%s.%N)
             pnpm exec playwright test --workers "$workers" | tee playwright.log
             end=$(date +%s.%N)

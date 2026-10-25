@@ -27,6 +27,7 @@ export const test = base.extend<{
   people: async ({}, use) => {
     await use({ ada: person(ada), grace: person(grace) });
   },
+  // `signedIn()` of test/sign-in.ts: `person(who)`, a person of the test's own.
   signedIn: async ({ context, baseURL }, use) => {
     await use(async (who = ada) => {
       const user = await createUser(person(who));
