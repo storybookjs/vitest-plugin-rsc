@@ -113,11 +113,14 @@ export const isNativeNodeModule = (id: string): boolean => id.startsWith("node:"
  * The plugin of a server layer's optimizer for `native` modules: in a
  * pre-bundle, a `require()` of a module of Node.js is an import of it, which
  * the runner imports, and `module.exports` its default export, as Node.js
- * gives it. Rolldown's runtime for a browser has no `require` to call.
+ * gives it. Rolldown's runtime for a browser has no `require` to call. Also
+ * `async_hooks`, which the layer imports as the package's: the import is the
+ * layer's to resolve, to Node's own here (../async-hooks-node.ts), like the
+ * one of `@sentry/nextjs` for Node.js.
  */
 export function nativeRequirePlugin(): ReturnType<typeof esmExternalRequirePlugin> {
   const names = builtinModules.filter(
-    (name) => !name.startsWith("_") && nodeModuleOf(name, "native"),
+    (name) => !name.startsWith("_") && (notHere.has(name) || nodeModuleOf(name, "native")),
   );
   const external = [
     ...new Set([...names, ...names.map((name) => name.replace(/^(?!node:)/, "node:"))]),

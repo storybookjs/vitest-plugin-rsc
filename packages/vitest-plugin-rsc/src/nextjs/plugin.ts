@@ -913,6 +913,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     environments: environmentOf,
     isServerCode: (file) => serverCode.isServerCode(file, "rsc"),
     isHostFile: serverCode.isHostFile,
+    isHostPackageFile: serverCode.isHostPackageFile,
     pageRoutes() {
       if (pageRoutes?.of !== project) {
         const routes = [...project.routes, ...project.componentRoutes].flatMap((route) =>

@@ -317,8 +317,15 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     if (file.startsWith(ownDir)) return false;
     if (layer === "ssr") return true;
     if (isBrowserModule(file) || isHostFile(file)) return false;
-    const packageDir = packageDirOf(file);
-    return !packageDir || !hostPackageDirs.has(packageDir);
+    return !isHostPackageFile(file);
+  }
+  /**
+   * Whether a file is of a package of the host or of what one depends on:
+   * Vitest's runtime, or a package of `host.packages`.
+   */
+  function isHostPackageFile(file: string): boolean {
+    const packageDir = packageDirOf(normalizePath(file));
+    return packageDir !== undefined && hostPackageDirs.has(packageDir);
   }
 
   // The async functions of a file, compiled. A file that does not parse stays
@@ -382,6 +389,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   return {
     isServerCode,
     isHostFile,
+    isHostPackageFile,
     isTestFile,
     /**
      * Whether an import is of a package of the host, by its name: `vitest`,

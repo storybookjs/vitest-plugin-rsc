@@ -9,6 +9,7 @@ import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
 import { moduleFilesPlugin } from "./module-files.ts";
+import { preBundlesOf } from "./pre-bundles.ts";
 import { mapOfRelatedLookup } from "./related-lookup.ts";
 import {
   hostsPageInNode,
@@ -142,18 +143,10 @@ export function vitestPluginRSC(): Plugin[] {
         }
         await startWorkerPage(project);
         // Vitest keeps what it compiled on disk for the next run, by a key
-        // without the version of the optimizer's pre-bundles, which it has
-        // turned off without Browser Mode: a module that imports one has
-        // that version in its URL. The key of a module is made once in a
-        // run: a module that imports a pre-bundle that the optimizer bundles
-        // again mid-run, as it finds a dependency, keeps the old version in
-        // its URL until the next run. Nor with the directory of the
-        // pre-bundles, which is the project's: two projects with the same
-        // optimizer's config have the same version, but each its own URLs.
-        defineCacheKeyGenerator?.(
-          ({ environment }) =>
-            `${environment.config.cacheDir}:${environment.depsOptimizer?.metadata.browserHash ?? ""}`,
-        );
+        // without the pre-bundles of the optimizer, which it has turned off
+        // without Browser Mode: a module that imports one has their version
+        // in its URL. See pre-bundles.ts.
+        defineCacheKeyGenerator?.(({ environment }) => preBundlesOf(environment));
       }) as unknown as () => void,
       resolveId(source) {
         if (source !== pageHostId) return;
