@@ -80,7 +80,15 @@ const browserProject = (name: string, mode: Mode) =>
       // e2e/ runs Storybook: see vitest.storybook.config.ts. A `.node.test`
       // file is the node project's.
       exclude: ["e2e/**", "node_modules", "**/*.node.test.{ts,tsx}"],
-      browser: { ...browserMode(), viewport: { width: 390, height: 844 } },
+      browser: {
+        ...browserMode(),
+        // A collection of the heap and its precise size, which
+        // test/page-leaks.test.tsx asks for.
+        provider: playwright({
+          launchOptions: { args: ["--js-flags=--expose-gc", "--enable-precise-memory-info"] },
+        }),
+        viewport: { width: 390, height: 844 },
+      },
       // Browser workers each own their browser state and run in parallel.
       // Inside one worker, test files run sequentially with `isolate: false`,
       // so cleanup belongs in beforeEach. Do not disable file parallelism
@@ -125,7 +133,8 @@ const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
     ],
     test: {
       name,
-      include: ["**/*.node.test.{ts,tsx}"],
+      // test/page-leaks.test.tsx runs in Chromium and here alike.
+      include: ["**/*.node.test.{ts,tsx}", "test/page-leaks.test.tsx"],
       exclude: ["e2e/**", "node_modules"],
       environment,
       isolate: false,
