@@ -19,11 +19,15 @@
 // (https://github.com/vitest-dev/ivya/blob/v1.8.2/src/roleUtils.ts), the
 // code that Vitest 5's locators run: roles, ARIA states, the accessible
 // name and what is hidden from ARIA. Changed: the imports; no content of
-// pseudo-elements in a DOM that does not render; added, which ivya does
-// not have: the role candidates of `getAriaRoleCandidates()` and the name
-// of text alone of `getPlainTextAccessibleName()`. See NOTICE.
+// pseudo-elements in a DOM that does not render; shortcuts with the same
+// answers in `isElementHiddenForAria()` and `getAriaDisabled()`; added,
+// which ivya does not have: the role candidates of
+// `getAriaRoleCandidates()`, the name of text alone of
+// `getPlainTextAccessibleName()` and its text of `getPlainTextContent()`.
+// See NOTICE.
 
 import {
+  checksVisibility,
   closestCrossShadow,
   elementSafeTagName,
   enclosingShadowRootOrDocument,
@@ -475,8 +479,16 @@ export function isElementHiddenForAria(element: Element): boolean {
   // Note: <option> inside <select> are not affected by visibility or content-visibility.
   // Same goes for <slot>.
   const isOptionInsideSelect = element.nodeName === "OPTION" && !!element.closest("select");
-  if (!isOptionInsideSelect && !isSlot && !isElementStyleVisibilityVisible(element, style)) {
-    return true;
+  if (!isOptionInsideSelect && !isSlot) {
+    if (!isElementStyleVisibilityVisible(element, style)) {
+      return true;
+    }
+    // Not in Playwright: an element that `checkVisibility()` finds rendered
+    // has no `display: none` on it or above it and is in a slot, so of the
+    // walk up there is `aria-hidden` left to look for.
+    if (style && checksVisibility) {
+      return !!closestCrossShadow(element, '[aria-hidden="true" i]');
+    }
   }
   return belongsToDisplayNoneOrAriaHiddenOrNonSlotted(element);
 }
@@ -1399,7 +1411,11 @@ export const kAriaDisabledRoles = [
 export function getAriaDisabled(element: Element): boolean {
   // https://www.w3.org/TR/wai-aria-1.2/#aria-disabled
   // Note that aria-disabled applies to all descendants, so we look up the hierarchy.
-  return isNativelyDisabled(element) || hasExplicitAriaDisabled(element);
+  // Not in Playwright: without an `aria-disabled` on the way up, no role of it is asked.
+  return (
+    isNativelyDisabled(element) ||
+    (!!closestCrossShadow(element, "[aria-disabled]") && hasExplicitAriaDisabled(element))
+  );
 }
 
 function isNativelyDisabled(element: Element) {
@@ -1509,6 +1525,26 @@ const kPlainNameTagNames = new Set(["A", "BUTTON", "H1", "H2", "H3", "H4", "H5",
  * hidden element's name is "", which a query of its role leaves out anyway.
  */
 export function getPlainTextAccessibleName(element: Element): string | undefined {
+  if (!hasPlainTextName(element)) return undefined;
+  const text =
+    getPseudoContent(element, "::before") +
+    (element.textContent || "") +
+    getPseudoContent(element, "::after");
+  return trimFlatString(text) ? asFlatString(text) : undefined;
+}
+
+/**
+ * The text of an element of `getPlainTextAccessibleName()`, flat, without
+ * what its `::before` and `::after` add, or `undefined` for another
+ * element. Its name, normalized, has this text in it, normalized, whatever
+ * they add: a query rules the element out by it before it looks up their
+ * styles. Not in Playwright.
+ */
+export function getPlainTextContent(element: Element): string | undefined {
+  return hasPlainTextName(element) ? asFlatString(element.textContent || "") : undefined;
+}
+
+function hasPlainTextName(element: Element): boolean {
   if (
     !kPlainNameTagNames.has(element.tagName) ||
     element.firstElementChild ||
@@ -1518,14 +1554,8 @@ export function getPlainTextAccessibleName(element: Element): string | undefined
     element.hasAttribute("aria-owns") ||
     (element.tagName === "BUTTON" && (element as HTMLButtonElement).labels.length)
   )
-    return undefined;
-  const role = getAriaRole(element) || "";
-  if (!allowsNameFromContent(role, false)) return undefined;
-  const text =
-    getPseudoContent(element, "::before") +
-    (element.textContent || "") +
-    getPseudoContent(element, "::after");
-  return trimFlatString(text) ? asFlatString(text) : undefined;
+    return false;
+  return allowsNameFromContent(getAriaRole(element) || "", false);
 }
 
 // The tags of `kImplicitRoleByTagName` that can map to a role.

@@ -39,6 +39,7 @@ import {
   getAriaSelected,
   getElementAccessibleName,
   getPlainTextAccessibleName,
+  getPlainTextContent,
   isElementHiddenForAria,
   kAriaCheckedRoles,
   kAriaExpandedRoles,
@@ -247,6 +248,12 @@ export function byRole(role: string, options: ByRoleOptions = {}, exactDefault: 
           // way round: the same elements, as neither has an effect, and
           // most candidates fail on their name.
           if (name !== undefined) {
+            // An exact name that has not the element's own text in it is
+            // not the element's, whatever its pseudo-elements add.
+            if (exact && typeof name === "string") {
+              const text = getPlainTextContent(element);
+              if (text !== undefined && !name.includes(normalizeWhiteSpace(text))) continue;
+            }
             // Always normalize whitespace in the accessible name.
             const accessibleName = normalizeWhiteSpace(
               getPlainTextAccessibleName(element) ??
