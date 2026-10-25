@@ -25,12 +25,24 @@ const [loadDataDir, pgliteWasmModule, initdbWasmModule, fsBundle] = await Promis
   fetchFile(fsBundleUrl).then((response) => response.blob()),
 ]);
 
+// Without the durability a test never needs, as the Postgres of the
+// Playwright tests runs: a commit doesn't wait for its WAL to be written, and
+// the WAL has no full copy of a page that changes after a checkpoint. PGlite
+// starts with fsync off already (`-F`).
 const client = await PGlite.create({
   loadDataDir,
   pgliteWasmModule,
   initdbWasmModule,
   fsBundle,
-  startParams: [...PGlite.defaultStartParams, "-c", "shared_buffers=16MB"],
+  startParams: [
+    ...PGlite.defaultStartParams,
+    "-c",
+    "shared_buffers=16MB",
+    "-c",
+    "synchronous_commit=off",
+    "-c",
+    "full_page_writes=off",
+  ],
 });
 
 // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- The two drivers differ in their client and raw results only.
