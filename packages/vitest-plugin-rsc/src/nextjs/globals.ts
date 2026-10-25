@@ -84,8 +84,17 @@ class ServerResponse extends NativeResponse {
   #headers: Headers;
 
   constructor(body?: BodyInit | null, init?: ResponseInit) {
-    super(body, init);
-    this.#headers = headersOf(init);
+    const headers = headersOf(init);
+    // The browser reads one header of a response itself, its content type,
+    // for `formData()` and `blob()`. The rest are this class's alone, so
+    // the browser's headers get no copy of them.
+    const type = headers.get("content-type");
+    super(body, {
+      status: init?.status,
+      statusText: init?.statusText,
+      headers: type === null ? undefined : { "content-type": type },
+    });
+    this.#headers = headers;
     const contentType = super.headers.get("content-type");
     if (contentType && !this.#headers.has("content-type")) {
       this.#headers.set("content-type", contentType);
