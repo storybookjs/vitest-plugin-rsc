@@ -10,8 +10,14 @@ name: Benchmark A/B
 # `.github/bench-ab.json` on that branch (every key optional):
 #
 #   { "refs": ["kasper/some-branch", "HEAD"], "tests": "tests/vitest-user-event/",
-#     "reps": 3, "copies": [1, 2], "mode": "fast", "build": "production",
-#     "profile": "timings", "app": "vitest-vs-playwright-notes" }
+#     "reps": 3, "copies": [1, 2], "mode": "fast", "runtime": "bun",
+#     "build": "production", "profile": "timings", "app": "vitest-vs-playwright-notes" }
+#
+# "runtime", the default, "bun", runs Vitest on Bun, `bun --bun vitest run
+# --configLoader native`, for every ref; "node" on Node.js, with
+# `pnpm exec vitest run`. A list, one runtime per ref, runs each ref on its
+# own: `"refs": ["HEAD", "HEAD"], "runtime": ["node", "bun"]` compares Node.js
+# with Bun on one runner, and the table has a row per ref and runtime.
 #
 # "HEAD" is the pushed commit. Or on demand, with the same settings as
 # inputs, once the workflow is on the default branch.
@@ -31,6 +37,9 @@ on:
         type: string
       mode:
         description: "The mode (VITEST_PLUGIN_RSC_MODE): fast or fidelity"
+        type: string
+      runtime:
+        description: "The runtime of Vitest: bun (the default) or node, or one per ref, comma-separated"
         type: string
       build:
         description: "Next and React build: production or development"
@@ -58,6 +67,7 @@ jobs:
       app: ${{ steps.merge.outputs.app }}
       tests: ${{ steps.merge.outputs.tests }}
       mode: ${{ steps.merge.outputs.mode }}
+      runtime: ${{ steps.merge.outputs.runtime }}
       build: ${{ steps.merge.outputs.build }}
       reps: ${{ steps.merge.outputs.reps }}
       copies: ${{ steps.merge.outputs.copies }}
@@ -70,6 +80,7 @@ jobs:
           IN_APP: ${{ inputs.app }}
           IN_TESTS: ${{ inputs.tests }}
           IN_MODE: ${{ inputs.mode }}
+          IN_RUNTIME: ${{ inputs.runtime }}
           IN_BUILD: ${{ inputs.build }}
           IN_REPS: ${{ inputs.reps }}
           IN_COPIES: ${{ inputs.copies }}
@@ -81,11 +92,25 @@ jobs:
           refs=${IN_REFS:-$(get refs "HEAD")}
           refs=${refs//HEAD/${{ github.sha }}}
           copies=${IN_COPIES:-$(jq -c '.copies // [1]' "$file" 2>/dev/null || echo "[1]")}
+          # One runtime for every ref, or one per ref: a list as long as refs.
+          IFS=, read -ra runtimes <<< "${IN_RUNTIME:-$(get runtime bun)}"
+          IFS=, read -ra ref_list <<< "$refs"
+          for runtime in "${runtimes[@]}"; do
+            case "$runtime" in node | bun) ;; *) echo "::error::runtime is node or bun, not $runtime"; exit 1 ;; esac
+          done
+          if [ "${#runtimes[@]}" = 1 ]; then
+            for _ in "${ref_list[@]:1}"; do runtimes+=("${runtimes[0]}"); done
+          elif [ "${#runtimes[@]}" != "${#ref_list[@]}" ]; then
+            echo "::error::runtime has ${#runtimes[@]} values for ${#ref_list[@]} refs"
+            exit 1
+          fi
+          runtime=$(IFS=,; echo "${runtimes[*]}")
           {
             echo "refs=$refs"
             echo "app=${IN_APP:-$(get app vitest-vs-playwright-notes)}"
             echo "tests=${IN_TESTS:-$(get tests tests/vitest-user-event/)}"
             echo "mode=${IN_MODE:-$(get mode fast)}"
+            echo "runtime=$runtime"
             echo "build=${IN_BUILD:-$(get build production)}"
             echo "reps=${IN_REPS:-$(get reps 3)}"
             echo "copies=$copies"
@@ -102,6 +127,7 @@ jobs:
         copy: ${{ fromJSON(needs.settings.outputs.copies) }}
     env:
       VITEST_PLUGIN_RSC_MODE: ${{ needs.settings.outputs.mode }}
+      RUNTIME: ${{ needs.settings.outputs.runtime }}
       VITEST_PLUGIN_RSC_BUILD: ${{ needs.settings.outputs.build }}
       REFS: ${{ needs.settings.outputs.refs }}
       APP: ${{ needs.settings.outputs.app }}
@@ -117,6 +143,10 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        if: contains(needs.settings.outputs.runtime, 'bun')
+        with:
+          bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - name: Check out and build every ref
@@ -140,22 +170,33 @@ jobs:
           config=""
           if [ "$PROFILE" != none ]; then config="-c vitest.profile.config.ts"; fi
           if [ "$PROFILE" = timings ]; then export VITEST_PROFILE=timings; fi
+          IFS=, read -ra runtimes <<< "$RUNTIME"
+          # Vitest of the i-th ref, on its runtime.
+          run_vitest() {
+            if [ "${runtimes[$(($1 - 1))]}" = bun ]; then
+              bun --bun vitest run --configLoader native "${@:2}"
+            else
+              pnpm exec vitest run --configLoader native "${@:2}"
+            fi
+          }
           # A warm-up of each ref: the dependency optimizer and the caches.
           for i in $(seq 1 "$count"); do
-            (cd "../wt$i/playground/$APP" && pnpm exec vitest run --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
+            (cd "../wt$i/playground/$APP" && run_vitest "$i" --maxWorkers 1 $TESTS > /dev/null 2>&1 || true)
           done
-          echo -e "round\tref\tduration_s\tfiles_ms\ttests" > .bench-ab/results.tsv
+          echo -e "round\tpair\tref\truntime\twall_s\tduration_s\tfiles_ms\ttests" > .bench-ab/results.tsv
           for r in $(seq 1 "$REPS"); do
             for i in $(seq 1 "$count"); do
               dir="../wt$i/playground/$APP"
               rm -rf "$dir/timings" "$dir/profiles"
               log="$GITHUB_WORKSPACE/.bench-ab/logs/r$r-ref$i.log"
-              (cd "$dir" && pnpm exec vitest run $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
+              start=$(date +%s.%N)
+              (cd "$dir" && run_vitest "$i" $config --maxWorkers 1 $TESTS 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > "$log") || true
+              wall=$(echo "$(date +%s.%N) - $start" | bc)
               duration=$(grep -oP 'Duration\s+\K[0-9.]+' "$log" | tail -1)
               tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' "$log" | tail -1)
               # The sum of the files' own times, from the tree reporter's lines.
               files=$(grep -oP '\(\d+ tests?\) \K[0-9]+(?=ms)' "$log" | paste -sd+ | bc)
-              echo -e "$r\t${refs[$((i - 1))]}\t${duration:-nan}\t${files:-nan}\t${tests:-failed}" >> .bench-ab/results.tsv
+              echo -e "$r\t$i\t${refs[$((i - 1))]}\t${runtimes[$((i - 1))]}\t$wall\t${duration:-nan}\t${files:-nan}\t${tests:-failed}" >> .bench-ab/results.tsv
               if [ "$PROFILE" != none ]; then
                 mkdir -p "$GITHUB_WORKSPACE/.bench-ab/prof/r$r-ref$i"
                 cp -r "$dir/timings" "$GITHUB_WORKSPACE/.bench-ab/prof/r$r-ref$i/" 2>/dev/null || true
@@ -169,23 +210,30 @@ jobs:
           python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
           import csv, statistics
           rows = list(csv.DictReader(open(".bench-ab/results.tsv"), delimiter="\t"))
-          refs = []
+          # A row of the table per ref and runtime, in the order of the refs.
+          pairs = []
           for row in rows:
-              if row["ref"] not in refs:
-                  refs.append(row["ref"])
-          def med(ref, key):
-              values = [float(r[key]) for r in rows if r["ref"] == ref and r[key] != "nan"]
+              if row["pair"] not in pairs:
+                  pairs.append(row["pair"])
+          def of(pair):
+              return [r for r in rows if r["pair"] == pair]
+          def med(pair, key):
+              values = [float(r[key]) for r in of(pair) if r[key] != "nan"]
               return statistics.median(values) if values else float("nan")
+          runtime = {"bun": "Bun", "node": "Node.js"}
           import os
-          print(f"### A/B copy ${{ matrix.copy }}: {os.environ['APP']} {os.environ['TESTS']}, {os.environ['VITEST_PLUGIN_RSC_MODE']} mode, {os.environ['VITEST_PLUGIN_RSC_BUILD']}, {len(rows) // max(len(refs), 1)} rounds\n")
-          print("| Ref | Duration, median s | Files' time, median s | vs first | Rounds (Duration s) | Tests |")
-          print("| --- | ---: | ---: | ---: | --- | --- |")
-          base = med(refs[0], "files_ms")
-          for ref in refs:
-              d, f = med(ref, "duration_s"), med(ref, "files_ms")
-              rounds = ", ".join(r["duration_s"] for r in rows if r["ref"] == ref)
-              tests = ", ".join(sorted({r["tests"] for r in rows if r["ref"] == ref}))
-              print(f"| `{ref}` | {d:.1f} | {f / 1000:.1f} | {100 * (f - base) / base:+.1f}% | {rounds} | {tests} |")
+          print(f"### A/B copy ${{ matrix.copy }}: {os.environ['APP']} {os.environ['TESTS']}, {os.environ['VITEST_PLUGIN_RSC_MODE']} mode, {os.environ['VITEST_PLUGIN_RSC_BUILD']}, {len(rows) // max(len(pairs), 1)} rounds\n")
+          # Wall: the whole command, the start of the runtime and of Vitest
+          # too, which Vitest's own Duration leaves out.
+          print("| Ref | Vitest on | Wall, median s | Duration, median s | Files' time, median s | Files vs first | Wall vs first | Rounds (Wall s) | Tests |")
+          print("| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |")
+          base, base_wall = med(pairs[0], "files_ms"), med(pairs[0], "wall_s")
+          for pair in pairs:
+              w, d, f = med(pair, "wall_s"), med(pair, "duration_s"), med(pair, "files_ms")
+              rounds = ", ".join(f"{float(r['wall_s']):.1f}" for r in of(pair))
+              tests = ", ".join(sorted({r["tests"] for r in of(pair)}))
+              first = of(pair)[0]
+              print(f"| `{first['ref']}` | {runtime[first['runtime']]} | {w:.1f} | {d:.1f} | {f / 1000:.1f} | {100 * (f - base) / base:+.1f}% | {100 * (w - base_wall) / base_wall:+.1f}% | {rounds} | {tests} |")
           EOF
           if [ "$PROFILE" = timings ]; then
             for d in .bench-ab/prof/r1-ref*; do

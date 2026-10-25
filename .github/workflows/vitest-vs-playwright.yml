@@ -27,7 +27,7 @@ defaults:
 
 jobs:
   vitest:
-    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}
+    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}${{ matrix.node && ', on Node.js' || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -36,11 +36,16 @@ jobs:
         # Playwright carries out; tests/vitest-user-event/ with Testing
         # Library's user-event, in the page. `mode: fast` runs them in the
         # plugin's fast mode (`VITEST_PLUGIN_RSC_MODE=fast`): see its README.md.
+        # Vitest runs on Bun, `bun --bun vitest`, which starts a run 2 to 3 s
+        # sooner than `pnpm exec vitest` on Node.js; the tests then take the
+        # same time. See the playgrounds' README.md. `node` runs it on Node.js
+        # instead, in production only: the same tests, to compare.
         include:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast }
+          - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast, node: true }
     defaults:
       run:
         working-directory: playground/${{ matrix.app }}
@@ -53,19 +58,23 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        if: ${{ !matrix.node }}
+        with:
+          bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm --filter vitest-plugin-rsc build
       - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          ${{ matrix.node && 'pnpm exec vitest run' || 'bun --bun vitest run --configLoader native' }} --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
+            echo "### Vitest on ${{ matrix.node && 'Node.js' || 'Bun' }}, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -74,17 +83,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "VITEST_SECONDS_${{ matrix.mode == 'fast' && 'FAST' || 'FIDELITY' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
       - name: Run the tests, Next and React in development
+        if: ${{ !matrix.node }}
         env:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --configLoader native --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
+            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -96,18 +106,18 @@ jobs:
       # same runner: the ratio of the two is what fast mode gains, which the
       # times of two runners, a minute apart and of other machines, hide.
       - name: Run the tests in fidelity mode, Next and React in production
-        if: matrix.mode == 'fast'
+        if: matrix.mode == 'fast' && !matrix.node
         env:
           VITEST_PLUGIN_RSC_MODE: fidelity
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --configLoader native --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
+            echo "### Vitest on Bun, production, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -116,19 +126,19 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "VITEST_SECONDS_FIDELITY_PRODUCTION=$duration" >> "$GITHUB_ENV"
       - name: Run the tests in fidelity mode, Next and React in development
-        if: matrix.mode == 'fast'
+        if: matrix.mode == 'fast' && !matrix.node
         env:
           VITEST_PLUGIN_RSC_MODE: fidelity
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
+          bun --bun vitest run --configLoader native --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
+            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -137,10 +147,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "VITEST_SECONDS_FIDELITY_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
       - name: Compare fidelity mode with fast mode
-        if: matrix.mode == 'fast'
+        if: matrix.mode == 'fast' && !matrix.node
         run: |
           {
-            echo "### Vitest, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode and fast mode on one runner"
+            echo "### Vitest on Bun, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode and fast mode on one runner"
             echo
             echo "| Next and React | Fidelity mode, seconds | Fast mode, seconds | Fidelity / fast |"
             echo "| --- | ---: | ---: | ---: |"
@@ -156,6 +166,9 @@ jobs:
   # test file, summed up by package in the summary of the run, a trace of
   # Chrome for two files, summed up by what the browser did, and both as an
   # artifact, to open in Chrome's DevTools.
+  # Vitest on Node.js, here and in the primitives below, unlike the vitest
+  # job: their numbers, the startup of the primitives too, compare with
+  # earlier runs.
   profile:
     name: Vitest, vitest-vs-playwright-notes, vitest-user-event, fast mode, CPU profile
     runs-on: ubuntu-latest
@@ -175,7 +188,7 @@ jobs:
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm --filter vitest-plugin-rsc build
       - name: Run the tests with a CPU profile of the page
-        run: pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1 tests/vitest-user-event/
+        run: pnpm exec vitest run --configLoader native -c vitest.profile.config.ts --maxWorkers 1 tests/vitest-user-event/
       - name: Sum up the profiles
         run: python3 test/profile-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Sum up the timings of the requests
@@ -184,7 +197,7 @@ jobs:
         env:
           VITEST_PROFILE: trace
         run: >-
-          pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1
+          pnpm exec vitest run --configLoader native -c vitest.profile.config.ts --maxWorkers 1
           tests/vitest-user-event/note-create.test.tsx
           tests/vitest-user-event/flow-edit-chain.test.tsx
       - name: Sum up the traces
@@ -223,13 +236,13 @@ jobs:
         env:
           VITEST_PLUGIN_RSC_MODE: fast
         run: |
-          BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run -c vitest.bench.config.ts --maxWorkers 1
+          BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run --configLoader native -c vitest.bench.config.ts --maxWorkers 1
           cat bench-results/fast.md >> "$GITHUB_STEP_SUMMARY"
       - name: Time the primitives in fidelity mode
         env:
           VITEST_PLUGIN_RSC_MODE: fidelity
         run: |
-          BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run -c vitest.bench.config.ts --maxWorkers 1
+          BENCH_SHELL_START=$(date +%s%3N) pnpm exec vitest run --configLoader native -c vitest.bench.config.ts --maxWorkers 1
           cat bench-results/fidelity.md >> "$GITHUB_STEP_SUMMARY"
       - name: Compare fidelity mode with fast mode
         run: |

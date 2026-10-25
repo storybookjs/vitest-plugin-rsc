@@ -52,11 +52,18 @@ export type SpeedOptions = {
    * one that redirects to the page, sees `RSC: 1` in its request. A page
    * that the test leaves while it loads stops rendering on the server, where
    * the render of a document would go on: a test of a render that outlives
-   * its page passes `ssr: true`. A page whose render redirects, calls
-   * `notFound()` or throws loads as a document after all, with the status
-   * and the response of that document: the server handles it twice, its
-   * proxy, its render and its data, and the request of the document has the
-   * cookies that the response of Flight set.
+   * its page passes `ssr: true`.
+   *
+   * The server handles each page once. A page whose payload redirects, with
+   * a `redirect()` anywhere in its render, Suspense or not, loads as its
+   * target, as a browser follows the 307 of a document: with one request of
+   * Flight of the target, and the `response` is the target's, with
+   * `redirected` and the final URL. The 307 itself is not in it. A redirect
+   * to another origin throws, as in fidelity mode. A `notFound()` or an
+   * error renders its boundary from the payload, with the status 200 of the
+   * response of Flight: the 404 or the 500 of a render that fails before
+   * any of the document is out is not there, as it is not with `keepApp`
+   * alone, whose document of `ssr: false` renders no HTML that could fail.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */

@@ -14,7 +14,8 @@ import { registry, type RequestHandler, type ServerRequest } from "./registry.ts
 // takes the branches of `process.env.NEXT_RUNTIME === "nodejs"`, with web
 // streams: `__NEXT_USE_NODE_STREAMS` is off. This file and build-output.ts are
 // what a Node.js server has around a request and a browser does not:
-//   - `http.IncomingMessage` and `http.ServerResponse`: here.
+//   - `http.IncomingMessage` and `http.ServerResponse`: here, with the body
+//     the browser reads of a response, when it is written and how it stops.
 //   - The files of a build, which Next reads from `.next/`: build-output.ts.
 // The request handlers are Next's own, the ones its build makes for a page
 // and for a route handler and `next start` calls: `handler(req, res, ctx)`.
@@ -44,6 +45,17 @@ function createNodeRequest(request: ServerRequest) {
 }
 
 /**
+ * How the body of a response of `handleRequest()` is written: `written`
+ * resolves once it ends, whole or not, and `stop` ends it as a page that is
+ * left does. The server writes on whether it is read or not: nothing waits
+ * for a reader.
+ */
+export type Writing = { written: Promise<void>; stop: () => void };
+const writings = new WeakMap<Response, Writing>();
+/** The `Writing` of a response of `handleRequest()` with a body. */
+export const writingOf = (response: Response): Writing | undefined => writings.get(response);
+
+/**
  * The `http.ServerResponse` of a request, which is Next's own stand-in for
  * one, and the `Response` the browser gets of it: once its head is there, while
  * Next goes on to write the body.
@@ -62,14 +74,25 @@ function createNodeResponse(request: ServerRequest) {
   // Resolves when the status and the headers are final: at the first byte.
   const head = new Promise<void>((resolve) => (sendHead = resolve)).then(() => (headSent = true));
   const encoder = new TextEncoder();
+  let ended!: () => void;
+  const bodyWritten = new Promise<void>((resolve) => (ended = resolve));
   const body = new ReadableStream<Uint8Array>({
     start: (c) => void (controller = c),
     // Whoever reads the response has left, like a browser that leaves a page.
     cancel() {
       cancelled = true;
       res.destroy();
+      ended();
     },
   });
+  // The render ends as an abort, which is what a browser that leaves a page
+  // is to a server: Next does not report it as an error of the app.
+  const stop = () => {
+    cancelled = true;
+    controller.error(AbortSignal.abort().reason);
+    res.destroy();
+    ended();
+  };
 
   const res = new MockedResponse({
     resWriter(chunk: string | Uint8Array) {
@@ -102,6 +125,7 @@ function createNodeResponse(request: ServerRequest) {
     Object.defineProperty(res, "writableFinished", { value: true, configurable: true });
     sendHead();
     controller.close();
+    ended();
     // A socket closes after the response has gone out: what Next runs then,
     // like `after()`, comes after whoever asked has its answer.
     nativeSetTimeout(() => res.destroy());
@@ -111,7 +135,9 @@ function createNodeResponse(request: ServerRequest) {
   let failure: unknown;
   res.on("error", (error) => (failure ??= error));
   res.on("close", () => {
-    if (headSent && !finished && !cancelled) controller.error(failure ?? leftBeforeSent());
+    if (!headSent || finished || cancelled) return;
+    controller.error(failure ?? leftBeforeSent());
+    ended();
   });
   // Next's stand-in rejects this for a response that ends with an error.
   // Nobody waits for it here: the body ends with the error.
@@ -127,11 +153,13 @@ function createNodeResponse(request: ServerRequest) {
     const sent = head.then(() => {
       // A status without a body, and an `end()` without a byte before it.
       const empty = (finished && !wrote) || [101, 204, 205, 304].includes(res.statusCode);
-      return new registry.Response(empty ? null : body, {
+      const answer = new registry.Response(empty ? null : body, {
         status: res.statusCode,
         statusText: res.statusMessage,
         headers: fromNodeOutgoingHttpHeaders(res.getHeaders()),
       });
+      if (!empty) writings.set(answer, { written: bodyWritten, stop });
+      return answer;
     });
     // Next's handler is done with the request, often long after the head.
     // With a head, the answer is the response of that head. Without one,

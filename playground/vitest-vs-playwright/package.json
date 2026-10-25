@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:vitest": "vitest run",
+    "test:vitest": "bun --bun vitest run --configLoader native",
+    "test:vitest:node": "vitest run --configLoader native",
     "test:playwright": "playwright test"
   },
   "dependencies": {

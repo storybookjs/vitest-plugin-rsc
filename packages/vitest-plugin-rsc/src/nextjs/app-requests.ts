@@ -229,7 +229,8 @@ export async function sendRequest(
 ): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
-  const sent = new Headers(request.headers);
+  // The request's own headers, until a redirect changes what it sends.
+  let sent = request.headers;
   // A `cookie` header of the test's own goes with the redirects the request
   // follows, with the cookies those set, as Next sends the cookies of a
   // Server Action with the page it redirects to.
@@ -279,6 +280,7 @@ export async function sendRequest(
           cause: new Error(`unexpected redirect of ${url.href} to ${location}`),
         });
       }
+      if (!redirected) sent = new Headers(sent);
       url = new URL(location, url);
       // As in `fetch`: a 301 or 302 turns a POST into a GET, a 303 anything
       // but a GET or HEAD. The rest repeat the request. The headers of a body
@@ -342,29 +344,34 @@ function withoutSetCookie(response: Response): Response {
 // A `fetch` that sends a same-origin request to the app when it is the app's,
 // and everything else to `network`. The browser's sends the headers and the
 // cookies of `store()`, the store of the page as the request starts.
+//
+// `sent` is what `sameOriginRequest()` made of the request, undefined for
+// one of another origin. Its caller makes it, once per `fetch`: the
+// browser's `fetch`, `pageFetch()`, reads it too, to tell Next's own
+// requests, and the server's makes it after its check of the URL. Reading
+// the URL and the headers again would build both a second time.
+type SameOriginFetch = (
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  sent: AppRequest | undefined,
+) => Promise<Response>;
+
 const appFetch =
-  (store: (() => PageStore) | undefined, network: () => typeof fetch): typeof fetch =>
-  async (input, init) => {
+  (store: (() => PageStore) | undefined, network: () => typeof fetch): SameOriginFetch =>
+  async (input, init, sent) => {
     const server = !store;
     // A server has no store.
     const from = store?.();
-    // A server has no page to resolve a path against: Node's `fetch` rejects it.
-    if (server && !(input instanceof Request) && !URL.canParse(String(input))) {
-      throw new TypeError(`Failed to parse URL from ${String(input)}`, {
-        cause: new TypeError("Invalid URL"),
-      });
-    }
-    const sent = sameOriginRequest(input, init);
     if (!sent) return network()(input, init);
-    // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
-    if (from) sent.headers.delete("cookie");
     const credentials =
       (init?.credentials ?? (input instanceof Request ? input.credentials : undefined)) !== "omit";
-    const headers = from
-      ? browserHeaders(new Headers(sent.headers), sent.url, sent.method, from, credentials)
-      : sent.headers;
-    if (!sent.marked && !(await takesRequest({ url: sent.url.href, headers }))) {
-      return network()(input, init);
+    if (!sent.marked) {
+      // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
+      if (from) sent.headers.delete("cookie");
+      const headers = from
+        ? browserHeaders(sent.headers, sent.url, sent.method, from, credentials)
+        : sent.headers;
+      if (!(await takesRequest({ url: sent.url.href, headers }))) return network()(input, init);
     }
     // After a `redirect()` in a Server Action, Next fetches the page it
     // redirects to from itself, with the headers of its response so far, and
@@ -476,19 +483,28 @@ export function pageFetch(
   return async (input, init) => {
     if (!store()) return network()(input, init);
     const sent = sameOriginRequest(input, init);
-    if (!sent?.marked) return browserFetch(input, init);
+    if (!sent?.marked) return browserFetch(input, init, sent);
     const action = sent.headers.has("next-action");
     const sender = page;
     if (!sender || sender.aborted) return ofLeftPage(action);
     if (speedFeature("skipPrefetch") && isPrefetch(sent, init)) return noPrefetch();
-    return heardBy(sender, browserFetch(input, init), action);
+    return heardBy(sender, browserFetch(input, init, sent), action);
   };
 }
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy
 // too. Its redirects are followed, as the `fetch` of a server follows them.
-registry.fetch = appFetch(undefined, () => networkFetch);
+const serverFetch = appFetch(undefined, () => networkFetch);
+registry.fetch = async (input, init) => {
+  // A server has no page to resolve a path against: Node's `fetch` rejects it.
+  if (!(input instanceof Request) && !URL.canParse(String(input))) {
+    throw new TypeError(`Failed to parse URL from ${String(input)}`, {
+      cause: new TypeError("Invalid URL"),
+    });
+  }
+  return serverFetch(input, init, sameOriginRequest(input, init));
+};
 // Where the server reaches itself, which `next start` sets too. Next reads it
 // when it needs it, from the global `process`.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
