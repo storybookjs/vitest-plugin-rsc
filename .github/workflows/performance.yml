@@ -24,14 +24,20 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       - run: sudo apt-get update && sudo apt-get install -y hyperfine
-      - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
+      - run: bunx --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
+      # On Node.js: what it times are the commands as they ran before,
+      # so that its numbers compare with the earlier ones.
       - run: pnpm perf:ci
       - uses: actions/upload-artifact@v4
         if: always()

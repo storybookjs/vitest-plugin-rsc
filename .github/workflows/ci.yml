@@ -22,10 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
 
@@ -36,10 +40,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm lint:ci
@@ -51,10 +59,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm tsgo
@@ -66,10 +78,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
@@ -100,12 +116,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: bunx --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - run: pnpm test:dist ${{ matrix.projects }}
 
@@ -128,12 +148,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: bunx --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test the Next.js playgrounds
         env:
@@ -156,10 +180,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       # pnpm waits a day before it installs a new release; this job is for the
       # release the tag names now. The packages that go with `next` are at
@@ -172,8 +200,8 @@ jobs:
           pnpm --filter nextjs-cache-components-demo add --config.minimum-release-age=0 next@$version @next/routing@$version
           pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$version @next/env@$version @next/routing@$version
           pnpm --filter nextjs-db-recipes add --config.minimum-release-age=0 next@$version @next/routing@$version
-          pnpm --filter nextjs-e2e-demo exec node -p "'next@' + require('next/package.json').version"
-      - run: pnpm exec playwright install --with-deps --only-shell chromium
+          pnpm --filter nextjs-e2e-demo exec bun -p "'next@' + require('next/package.json').version"
+      - run: bunx --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test the Next.js playgrounds
         env:

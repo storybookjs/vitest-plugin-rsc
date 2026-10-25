@@ -33,10 +33,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       # One version for every step: canary may publish while the job runs.
       - id: version
@@ -52,8 +56,8 @@ jobs:
           pnpm --filter nextjs-cache-components-demo add --config.minimum-release-age=0 next@$VERSION @next/routing@$VERSION
           pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$VERSION @next/env@$VERSION @next/routing@$VERSION
           pnpm --filter nextjs-db-recipes add --config.minimum-release-age=0 next@$VERSION @next/routing@$VERSION
-          pnpm --filter nextjs-e2e-demo exec node -p "'next@' + require('next/package.json').version"
-      - run: pnpm exec playwright install --with-deps --only-shell chromium
+          pnpm --filter nextjs-e2e-demo exec bun -p "'next@' + require('next/package.json').version"
+      - run: bunx --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test the Next.js playgrounds, development
         env:

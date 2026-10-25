@@ -45,10 +45,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter vitest-plugin-rsc build
       # The fixtures are fetched at the tag of the Next.js that is installed.
@@ -59,8 +63,8 @@ jobs:
         if: env.NEXT != ''
         run: |
           pnpm --filter next-conformance add --config.minimum-release-age=0 "next@$NEXT" "@next/routing@$NEXT"
-          pnpm --filter next-conformance exec node -p "'next@' + require('next/package.json').version"
-      - run: pnpm exec playwright install --with-deps --only-shell chromium
+          pnpm --filter next-conformance exec bun -p "'next@' + require('next/package.json').version"
+      - run: bunx --bun playwright install --with-deps --only-shell chromium
       - run: pnpm --filter next-conformance test
       - name: Run the fixtures
         run: |

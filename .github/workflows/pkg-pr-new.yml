@@ -22,10 +22,14 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build

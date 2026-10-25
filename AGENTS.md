@@ -34,6 +34,8 @@ The projects come in two tiers. `pnpm test` runs the fast tier, in under a minut
 
 `pnpm test` runs the root Vitest project suite against the source of the package, but for its modules of Node.js (`packages/vitest-plugin-rsc/src/node/`), which are always the built files of `dist/node/`: `pnpm test` builds the package first. `pnpm test:dist` and Vitest run directly use the built package, so run `pnpm build` first. Before a push, run `pnpm format`, `pnpm lint`, `pnpm tsgo` and `pnpm build`.
 
+The scripts run Vitest, Vite, the build, the formatter and the linters on Bun, `bun --bun`, at the version of `.bun-version`; pnpm itself runs on Node.js. Bun takes export conditions from its own `--conditions` only, not from `NODE_OPTIONS`. `pnpm test:run:node` and `pnpm test:dist:node` run the tests on Node.js.
+
 Keep Vitest project definitions and coverage settings in the root `vitest.config.ts`. Vitest coverage is process-level config, so do not add `coverage` blocks to individual project configs.
 
 The Next.js notes demo, `playground/nextjs-notes-demo`, is the in-tree acceptance app: its tests open the routes of the app with `renderServer({ url })` and cover the realistic combinations of routing, cookies, forms, Server Actions and third-party client packages, and its stories run in `storybook dev` and `storybook build`.

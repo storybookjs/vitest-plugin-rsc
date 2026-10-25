@@ -1,40 +1,30 @@
-/// <reference types="node" />
-
-import { registerHooks } from "node:module";
-
 // The export conditions that resolve a package of the repo to its source
-// instead of its build. `pnpm test` runs Node with them, `pnpm test:dist`
-// without.
-const vitestPluginRscSourceCondition = "vitest-plugin-rsc-source";
-const storybookNextjsViteRscSourceCondition = "storybook-nextjs-vite-rsc-source";
-const nodeConditions = getNodeConditions();
-
-export const vitestPluginRscSourceConditions = activeConditions(vitestPluginRscSourceCondition);
-
-export const storybookNextjsViteRscSourceConditions = activeConditions(
-  storybookNextjsViteRscSourceCondition,
+// instead of its build. `pnpm test` runs Node or Bun with them, `pnpm
+// test:dist` without. The runtime's resolver tells whether they are on, as
+// Node takes them from `--conditions` or NODE_OPTIONS and Bun from its own
+// `--conditions` only, and Bun has no `module.registerHooks` to ask.
+export const vitestPluginRscSourceConditions = activeConditions(
+  "vitest-plugin-rsc",
+  "vitest-plugin-rsc-source",
+  "./packages/vitest-plugin-rsc/src/index.ts",
 );
 
-function activeConditions(condition: string): string[] {
-  return nodeConditions.includes(condition) ? [condition] : [];
+export const storybookNextjsViteRscSourceConditions = activeConditions(
+  "@storybook/nextjs-vite-rsc",
+  "storybook-nextjs-vite-rsc-source",
+  "./packages/storybook-nextjs-vite-rsc/src/index.ts",
+);
+
+function activeConditions(specifier: string, condition: string, source: string): string[] {
+  return resolve(specifier) === new URL(source, import.meta.url).href ? [condition] : [];
 }
 
-function getNodeConditions(): string[] {
-  let conditions: string[] = [];
-
-  const hooks = registerHooks({
-    resolve(specifier, context, nextResolve) {
-      conditions = context.conditions;
-      return nextResolve(specifier, context);
-    },
-  });
-
+// Bun's resolver throws for a package that is not built yet, where Node's
+// returns the path of the build all the same: either way not the source.
+function resolve(specifier: string): string | undefined {
   try {
-    // Trigger one resolution so Node exposes the active package export conditions.
-    import.meta.resolve("node:fs");
-  } finally {
-    hooks.deregister();
+    return import.meta.resolve(specifier);
+  } catch {
+    return undefined;
   }
-
-  return conditions;
 }

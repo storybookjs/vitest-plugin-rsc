@@ -48,10 +48,10 @@
     "access": "public"
   },
   "scripts": {
-    "test": "vitest --configLoader native",
-    "test:run": "vitest run --configLoader native",
-    "dev": "tsdown --sourcemap --watch src",
-    "build": "tsdown",
+    "test": "bun --bun vitest --configLoader native",
+    "test:run": "bun --bun vitest run --configLoader native",
+    "dev": "bun --bun tsdown --sourcemap --watch src",
+    "build": "bun --bun tsdown",
     "prepack": "tsdown"
   },
   "dependencies": {

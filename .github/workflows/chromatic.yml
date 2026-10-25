@@ -32,17 +32,21 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: pnpm/action-setup@v6
+      # pnpm, and the lifecycle scripts of the install, run on Node.js: Bun is not pnpm's runtime.
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Build the Storybook
         working-directory: playground/nextjs-notes-demo
         env:
           STORYBOOK_DISABLE_TELEMETRY: "1"
-        run: pnpm exec storybook build --output-dir storybook-static
+        run: bunx --bun storybook build --output-dir storybook-static
       - uses: chromaui/action@latest
         with:
           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
