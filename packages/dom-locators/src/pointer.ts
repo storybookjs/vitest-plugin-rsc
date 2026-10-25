@@ -4,7 +4,7 @@
 // at the middle of the element or at a position in it, on what is there.
 
 import { isInsideScope, parentElementOrShadowHost } from "./dom-utils.ts";
-import { eventView, isRendered } from "./environment.ts";
+import { eventView, rendered } from "./environment.ts";
 import { UnsupportedError, escapeHatch, previewNode } from "./errors.ts";
 import { focusOnPress } from "./focus.ts";
 import { modifierState } from "./modifiers.ts";
@@ -50,7 +50,7 @@ interface Point {
  * that does not render, there is no box: the element itself, at 0, 0.
  */
 function pointFor(element: Element, position?: Position): Point {
-  if (!isRendered(element.ownerDocument)) return { x: 0, y: 0, target: element };
+  if (!rendered) return { x: 0, y: 0, target: element };
   const rect = scrollIntoView(element);
   const x = position ? rect.left + element.clientLeft + position.x : rect.left + rect.width / 2;
   const y = position ? rect.top + element.clientTop + position.y : rect.top + rect.height / 2;
@@ -164,7 +164,12 @@ function moveTo({ x, y, target }: Point): void {
       isPrimary: true,
     }),
   );
-  target.dispatchEvent(new MouseEvent("mousemove", { ...move, button: 0, buttons: heldButtons() }));
+  // A cancelled `pointerdown` holds back the mouse's own events until the release.
+  if (!held || held.mouseEvents) {
+    target.dispatchEvent(
+      new MouseEvent("mousemove", { ...move, button: 0, buttons: heldButtons() }),
+    );
+  }
 }
 
 const heldButtons = () => (held ? buttons[held.button][1] : 0);
@@ -245,7 +250,7 @@ function commonAncestor(a: Element, b: Element): Element | undefined {
 }
 
 /** What a click of Playwright's takes, of what the page models. */
-export interface ClickOptions {
+export interface MouseClick {
   button?: MouseButton;
   clickCount?: number;
   position?: Position;
@@ -256,7 +261,7 @@ export interface ClickOptions {
  * releases, `clickCount` times, with a `dblclick` of the left button after
  * the second.
  */
-export function click(element: Element, options: ClickOptions = {}): void {
+export function click(element: Element, options: MouseClick = {}): void {
   const { button = "left", clickCount = 1, position } = options;
   const point = pointFor(element, position);
   moveTo(point);
@@ -313,7 +318,7 @@ export function wheel(element: Element, delta: { x: number; y: number }, times: 
       ...modifierState(),
     });
     // A DOM that does not render scrolls nothing.
-    if (target.dispatchEvent(event) && isRendered(target.ownerDocument)) {
+    if (target.dispatchEvent(event) && rendered) {
       scrollerOf(target, delta).scrollBy({ left: delta.x, top: delta.y, behavior: "instant" });
     }
   }
@@ -336,31 +341,34 @@ function scrollerOf(target: Element, delta: { x: number; y: number }): Element {
   return target.ownerDocument.scrollingElement ?? target.ownerDocument.documentElement;
 }
 
-/** What a drag of Playwright's takes, of what the page models. */
-export interface DragOptions {
-  sourcePosition?: Position;
-  targetPosition?: Position;
-}
-
 /**
- * Playwright's `dragAndDrop()` of an element that the page drags with the
- * events of the mouse: it moves onto `source`, presses the left button,
- * moves onto `target` and lets go there. An element that the browser drags
- * itself, `draggable` as a link or an image is, throws: Chrome's drag and
- * drop of HTML is not in the package.
+ * The press of Playwright's `dragAndDrop()` on `source`, of an element that
+ * the page drags with the events of the mouse: it moves onto it and presses
+ * the left button. An element that the browser drags itself, `draggable`
+ * as a link or an image is, throws: Chrome's drag and drop of HTML is not
+ * in the package.
  */
-export function drag(source: Element, target: Element, options: DragOptions = {}): void {
-  const from = pointFor(source, options.sourcePosition);
-  for (let node: Element | undefined = from.target; node; node = parentElementOrShadowHost(node)) {
+export function pressOn(source: Element, position?: Position): void {
+  const point = pointFor(source, position);
+  for (let node: Element | undefined = point.target; node; node = parentElementOrShadowHost(node)) {
     if ((node as HTMLElement).draggable === true) {
       throw new UnsupportedError(
         `dropTo() of an element the browser drags, ${previewNode(node)}, is not in dom-locators yet: ${escapeHatch}.`,
       );
     }
   }
-  moveTo(from);
-  pressAt(from, "left", 1);
-  const to = pointFor(target, options.targetPosition);
-  moveTo(to);
-  releaseAt(to, 1);
+  moveTo(point);
+  pressAt(point, "left", 1);
+}
+
+/** The end of the drag: the mouse moves onto `target` with the button held, and lets go there. */
+export function releaseOn(target: Element, position?: Position): void {
+  const point = pointFor(target, position);
+  moveTo(point);
+  releaseAt(point, 1);
+}
+
+/** Forgets the button held, without its events: the drag failed. */
+export function forgetPress(): void {
+  held = undefined;
 }

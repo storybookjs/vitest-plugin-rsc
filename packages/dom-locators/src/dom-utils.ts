@@ -23,7 +23,7 @@
 // without a visibility is visible; added, which ivya does not have:
 // `hasVisibleBox()`. See NOTICE.
 
-import { isRendered } from "./environment.ts";
+import { rendered } from "./environment.ts";
 
 export function isInsideScope(scope: Node, element: Element | undefined): boolean {
   while (element) {
@@ -119,10 +119,7 @@ export function isElementStyleVisibilityVisible(
     }
   }
   // A DOM that does not render, like happy-dom's, may compute no visibility.
-  if (
-    style.visibility !== "visible" &&
-    (style.visibility !== "" || isRendered(element.ownerDocument))
-  ) {
+  if (style.visibility !== "visible" && (style.visibility !== "" || rendered)) {
     return false;
   }
   return true;
@@ -178,8 +175,13 @@ const isWebKit =
   /AppleWebKit/.test(navigator.userAgent) &&
   !/Chrome|Chromium|Edg/.test(navigator.userAgent);
 
-/** Whether `isElementStyleVisibilityVisible()` asks `checkVisibility()`: in a browser that has it, but WebKit. */
+/**
+ * Whether `isElementStyleVisibilityVisible()` asks `checkVisibility()`: in
+ * a browser that has it, but WebKit; not in a DOM of Node.js, whose own,
+ * of happy-dom, knows no `display: contents` and no slots.
+ */
 export const checksVisibility =
+  rendered &&
   typeof Element !== "undefined" &&
   !!(Element.prototype as Partial<Element>).checkVisibility &&
   !isWebKit;

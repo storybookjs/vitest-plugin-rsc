@@ -11,7 +11,7 @@ import {
   type ForceOptions,
   type Target,
 } from "./actionability.ts";
-import { defaultTimeout, exactByDefault, isRendered, testIdAttribute } from "./environment.ts";
+import { defaultTimeout, exactByDefault, rendered, testIdAttribute } from "./environment.ts";
 import {
   UnsupportedError,
   deferred,
@@ -21,9 +21,18 @@ import {
 } from "./errors.ts";
 import { isInsideScope, sortInDOMOrder } from "./dom-utils.ts";
 import { fill, selectOptions, setInputFiles, type SelectValue } from "./form-controls.ts";
-import { focusForPress, press, pressSequentially, type Key } from "./keyboard.ts";
+import { press, pressSequentially, type Key } from "./keyboard.ts";
 import { holdOnly, isModifier, type Modifier } from "./modifiers.ts";
-import { click, drag, hover, wheel, type MouseButton, type Position } from "./pointer.ts";
+import {
+  click,
+  forgetPress,
+  hover,
+  pressOn,
+  releaseOn,
+  wheel,
+  type MouseButton,
+  type Position,
+} from "./pointer.ts";
 import { beginAriaCaches, endAriaCaches } from "./role-utils.ts";
 import {
   byAltText,
@@ -578,17 +587,26 @@ export class DomLocator {
    */
   async wheel(options: WheelOptions): Promise<void> {
     checkActionOptions("wheel()", options, ["delta", "direction", "times"]);
-    const delta = options.delta ?? wheelDirections[options.direction!];
-    const times = options.times ?? 1;
-    if (!delta || (options.delta && options.direction)) {
+    const { direction } = options;
+    if ((options.delta === undefined) === (direction === undefined)) {
       throw new TypeError("wheel() takes either a delta or a direction.");
     }
+    if (direction !== undefined && !Object.hasOwn(wheelDirections, direction)) {
+      throw new TypeError(`wheel() has an invalid direction: ${JSON.stringify(direction)}.`);
+    }
+    const delta = options.delta ?? wheelDirections[direction!];
+    const x = delta.x ?? 0;
+    const y = delta.y ?? 0;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new TypeError(`wheel() has an invalid delta: ${JSON.stringify(options.delta)}.`);
+    }
+    const times = options.times ?? 1;
     if (!(Number.isInteger(times) && times >= 0)) {
       throw new TypeError(`wheel() has an invalid times: ${times}.`);
     }
     const element = await actionable(this.#target(), "wheel()", ["visible"], {});
-    wheel(element, { x: delta.x ?? 0, y: delta.y ?? 0 }, times);
-    if (isRendered(element.ownerDocument)) {
+    wheel(element, { x, y }, times);
+    if (rendered) {
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
   }
@@ -640,7 +658,6 @@ export class DomLocator {
   async press(key: Key, options?: PressOptions): Promise<void> {
     checkActionOptions("press()", options, ["timeout", "noWaitAfter"]);
     const element = (await actionable(this.#target(), "press()", [], options)) as HTMLElement;
-    focusForPress(element);
     press(element, key);
   }
 
@@ -657,7 +674,6 @@ export class DomLocator {
       [],
       options,
     )) as HTMLElement;
-    focusForPress(element);
     pressSequentially(element, text);
   }
 
@@ -681,9 +697,21 @@ export class DomLocator {
       }
     }
     const source = await actionable(this.#target(), "dropTo()", ["visible"], options);
-    const element = await actionable(target.#target(), "dropTo()", ["visible"], options);
-    if (options.trial) return;
-    drag(source, element, options);
+    if (options.trial) {
+      await actionable(target.#target(), "dropTo()", ["visible"], options);
+      return;
+    }
+    // As Playwright's, the target is looked for once the button is down,
+    // as a place to drop on may show on the press.
+    pressOn(source, options.sourcePosition);
+    let element: Element;
+    try {
+      element = await actionable(target.#target(), "dropTo()", ["visible"], options);
+    } catch (error) {
+      forgetPress();
+      throw error;
+    }
+    releaseOn(element, options.targetPosition);
   }
   screenshot(_options?: unknown): Promise<never> {
     return deferred("screenshot()");

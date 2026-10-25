@@ -27,28 +27,41 @@ export function isModifier(key: string): key is Modifier {
   return key === "ControlOrMeta" || Object.hasOwn(modifierKeys, key);
 }
 
-function resolve(modifier: Modifier): HeldModifier {
+/** The key a modifier names: `ControlOrMeta` is Meta on macOS, Control elsewhere. */
+function keyOf(modifier: Modifier): HeldModifier {
   if (modifier === "ControlOrMeta") return isMac ? "Meta" : "Control";
   return modifier;
 }
 
-/** Whether `modifier` is held, and no other. */
-export function isOnlyHeld(modifier: Modifier): boolean {
-  return held.size === 1 && held.has(resolve(modifier));
-}
-
 /** The modifier state of an event: its `altKey`, `ctrlKey`, `metaKey` and `shiftKey`. */
 export function modifierState(): EventModifierInit {
+  return stateOf(held);
+}
+
+/** The modifier state with `modifiers` held, and no other. */
+export function stateOf(modifiers: Iterable<Modifier>): EventModifierInit {
+  const keys = new Set([...modifiers].map(keyOf));
   return {
-    altKey: held.has("Alt"),
-    ctrlKey: held.has("Control"),
-    metaKey: held.has("Meta"),
-    shiftKey: held.has("Shift"),
+    altKey: keys.has("Alt"),
+    ctrlKey: keys.has("Control"),
+    metaKey: keys.has("Meta"),
+    shiftKey: keys.has("Shift"),
   };
 }
 
+/** Whether `state` is of `modifier` alone. */
+export function isStateOf(state: EventModifierInit, modifier: Modifier): boolean {
+  const only = stateOf([modifier]);
+  return (
+    !!state.altKey === only.altKey &&
+    !!state.ctrlKey === only.ctrlKey &&
+    !!state.metaKey === only.metaKey &&
+    !!state.shiftKey === only.shiftKey
+  );
+}
+
 /** The `keydown` or `keyup` of a modifier, on the element with the focus. */
-function dispatch(type: "keydown" | "keyup", modifier: HeldModifier): void {
+function dispatchKey(type: "keydown" | "keyup", modifier: HeldModifier): void {
   const target = activeElement() ?? document.body;
   target.dispatchEvent(
     new KeyboardEvent(type, {
@@ -68,16 +81,16 @@ function dispatch(type: "keydown" | "keyup", modifier: HeldModifier): void {
 
 /** Holds `modifier` down: its `keydown`, which has itself in its state. */
 export function holdDown(modifier: Modifier): void {
-  const key = resolve(modifier);
+  const key = keyOf(modifier);
   held.add(key);
-  dispatch("keydown", key);
+  dispatchKey("keydown", key);
 }
 
 /** Lets `modifier` go: its `keyup`, which has it no more in its state. */
 export function letGo(modifier: Modifier): void {
-  const key = resolve(modifier);
+  const key = keyOf(modifier);
   if (!held.delete(key)) return;
-  dispatch("keyup", key);
+  dispatchKey("keyup", key);
 }
 
 /**
@@ -87,12 +100,11 @@ export function letGo(modifier: Modifier): void {
  */
 export function holdOnly(modifiers: readonly Modifier[]): () => void {
   const before = [...held];
-  const wanted = new Set(modifiers.map(resolve));
-  set(wanted);
-  return () => set(new Set(before));
+  holdExactly(new Set(modifiers.map(keyOf)));
+  return () => holdExactly(new Set(before));
 }
 
-function set(wanted: Set<HeldModifier>): void {
+function holdExactly(wanted: Set<HeldModifier>): void {
   for (const key of Object.keys(modifierKeys) as HeldModifier[]) {
     if (wanted.has(key) && !held.has(key)) holdDown(key);
     else if (!wanted.has(key) && held.has(key)) letGo(key);

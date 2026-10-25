@@ -10,22 +10,19 @@ import { eventView } from "./environment.ts";
 import { UnsupportedError, escapeHatch } from "./errors.ts";
 import { activeElement, commitChange, focus, focusNext } from "./focus.ts";
 import {
-  deleteBackward,
-  deleteForward,
+  backwardDeletion,
+  editText,
+  forwardDeletion,
   inputEvent,
-  insertText,
+  insertion,
   isContentEditable,
   isTextControl,
+  keepsEdit,
   setSelection,
+  type Edit,
+  type TextControl,
 } from "./form-controls.ts";
-import {
-  holdDown,
-  isModifier,
-  isOnlyHeld,
-  letGo,
-  modifierState,
-  type Modifier,
-} from "./modifiers.ts";
+import { holdDown, isModifier, isStateOf, letGo, stateOf, type Modifier } from "./modifiers.ts";
 import { pointerEventOf } from "./pointer.ts";
 
 /** A key of `press()`: a named key, or one printable character, after the modifiers held for it, like "Shift+Tab". */
@@ -150,7 +147,7 @@ function onEnter(element: HTMLElement): void {
     return;
   }
   if (element instanceof HTMLTextAreaElement) {
-    insertText(element, "insertLineBreak", "\n");
+    editText(element, insertion("\n", "insertLineBreak"));
     return;
   }
   if (!(element instanceof HTMLInputElement) || !isTextControl(element)) return;
@@ -196,9 +193,12 @@ function split(combination: string): string[] {
 }
 
 /**
- * Presses `combination` on `element`, which has the focus, as Playwright's
- * `keyboard.press()`: the modifiers before its last key held down, in
- * order, the key pressed, and the modifiers let go, the last first.
+ * Presses `combination` on `element` as Playwright's `locator.press()`: the
+ * focus first, then the modifiers before its last key held down, in order,
+ * the key pressed, and the modifiers let go, the last first. What the
+ * package does not model throws before any event, but for a typed text
+ * that the control would not keep, which is told once the focus has put
+ * the caret.
  */
 export function press(element: HTMLElement, combination: Key): void {
   const keys = split(combination);
@@ -211,30 +211,99 @@ export function press(element: HTMLElement, combination: Key): void {
     }
     return modifier;
   });
+  const planned = () =>
+    isModifier(key) ? undefined : planOf(element, key, combination, modifiers);
+  planned();
+  focusForPress(element);
+  const plan = planned();
   for (const modifier of modifiers) holdDown(modifier);
   try {
-    if (isModifier(key)) {
-      holdDown(key);
-      letGo(key);
-    } else {
-      pressKey(element, key, combination);
+    if (plan) pressKey(element, plan);
+    else {
+      holdDown(key as Modifier);
+      letGo(key as Modifier);
     }
   } finally {
     for (const modifier of modifiers.reverse()) letGo(modifier);
   }
 }
 
+/** What a key does to the element it is pressed on, worked out before its events. */
+interface KeyPlan {
+  definition: KeyDefinition;
+  held: EventModifierInit;
+  /** Whether Control, Meta or Alt is held: the key is a shortcut. */
+  shortcut: boolean;
+  /** The text control the key is pressed on, whose caret it moves. */
+  control: TextControl | undefined;
+  /** That control, if it is not read-only: the key edits its text. */
+  text: TextControl | undefined;
+  /** The edit of the text the key makes. */
+  edit: Edit | undefined;
+}
+
 /**
- * Presses `key` on `element`: `keydown`, `keypress` for a key of a
- * character and Enter, what the key does, then `keyup` on what has the
- * focus by then. Space clicks a button after `keyup`, as Chrome does. With
- * Control, Meta or Alt held, a character types nothing: ControlOrMeta+a
- * selects the text of a text control, and another shortcut in it throws.
+ * The plan of `key` with `modifiers` held, or what the package does not
+ * model, thrown: a key in a `contenteditable` element; the arrows of a
+ * select, a radio, a range or a date; ArrowUp and ArrowDown in a text
+ * control; a key with Control, Meta or Alt in a text control but
+ * ControlOrMeta+a, and with Tab, Enter or Space anywhere; the keys of the
+ * clipboard; a typed text that a number, an email or a URL input would not
+ * keep.
  */
-function pressKey(element: HTMLElement, key: string, combination: string): void {
+function planOf(
+  element: HTMLElement,
+  key: string,
+  combination: string,
+  modifiers: Modifier[],
+): KeyPlan {
   const definition = definitionOf(key, combination);
-  const held = modifierState();
-  const shortcut = held.ctrlKey || held.metaKey || held.altKey;
+  const held = stateOf(modifiers);
+  const shortcut = !!(held.ctrlKey || held.metaKey || held.altKey);
+  const control = isTextControl(element) ? element : undefined;
+  const text = control && !control.readOnly && !control.disabled ? control : undefined;
+  const unsupported = (why: string) =>
+    new UnsupportedError(
+      `press("${combination}") ${why} is not in dom-locators yet: ${escapeHatch}, or userEvent.keyboard().`,
+    );
+  const named = definition.key;
+  if (isContentEditable(element) && !control && named !== "Escape" && named !== "Tab") {
+    throw unsupported("in a contenteditable element");
+  }
+  const caretKey = caretKeys.has(named);
+  if (caretKey && !control && isSteppedByArrows(element)) {
+    throw unsupported(`on a ${element.localName}`);
+  }
+  if (control && /^Arrow(Up|Down)$/.test(named)) throw unsupported("in a text control");
+  const selectAll = definition.code === "KeyA" && isStateOf(held, "ControlOrMeta");
+  if (shortcut) {
+    if (control && !selectAll && named !== "Escape") throw unsupported("in a text control");
+    if (named === "Tab" || named === "Enter" || named === " ") throw unsupported("as a shortcut");
+    if (/^Key[CVX]$/.test(definition.code)) throw unsupported("of the clipboard");
+  }
+  let edit: Edit | undefined;
+  if (text && !shortcut) {
+    if (named === "Backspace") edit = backwardDeletion;
+    else if (named === "Delete") edit = forwardDeletion;
+    else if (definition.charCode !== undefined && named !== "Enter") edit = insertion(named);
+    if (edit && !keepsEdit(text, edit)) {
+      throw unsupported(`in an input of type ${text.type}, which would not keep it as typed,`);
+    }
+  }
+  return { definition, held, shortcut, control, text, edit };
+}
+
+/**
+ * Presses a key by its plan: `keydown`, `keypress` for a key of a
+ * character and Enter, what the key does, then `keyup` on what has the
+ * focus by then. Space clicks a button after `keyup`, as Chrome does. A
+ * shortcut types nothing: ControlOrMeta+a selects the text of a text
+ * control, and another is the page's own handlers' alone.
+ */
+function pressKey(
+  element: HTMLElement,
+  { definition, held, shortcut, control, text, edit }: KeyPlan,
+): void {
   const init: KeyboardEventInit = {
     key: definition.key,
     code: definition.code,
@@ -246,25 +315,6 @@ function pressKey(element: HTMLElement, key: string, combination: string): void 
     view: eventView(element.ownerDocument),
     ...held,
   };
-  const text = isTextControl(element) && !element.readOnly && !element.disabled;
-  const editable = isContentEditable(element) && !isTextControl(element);
-  const unsupported = (why: string) =>
-    new UnsupportedError(
-      `press("${combination}") ${why} is not in dom-locators yet: ${escapeHatch}, or userEvent.keyboard().`,
-    );
-  if (editable && definition.key !== "Escape" && definition.key !== "Tab") {
-    throw unsupported("in a contenteditable element");
-  }
-  const caretKey = caretKeys.has(definition.key);
-  if (caretKey && !text && isSteppedByArrows(element))
-    throw unsupported(`on a ${element.localName}`);
-  if (caretKey && text && /^Arrow(Up|Down)$/.test(definition.key)) {
-    throw unsupported("in a text control");
-  }
-  const selectAll = definition.code === "KeyA" && isOnlyHeld("ControlOrMeta");
-  if (shortcut && text && definition.charCode !== undefined && definition.key !== "Enter") {
-    if (!selectAll) throw unsupported("in a text control");
-  }
   let act = element.dispatchEvent(new KeyboardEvent("keydown", init));
   // A link acts on Enter's `keydown`, and then has no `keypress`, as Chrome.
   const link = element instanceof HTMLAnchorElement && element.hasAttribute("href");
@@ -272,8 +322,7 @@ function pressKey(element: HTMLElement, key: string, combination: string): void 
     keyClick(element);
     act = false;
   }
-  // A shortcut has no `keypress`, but for Enter.
-  if (act && definition.charCode !== undefined && (!shortcut || definition.key === "Enter")) {
+  if (act && definition.charCode !== undefined && !shortcut) {
     act = element.dispatchEvent(
       new KeyboardEvent("keypress", {
         ...init,
@@ -285,36 +334,19 @@ function pressKey(element: HTMLElement, key: string, combination: string): void 
   }
   let clickAfterKeyup = false;
   if (act) {
-    switch (definition.key) {
-      case "Enter":
-        onEnter(element);
-        break;
-      case "Tab":
-        focusNext(element, isVisible, !!held.shiftKey);
-        break;
-      case "Escape":
-        break;
-      case "Backspace":
-        if (text) deleteBackward(element);
-        break;
-      case "Delete":
-        if (text) deleteForward(element);
-        break;
-      default:
-        if (caretKey) {
-          if (text) moveCaret(element, definition.key, !!held.shiftKey);
-        } else if (selectAll) {
-          if (text) element.select();
-        } else if (shortcut) {
-          // A shortcut outside a text control: the page's own handlers alone.
-        } else if (text) {
-          insertText(element, "insertText", definition.key);
-        } else if (definition.key === " ") {
-          clickAfterKeyup =
-            element instanceof HTMLButtonElement ||
-            element.localName === "summary" ||
-            (element instanceof HTMLInputElement && clickOnSpace.has(element.type));
-        }
+    if (edit && text) editText(text, edit);
+    else if (definition.key === "Enter") onEnter(element);
+    else if (definition.key === "Tab") focusNext(element, isVisible, !!held.shiftKey);
+    else if (caretKeys.has(definition.key)) {
+      if (control) moveCaret(control, definition.key, !!held.shiftKey);
+    } else if (shortcut) {
+      // Select all, of a text control, read-only too.
+      if (definition.code === "KeyA" && control) control.select();
+    } else if (definition.key === " ") {
+      clickAfterKeyup =
+        element instanceof HTMLButtonElement ||
+        element.localName === "summary" ||
+        (element instanceof HTMLInputElement && clickOnSpace.has(element.type));
     }
   }
   const target = (activeElement() as HTMLElement | null) ?? document.body;
@@ -344,8 +376,9 @@ function isSteppedByArrows(element: Element): boolean {
 }
 
 /**
- * The caret of a text control after an arrow, Home or End: by a character,
- * or to the start or the end of the line, collapsing the selection, or
+ * The caret of a text control after an arrow, Home or End: by a character
+ * as it is seen, a letter with its accents or an emoji, or to the start or
+ * the end of the line, by its line breaks, collapsing the selection, or
  * moving its end that moves for Shift. A control without a selection, like
  * an email input, keeps its caret to itself.
  */
@@ -364,13 +397,16 @@ function moveCaret(
   let to: number;
   switch (key) {
     case "ArrowLeft":
-      to = !extend && start !== end ? start : Math.max(focus - 1, 0);
+      to = !extend && start !== end ? start : characterBoundary(value, focus, -1);
       break;
     case "ArrowRight":
-      to = !extend && start !== end ? end : Math.min(focus + 1, value.length);
+      to = !extend && start !== end ? end : characterBoundary(value, focus, 1);
       break;
     case "Home":
-      to = element instanceof HTMLTextAreaElement ? value.lastIndexOf("\n", focus - 1) + 1 : 0;
+      to =
+        element instanceof HTMLTextAreaElement && focus > 0
+          ? value.lastIndexOf("\n", focus - 1) + 1
+          : 0;
       break;
     default: {
       const lineEnd = value.indexOf("\n", focus);
@@ -387,23 +423,58 @@ function moveCaret(
     );
 }
 
+const graphemes =
+  typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : undefined;
+
+/** The boundary of the character as it is seen before (`-1`) or after (`1`) `index` in `value`. */
+function characterBoundary(value: string, index: number, direction: -1 | 1): number {
+  if (direction < 0 ? index <= 0 : index >= value.length) return index;
+  if (!graphemes) return index + direction;
+  let boundary = direction < 0 ? 0 : value.length;
+  for (const { index: at } of graphemes.segment(value)) {
+    if (direction < 0 ? at < index : at > index) {
+      if (direction < 0) boundary = at;
+      else return at;
+    }
+  }
+  return boundary;
+}
+
 /**
  * Playwright's `pressSequentially(text)`: a press of each character's key,
  * Enter for a line break, and for a character the keyboard has no key for,
- * like "é", its text alone in a text control, as `keyboard.insertText()`.
+ * like "é", its text alone, as `keyboard.insertText()`: into a text control
+ * that is not read-only, nowhere else, and a `contenteditable` element
+ * throws.
  */
 export function pressSequentially(element: HTMLElement, text: string): void {
+  focusForPress(element);
   for (const char of text) {
     const target = (activeElement() as HTMLElement | null) ?? element;
     if (char === "\n" || char === "\r") press(target, "Enter");
     else if (/^[\x20-\x7e]$/.test(char)) press(target, char);
-    else if (isTextControl(target)) insertText(target, "insertText", char);
+    else if (isTextControl(target)) {
+      const edit = insertion(char);
+      if (target.readOnly || target.disabled) continue;
+      if (!keepsEdit(target, edit)) {
+        throw new UnsupportedError(
+          `pressSequentially() of "${char}" in an input of type ${target.type}, which would not keep it as typed, is not in dom-locators yet: ${escapeHatch}.`,
+        );
+      }
+      editText(target, edit);
+    } else if (isContentEditable(target)) {
+      throw new UnsupportedError(
+        `pressSequentially() in a contenteditable element is not in dom-locators yet: ${escapeHatch}.`,
+      );
+    }
   }
 }
 
-/** Focuses `element` for `press()`, as Playwright does: the caret at the start of a text control the focus comes to. */
-export function focusForPress(element: HTMLElement): void {
+/** Focuses `element` for `press()`, as Playwright does: the caret at the start of an input the focus comes to. */
+function focusForPress(element: HTMLElement): void {
   if (activeElement() === element) return;
   focus(element);
-  if (isTextControl(element)) setSelection(element, 0, 0);
+  if (element instanceof HTMLInputElement && isTextControl(element)) setSelection(element, 0, 0);
 }

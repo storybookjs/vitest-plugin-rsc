@@ -90,23 +90,16 @@ export function testIdAttribute(): string {
   return browserRunner()?.config?.browser?.locators?.testIdAttribute ?? settings.testIdAttribute;
 }
 
-const rendered = new WeakMap<Document, boolean>();
-
 /**
- * Whether `document` is laid out and styled as a browser does it: its root
- * element is as wide as the window. A DOM of Node.js, jsdom's or
- * happy-dom's, lays nothing out, so every box is empty, and has no styles of
- * pseudo-elements: what is visible is told by the style alone, and a click
- * lands on the element itself. Read once per document, as it does not change.
+ * Whether the DOM is laid out and styled as a browser does it. A DOM of
+ * Node.js, jsdom's or happy-dom's, lays nothing out, so every box is empty,
+ * and has no styles of pseudo-elements: what is visible is told by the
+ * style alone, and a click lands on the element itself. Told by Node.js
+ * running the page, not by a box, which a test of jsdom may mock.
  */
-export function isRendered(document: Document): boolean {
-  let value = rendered.get(document);
-  if (value === undefined) {
-    value = document.documentElement.clientWidth > 0;
-    rendered.set(document, value);
-  }
-  return value;
-}
+export const rendered =
+  typeof (globalThis as { process?: { versions?: { node?: unknown } } }).process?.versions?.node !==
+  "string";
 
 /**
  * The `view` of the events of `document`: its window, but none in a DOM
@@ -114,5 +107,5 @@ export function isRendered(document: Document): boolean {
  * jsdom's events do not take.
  */
 export function eventView(document: Document): Window | null {
-  return isRendered(document) ? document.defaultView : null;
+  return rendered ? document.defaultView : null;
 }
