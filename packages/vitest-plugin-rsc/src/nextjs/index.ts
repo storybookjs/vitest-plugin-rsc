@@ -7,7 +7,7 @@ import { resetDisk } from "./disk.ts";
 import "./document-loads.ts";
 import { speedFeature } from "./speed-features.ts";
 import { NodeOnPage } from "./node-on-page.ts";
-import { leavePage, loadPage } from "./page.ts";
+import { leavePage, loadPage, preloadClient } from "./page.ts";
 import { registry, type Opened } from "./registry.ts";
 import { loadedSsrLayer, rscLayer, ssrLayer } from "./server-layers.ts";
 
@@ -15,8 +15,12 @@ import { loadedSsrLayer, rscLayer, ssrLayer } from "./server-layers.ts";
 // the app, so both layers of Next's server start to load as it evaluates,
 // before the first request asks for them, and the rsc layer, the document's
 // own graph, is there once it has. What a request waits for, and what not:
-// see app-requests.ts.
-void ssrLayer();
+// see app-requests.ts. Once they are there, the modules of the app's client
+// come, which the first page load runs: after the layers, which the host
+// waits for first. A page load that needs one that failed gets its error.
+ssrLayer()
+  .then(preloadClient)
+  .catch(() => {});
 await rscLayer();
 
 /**

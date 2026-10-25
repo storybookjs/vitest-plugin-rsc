@@ -2,7 +2,12 @@
 // its document until it is left: a page load makes it part by part, and
 // leaving it takes those back, the last part first, one page at a time.
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
+import {
+  checkFetchedModules,
+  createEnvironmentRunner,
+  environmentModule,
+  preloadModules,
+} from "../utils.ts";
 import {
   leftTheApp,
   setOpenPage,
@@ -145,6 +150,18 @@ export class Page {
 let current: Page | undefined;
 
 type Client = typeof import("./client.tsx");
+// The app's client entry, which every page load runs: see client.tsx.
+const clientModule = environmentModule("react_client", "vitest-plugin-rsc/nextjs/client");
+
+/**
+ * Fetches the modules of the app's client entry, which the next page load
+ * runs, without running them: see `preloadModules()` in utils.ts. The dev
+ * server compiles them meanwhile, as the main chunk of a deployment is in a
+ * browser's cache before a page runs it.
+ */
+export function preloadClient(): Promise<void> {
+  return preloadModules("react_client", clientModule);
+}
 
 // The kept app of `keepApp`: the one the first page of a test file started,
 // which renders the pages after it in its root, from the Flight payload in
@@ -413,9 +430,7 @@ async function openPage(
   const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   const started = (async () => {
     try {
-      const client = await runner.import<Client>(
-        environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
-      );
+      const client = await runner.import<Client>(clientModule);
       superseded();
       const { unmount, leaveApp } = await client.start(
         loaded,
