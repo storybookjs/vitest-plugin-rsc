@@ -406,6 +406,9 @@ function workerPlugins(answers: PageAnswers): Plugin[] {
               /\/node_modules\/@vitejs\/plugin-rsc\//,
             ];
           }
+          // The page in a realm of its own, and Node's web APIs on the
+          // worker's global for the server: see happy-dom-environment.ts.
+          if (test.environment === "happy-dom") test.environment = ownFile("happy-dom-environment");
           // What the optimizer of the rsc layer scans: the test files and the
           // setup files, which Vitest names with Browser Mode only. Without
           // them it finds their dependencies as a test imports them, and

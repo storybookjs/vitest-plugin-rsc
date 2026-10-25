@@ -110,6 +110,8 @@ export default defineConfig([
       // Imported by their files: see `pageHostId` of src/index.ts.
       "src/browser-host.ts",
       "src/node-host.ts",
+      // Vitest's environment of a project with happy-dom: see the file.
+      "src/happy-dom-environment.ts",
       "src/async-hooks.ts",
       // Under the `node` condition of its export: see the file.
       "src/async-hooks-node.ts",
@@ -150,6 +152,7 @@ export default defineConfig([
         /^virtual:/,
         /^@vitejs\/plugin-rsc\/vendor\//,
         /^vitest(\/|$)/,
+        "happy-dom",
         // Left as this import in dist: it resolves to the entry of its own,
         // dist/nextjs/node-rendered.js, with its "use client". See rsc.ts.
         "vitest-plugin-rsc/nextjs/node-rendered",

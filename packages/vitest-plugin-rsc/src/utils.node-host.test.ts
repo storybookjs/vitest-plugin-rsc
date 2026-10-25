@@ -48,7 +48,13 @@ vi.mock("virtual:vitest-plugin-rsc/host-modules", () => ({ default: undefined })
 vi.mock("virtual:vitest-plugin-rsc/layers", () => ({ default: undefined }));
 vi.mock("virtual:vitest-plugin-rsc/vite-client", () => ({}));
 vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
-  default: { request: answer, modules: vitestModules() },
+  default: {
+    request: answer,
+    modules: vitestModules(),
+    // One realm: the window's is not what this test is about.
+    compileInPage: (params: string[], body: string) =>
+      new (async function () {}.constructor as FunctionConstructor)(...params, body),
+  },
 }));
 
 const {
