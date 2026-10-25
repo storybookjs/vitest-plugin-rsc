@@ -48,8 +48,9 @@ export const page: DomPage = {
   extend(methods) {
     return Object.assign(page, methods);
   },
-  viewport: () => deferred("page.viewport()"),
-  screenshot: () => deferred("page.screenshot()"),
-  mark: () => deferred("page.mark()"),
+  // A promise's methods reject, as the type says.
+  viewport: async () => deferred("page.viewport()"),
+  screenshot: async () => deferred("page.screenshot()"),
+  mark: async () => deferred("page.mark()"),
   frameLocator: () => deferred("page.frameLocator()"),
 };

@@ -6,7 +6,8 @@
 import {
   actionable,
   checkActionOptions,
-  followLabel,
+  retarget,
+  actionTimeout,
   type ActionOptions,
   type ForceOptions,
   type Target,
@@ -193,7 +194,11 @@ const filterOptions = new Set(["hasText", "hasNotText", "has", "hasNot"]);
 // `expect.element()` passes its own options on to `findElement()`.
 const findOptions = new Set(["timeout", "strict", "interval", "message"]);
 
-/** Vitest's CSS path of an element, which its `elementLocator()` sends to the provider. */
+/**
+ * Vitest's CSS path of an element, which its `elementLocator()` sends to
+ * the providers of WebdriverIO and of the preview; with Playwright's it
+ * sends a selector that Playwright generates, which the package does not.
+ */
 function cssPathOf(element: Element): string {
   const parts: string[] = [];
   // The parent, or the host of a shadow root, as Vitest's.
@@ -342,7 +347,9 @@ export class DomLocator {
   findElement(options: FindOptions = {}): Promise<HTMLElement | SVGElement> {
     for (const key of Object.keys(options)) {
       if (!findOptions.has(key)) {
-        throw new TypeError(`findElement() has no option "${key}": it takes timeout and strict.`);
+        throw new UnsupportedError(
+          `findElement() has no option "${key}" in dom-locators: it takes timeout and strict.`,
+        );
       }
     }
     const strict = options.strict ?? true;
@@ -391,8 +398,8 @@ export class DomLocator {
   filter(options: FilterOptions): DomLocator {
     for (const key of Object.keys(options ?? {})) {
       if (!filterOptions.has(key)) {
-        throw new TypeError(
-          `filter() has no option "${key}": it takes ${[...filterOptions].join(", ")}.`,
+        throw new UnsupportedError(
+          `filter() has no option "${key}" in dom-locators: it takes ${[...filterOptions].join(", ")}.`,
         );
       }
     }
@@ -545,7 +552,7 @@ export class DomLocator {
   async unhover(options: HoverOptions = {}): Promise<void> {
     checkActionOptions("unhover()", options, hoverKeys);
     checkMouseOptions("unhover()", options);
-    await actionable(this.#target(), "unhover()", [], options);
+    // As Vitest's, which hovers `html > body` without a look at its own locator.
     if (options.trial) return;
     withModifiers(options.modifiers, () => hover(document.body, options.position));
   }
@@ -554,14 +561,14 @@ export class DomLocator {
   async fill(text: string, options?: FillOptions): Promise<void> {
     checkActionOptions("fill()", options, fillKeys);
     const checks = ["visible", "enabled", "editable"] as const;
-    fill(await actionable(this.#target(), "fill()", [...checks], options, followLabel), text);
+    fill(await actionable(this.#target(), "fill()", [...checks], options, retarget), text);
   }
 
   /** Empties an input or a textarea: `fill("")`. */
   async clear(options?: FillOptions): Promise<void> {
     checkActionOptions("clear()", options, fillKeys);
     const checks = ["visible", "enabled", "editable"] as const;
-    fill(await actionable(this.#target(), "clear()", [...checks], options, followLabel), "");
+    fill(await actionable(this.#target(), "clear()", [...checks], options, retarget), "");
   }
 
   /**
@@ -577,7 +584,7 @@ export class DomLocator {
         `upload() of a path is not in dom-locators, as the page cannot read a file: give it a File, or ${escapeHatch}.`,
       );
     }
-    const element = await actionable(this.#target(), "upload()", [], options, followLabel);
+    const element = await actionable(this.#target(), "upload()", [], options, retarget);
     setInputFiles(element, list as File[]);
   }
 
@@ -623,7 +630,7 @@ export class DomLocator {
       "selectOptions()",
       ["visible", "enabled"],
       options,
-      followLabel,
+      retarget,
     );
     const select = await waitUntil(
       () => {
@@ -639,7 +646,7 @@ export class DomLocator {
         const apply = selectOptions(element, resolved);
         return apply ? { value: apply } : undefined;
       },
-      options?.timeout ?? defaultTimeout(),
+      actionTimeout(options),
       () =>
         new Error(
           `selectOptions() timed out: ${this.asLocator()} has no enabled option of ${list.map(String).join(", ")}.`,
@@ -713,10 +720,10 @@ export class DomLocator {
     }
     releaseOn(element, options.targetPosition);
   }
-  screenshot(_options?: unknown): Promise<never> {
+  async screenshot(_options?: unknown): Promise<never> {
     return deferred("screenshot()");
   }
-  mark(_name: string, _options?: unknown): Promise<void> {
+  async mark(_name: string, _options?: unknown): Promise<void> {
     return deferred("mark()");
   }
 }

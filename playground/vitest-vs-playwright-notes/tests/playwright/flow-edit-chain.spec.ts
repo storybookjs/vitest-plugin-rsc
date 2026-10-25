@@ -11,11 +11,11 @@ for (let i = 0; i < 50; i++) {
     expectTitles,
   }) => {
     const user = await signedIn();
-    await seedNotes(user.id, [
+    const [draft] = await seedNotes(user.id, [
       { title: `Draft ${i}`, content: "First version" },
       { title: "Other" },
     ]);
-    await page.goto("/notes/1");
+    await page.goto(`/notes/${draft!.id}`);
 
     for (const [k, title] of edits.entries()) {
       await page.getByRole("link", { name: "Edit" }).click();
@@ -27,7 +27,7 @@ for (let i = 0; i < 50; i++) {
     await page.getByRole("link", { name: "All notes" }).click();
 
     await expectTitles(["Other", edits.at(-1)!]);
-    expect((await storedNotes())[0]).toEqual({
+    expect((await storedNotes(user.id))[0]).toEqual({
       title: edits.at(-1),
       content: `Version ${edits.length + 1}`,
       favorite: false,

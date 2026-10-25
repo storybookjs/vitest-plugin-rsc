@@ -91,6 +91,8 @@ export const inputEvent = (inputType: string, data: string | null, cancelable: b
 export interface Edit {
   inputType: string;
   data: string | null;
+  /** The text it puts in, where its `data` is none: a line break's. */
+  text?: string;
   range(value: string, start: number, end: number): [number, number];
 }
 
@@ -100,6 +102,14 @@ export const insertion = (text: string, inputType = "insertText"): Edit => ({
   data: text,
   range: (_value, start, end) => [start, end],
 });
+
+/** Enter's line break in a textarea: no `data`, as Chrome's `insertLineBreak`. */
+export const lineBreak: Edit = {
+  inputType: "insertLineBreak",
+  data: null,
+  text: "\n",
+  range: (_value, start, end) => [start, end],
+};
 
 const graphemes =
   typeof Intl !== "undefined" && "Segmenter" in Intl
@@ -148,7 +158,7 @@ function apply(
     element.selectionEnd ?? before.length,
   ];
   const [from, to] = edit.range(before, start, end);
-  let inserted = edit.data ?? "";
+  let inserted = edit.text ?? edit.data ?? "";
   if (element.maxLength >= 0) {
     inserted = inserted.slice(0, Math.max(0, element.maxLength - (before.length - (to - from))));
   }

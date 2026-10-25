@@ -1,5 +1,5 @@
 import { expect, test } from "./test.ts";
-import { createUser, grace, seedNotes } from "#test/db.ts";
+import { createUser, seedNotes } from "#test/db.ts";
 
 const notes = [
   { title: "Groceries", content: "Oat milk, bread, cheese" },
@@ -75,9 +75,9 @@ test("trims the query", async ({ page, signedIn, expectTitles }) => {
   await expect(page.getByLabel("Search")).toHaveValue("cheese");
 });
 
-test("does not find the notes of other users", async ({ page, signedIn, expectTitles }) => {
+test("does not find the notes of other users", async ({ page, people, signedIn, expectTitles }) => {
   const user = await signedIn();
-  const other = await createUser(grace);
+  const other = await createUser(people.grace);
   await seedNotes(user.id, notes);
   await seedNotes(other.id, [{ title: "Grace's milk" }]);
   await page.goto("/notes?q=milk");

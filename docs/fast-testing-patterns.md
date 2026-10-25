@@ -3,7 +3,7 @@
 How to make the tests of a Next.js App Router app fast: what a test costs, the patterns that make it cheaper with what each gives up, how to find where your own suite spends its time, and what didn't pay. Read it once, before you tune anything. Every number was measured, and its footnote says on what, when and how often. [Fast tests](fast-tests.md) has the full measurements behind most of them.
 
 > [!NOTE]
-> **Status, 25 October 2026.** Fast mode and its features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), not released yet. `dom-locators` (#255) and the host of the page in Node.js (#261 and the PRs on top of it) are draft pull requests. A pattern that needs one of them says so. Several numbers ran on a build with both merged in; the host in Node.js also changes the browser's side of the plugin, and what that does to a run in Chromium isn't measured on its own.
+> **Status, 25 October 2026.** Fast mode and its features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), not released yet. `dom-locators` (#255) is on #251 too; the host of the page in Node.js (#261 and the PRs on top of it) is on draft pull requests. A pattern that needs the host in Node.js says so. Several numbers ran on a build with both merged in; the host in Node.js also changes the browser's side of the plugin, and what that does to a run in Chromium isn't measured on its own.
 
 - [What costs what](#what-costs-what)
 - [The patterns](#the-patterns)
@@ -144,10 +144,10 @@ export async function resetDb(): Promise<void> {
 
 **Fewer queries.** A query takes 0.21–0.26 ms, about half of it Postgres itself. What makes a data layer fast in production makes it fast here. The benchmark kept the signed-in user in a signed cookie, as Better Auth's cookie cache does, and took 1.4–1.5 ms off each test; Drizzle's prepared statements took about 0.7 ms.[^data-layer] [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests) has the code of each.
 
-**Data per test, where workers share a database.** Playwright's tests share one server and one database, so emptying it before a test would delete another worker's rows. Draft #298 rewrites both columns of the benchmark so that each test has data of its own instead: a user with a unique email, and the ids of the notes its seed returns. Nothing is emptied between tests.
+**Data per test, where workers share a database.** Playwright's tests share one server and one database, so emptying it before a test would delete another worker's rows. Every column of the benchmark gives each test data of its own instead (#298): a user with a unique email, and the ids of the notes its seed returns. Nothing is emptied between tests.
 
 ```ts
-// playground/vitest-vs-playwright-notes/test/db.ts, on #298
+// playground/vitest-vs-playwright-notes/test/db.ts
 export function seedNotes(ownerId: number, list: NewNote[]) {
   return db
     .insert(notes)
@@ -156,9 +156,9 @@ export function seedNotes(ownerId: number, list: NewNote[]) {
 }
 ```
 
-Draft #297 does the other thing: a server and a database per worker of Playwright, with the reset before each test kept. In Vitest every worker has its own database already, and the reset costs well under a millisecond, so data per test has little to win there; nobody has compared the two in Vitest.
+With `PLAYWRIGHT_ISOLATION=worker` (#297), the benchmark does the other thing: a server and a database per worker of Playwright, and the tables emptied before each test, as before #298. The table of [the benchmark's README](../playground/vitest-vs-playwright-notes/README.md) has the two side by side. In Vitest every worker has its own database already, and the reset takes 0.30 ms a test, 0.15 s of a run of 500 tests at 1 worker,[^reset] so data per test can win little more than that there; the two haven't run side by side in Vitest yet.
 
-**Pin the clock before the database starts.** PGlite's Postgres times its own timeouts with the page's `Date.now()`. A clock pinned months back after the database armed a timeout puts the timeout months away, longer than a `setTimeout()` can wait. In the host in Node.js, Node.js then fires it at once, and Postgres, which sees that it isn't due, arms it again: 4,037 times in one test.[^clock] It's not measured in Chromium. So call `vi.setSystemTime()` at the top of the setup file, before anything imports the database, rather than in a `beforeEach()` after the reset, as the recipes in [Databases](databases.md) and the notes demo still do:
+**Pin the clock before the database starts.** PGlite's Postgres times its own timeouts with the page's `Date.now()`. A clock pinned months back after the database armed a timeout puts the timeout months away, longer than a `setTimeout()` can wait. In the host in Node.js, Node.js then fires it at once, and Postgres, which sees that it isn't due, arms it again: 4,037 times in one test.[^clock] It's not measured in Chromium. So call `vi.setSystemTime()` at the top of the setup file, before anything imports the database, rather than in a `beforeEach()` after the reset, as the recipes in [Databases](databases.md) still do:
 
 ```ts
 // vitest.setup.ts
@@ -186,7 +186,7 @@ await expect.element(page.getByText("Archived.")).toBeVisible();
 
 Vitest's `page.getByRole(...).click()` sends the click to Playwright, in Node.js, and back: about 50 ms. Testing Library's `user-event` clicks in the page, in 0.12 ms.[^primitives] A test of a few clicks spends more on Playwright's round trips than on everything else it does.
 
-`dom-locators`, on draft #255, is Vitest's `page` answered in the document: the same locators, waits and actions, without the round trip. A test changes one import:
+`dom-locators` (#255, on #251) is Vitest's `page` answered in the document: the same locators, waits and actions, without the round trip. A test changes one import:
 
 ```diff
 - import { page } from "vitest/browser";
@@ -256,6 +256,8 @@ Why it stops there:
 - **Every worker loads Next's runtime before its first test.** With as many workers as cores, a first test can time out. The notes demo sets `maxWorkers: 4`.
 
 On your machine the knee is elsewhere: measure 2, 4 and 6 workers, and take the fewest that are as fast.
+
+Playwright's workers on the same 500 tests, against one `next start` or a server per worker, are in the table of [the benchmark's README](../playground/vitest-vs-playwright-notes/README.md), with both runners on 3000 tests, each at its best worker count.
 
 ### Without a browser: happy-dom or jsdom
 
@@ -345,7 +347,7 @@ Every measurement ran on an M1 Pro with 8 performance and 2 efficiency cores and
 
 [^modes]: 25 Oct 2026. The `user-event` column, Bun, 1 worker, both modes with `watchDom`, on #251 with #284 (76aeedb9), in one session: fast mode's 5 rounds, then fidelity mode's 3, each interleaved with #251 before #284. Means 14.73 ± 0.47 s and 19.07 ± 0.79 s, medians 14.78 and 18.80 s. 24.5 ms per test is 14.73 s less the same 2.49 s of start, over 500.
 
-[^playwright]: 25 Oct 2026. The benchmark's Playwright column against `next start`, Postgres 17 in Docker on tmpfs, 1 worker: 203.6 s for the 500 tests, one run, start included. On a CI runner with 4 vCPUs: 228 s, 450 ms per test (run 40186820219).
+[^playwright]: 25 Oct 2026. The wall of the 500 tests with 1 worker, start included, over 500: the table of [the benchmark's README](../playground/vitest-vs-playwright-notes/README.md), which has both of its Playwright setups and Vitest at 1, 2, 4 and 5 workers.
 
 [^requests]: 25 Oct 2026. One timings run of the `dom-locators` column, on the build of the 1-worker run of [What a test costs](fast-tests.md#what-a-test-costs), at a resolution of 0.1 ms. "With its render" is the CPU profile of that build, idle time included. About 11 queries per test. [Per request](fast-tests.md#per-request), [Where the time goes](fast-tests.md#where-the-time-goes).
 

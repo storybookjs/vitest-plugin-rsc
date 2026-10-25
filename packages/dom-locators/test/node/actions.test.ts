@@ -76,7 +76,7 @@ test("trial checks and does not act; force acts at once, and throws for what is 
   expect(log).toContain("click@button button=0 detail=1");
   (document.querySelector("button") as HTMLElement).style.display = "none";
   await expect(page.getByText("Save").click({ force: true })).rejects.toThrow(UnsupportedError);
-  await expect(page.getByText("Save").click({ timeout: 0 })).rejects.toThrow(/is not visible/);
+  await expect(page.getByText("Save").click({ timeout: 1 })).rejects.toThrow(/is not visible/);
 });
 
 test("the arrows, Home and End move the caret, with Shift its selection", async () => {
@@ -298,4 +298,112 @@ test("the keys of press() go to what has the focus, when the element takes none"
   if (navigator.userAgent.includes("HappyDOM")) return expect(targets).toEqual(["p"]);
   expect(targets).toEqual(["input"]);
   expect(page.getByLabelText("Name").element()).toHaveProperty("value", "ab");
+});
+
+test("the checks of enabled and editable look at the button or the label's control an element is in", async () => {
+  document.body.innerHTML = `
+    <button disabled><span>Send</span></button>
+    <label>Agree <input type="checkbox" disabled></label>
+    <label>Title <input readonly></label>`;
+  await expect(page.getByText("Send").click({ timeout: 1 })).rejects.toThrow(/is disabled/);
+  await expect(page.getByText("Agree").click({ timeout: 1 })).rejects.toThrow(/is disabled/);
+  await expect(page.getByText("Title").fill("x", { timeout: 1 })).rejects.toThrow(
+    /is not editable/,
+  );
+  (document.querySelector("button") as HTMLButtonElement).disabled = false;
+  await page.getByText("Send").click({ timeout: 1 });
+  expect(log).toContain("click@span button=0 detail=1");
+});
+
+test("a timeout of 0 is no limit for an action, as Playwright's", async () => {
+  document.body.innerHTML = "";
+  const click = page.getByRole("button", { name: "Late" }).click({ timeout: 0 });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  document.body.innerHTML = "<button>Late</button>";
+  await click;
+  expect(log).toContain("click@button button=0 detail=1");
+});
+
+test("a timeout longer than a timer's waits", async () => {
+  document.body.innerHTML = "";
+  const found = page.getByText("Later").findElement({ timeout: Infinity });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  document.body.innerHTML = "<p>Later</p>";
+  expect(await found).toBe(document.querySelector("p"));
+});
+
+test("unhover moves the mouse onto the body without a look at its locator", async () => {
+  await page.getByText("Nothing like it").unhover();
+  document.body.innerHTML = "<p>Two</p><p>Two</p>";
+  await page.getByText("Two").unhover();
+});
+
+test("an option the package does not model throws UnsupportedError", async () => {
+  // @ts-expect-error Playwright's option, which the page does not model.
+  await expect(page.getByText("Save").click({ delay: 1 })).rejects.toThrow(UnsupportedError);
+  // @ts-expect-error not an option of findElement().
+  expect(() => page.getByText("Save").findElement({ state: "visible" })).toThrow(UnsupportedError);
+  // @ts-expect-error not an option of filter().
+  expect(() => page.getByText("Save").filter({ visible: true })).toThrow(UnsupportedError);
+});
+
+test("Tab passes over the controls of a disabled fieldset", async (context) => {
+  document.body.innerHTML = `
+    <input aria-label="First">
+    <fieldset disabled><input aria-label="Off"></fieldset>
+    <input aria-label="Last">`;
+  // happy-dom's `:disabled` leaves out the controls of a disabled fieldset.
+  if (!document.querySelector('[aria-label="Off"]')!.matches(":disabled")) return context.skip();
+  await page.getByLabelText("First").press("Tab");
+  expect(document.activeElement).toBe(document.querySelector('[aria-label="Last"]'));
+});
+
+test("a key with an effect of Chrome's the package does not model throws before any event", async () => {
+  document.body.innerHTML = `
+    <form>
+      <input type="radio" name="size" aria-label="Small">
+      <input type="checkbox" aria-label="Agree">
+      <details><summary>More</summary></details>
+      <input type="search" aria-label="Search" value="notes">
+    </form>`;
+  log.length = 0;
+  await expect(page.getByLabelText("Agree").press("Tab")).rejects.toThrow(UnsupportedError);
+  await expect(page.getByLabelText("Agree").press("Enter")).rejects.toThrow(UnsupportedError);
+  await expect(page.getByText("More").press("Enter")).rejects.toThrow(UnsupportedError);
+  await expect(page.getByLabelText("Search").press("Escape")).rejects.toThrow(UnsupportedError);
+  document.body.insertAdjacentHTML("beforeend", "<dialog open><button>Close</button></dialog>");
+  await expect(page.getByText("Close").press("Escape")).rejects.toThrow(UnsupportedError);
+  expect(log.filter((entry) => entry.startsWith("key"))).toEqual([]);
+});
+
+test("Enter submits by the form's first submit button, an image's too", async () => {
+  document.body.innerHTML = `
+    <form><input aria-label="Name"><input type="image" alt="Go"><button>Later</button></form>`;
+  await page.getByLabelText("Name").press("Enter");
+  expect(log.filter((entry) => entry.startsWith("click@"))).toEqual([
+    "click@input button=0 detail=0",
+  ]);
+});
+
+test("Enter in a textarea breaks the line, with no data", async () => {
+  document.body.innerHTML = '<textarea aria-label="Notes"></textarea>';
+  const data: (string | null)[] = [];
+  const area = document.querySelector("textarea")!;
+  for (const type of ["beforeinput", "input"]) {
+    area.addEventListener(type, (event) => data.push((event as InputEvent).data));
+  }
+  await page.getByLabelText("Notes").press("Enter");
+  expect(area.value).toBe("\n");
+  // happy-dom's `InputEvent` has "" for no data.
+  const none = new InputEvent("input", { data: null }).data;
+  expect(data).toEqual([none, none]);
+});
+
+test("Space clicks a button after its keyup, unless the keyup is cancelled", async () => {
+  const button = document.querySelector("button")!;
+  button.addEventListener("keyup", (event) => event.preventDefault(), { once: true });
+  await page.getByRole("button", { name: "Save" }).press(" ");
+  expect(log.filter((entry) => entry.startsWith("click"))).toEqual([]);
+  await page.getByRole("button", { name: "Save" }).press(" ");
+  expect(log.filter((entry) => entry.startsWith("click"))).toHaveLength(1);
 });

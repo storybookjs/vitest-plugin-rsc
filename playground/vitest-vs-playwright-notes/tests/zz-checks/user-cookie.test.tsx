@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
@@ -12,17 +13,17 @@ import { signedIn } from "#test/vitest.ts";
 // up, as a user's don't.
 
 test("signedIn() leaves the user cookie of a sign-in", async () => {
-  await signedIn();
-  await db.delete(sessions);
+  const user = await signedIn();
+  await db.delete(sessions).where(eq(sessions.userId, user.id));
   await renderServer({ url: "/notes" });
 
   await expect.element(page.getByText("No notes yet")).toBeInTheDocument();
 });
 
 test("without the user cookie, a request looks the session up", async () => {
-  await signedIn();
+  const user = await signedIn();
   document.cookie = "session_user=; path=/; max-age=0";
-  await db.delete(sessions);
+  await db.delete(sessions).where(eq(sessions.userId, user.id));
   await renderServer({ url: "/notes" });
 
   await expect.element(page.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();

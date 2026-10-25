@@ -32,8 +32,17 @@ export type Check = "visible" | "enabled" | "editable";
 
 /** The options every action takes. */
 export interface ActionOptions {
-  /** How long to wait for the element, in milliseconds. Default: until just before the test times out. */
+  /**
+   * How long to wait for the element, in milliseconds, 0 for no limit, as
+   * Playwright's. Default: until just before the test times out.
+   */
   timeout?: number;
+}
+
+/** How long an action waits: its `timeout`, where 0 is no limit, as Playwright's, else the default. */
+export function actionTimeout(options: ActionOptions | undefined): number {
+  const timeout = options?.timeout;
+  return timeout === 0 ? Infinity : (timeout ?? defaultTimeout());
 }
 
 /** The options of an action that Playwright's takes with `force`. */
@@ -54,7 +63,7 @@ export function checkActionOptions(
 ): void {
   for (const key of Object.keys(options ?? {})) {
     if (!keys.includes(key)) {
-      throw new TypeError(
+      throw new UnsupportedError(
         `${action} has no option "${key}" in dom-locators, which takes ${keys.join(", ")}: use vitest/browser's locator for it.`,
       );
     }
@@ -92,7 +101,7 @@ export function actionable(
       }
       return reason === undefined ? { value: element } : undefined;
     },
-    options.timeout ?? defaultTimeout(),
+    actionTimeout(options),
     () =>
       reason === undefined
         ? elementNotFound(target.asLocator(), target.container())
@@ -100,13 +109,16 @@ export function actionable(
   );
 }
 
+// As Playwright's `elementState()`: the element is visible, and the control
+// it is a part of is enabled and editable.
 function failedCheck(element: Element, checks: Check[]): string | undefined {
   if (!element.isConnected) return "is not attached to the document";
   if (checks.includes("visible") && !isVisible(element)) return "is not visible";
-  if ((checks.includes("enabled") || checks.includes("editable")) && getAriaDisabled(element)) {
+  const control = retarget(element);
+  if ((checks.includes("enabled") || checks.includes("editable")) && getAriaDisabled(control)) {
     return "is disabled";
   }
-  if (checks.includes("editable") && isReadonly(element)) return "is not editable";
+  if (checks.includes("editable") && isReadonly(control)) return "is not editable";
   return undefined;
 }
 
@@ -160,13 +172,25 @@ function isReadonly(element: Element): boolean {
 }
 
 /**
- * A form control's element for an element that is none: the control of the
- * label it is in, as Playwright's `fill()` and `selectOption()` find it.
+ * The control an element is a part of, as Playwright's
+ * `retarget(node, "follow-label")` (playwright-core 1.64.1): the button,
+ * checkbox or radio it is in, else the control of the label it is in. What
+ * the checks of an enabled and an editable element look at, and what
+ * `fill()`, `selectOption()` and `setInputFiles()` act on.
  */
-export function followLabel(element: Element): Element {
-  if (!element.matches("input, textarea, select") && !isContentEditable(element)) {
-    const label = element.closest("label");
-    if (label?.control) return label.control;
+export function retarget(element: Element): Element {
+  let target = element;
+  if (!target.matches("input, textarea, select") && !isContentEditable(target)) {
+    target = target.closest("button, [role=button], [role=checkbox], [role=radio]") ?? target;
   }
-  return element;
+  if (
+    !target.matches(
+      "a, input, textarea, button, select, [role=link], [role=button], [role=checkbox], [role=radio]",
+    ) &&
+    !isContentEditable(target)
+  ) {
+    const label = target.closest("label");
+    if (label?.control) target = label.control;
+  }
+  return target;
 }

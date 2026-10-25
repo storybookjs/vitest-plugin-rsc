@@ -1,10 +1,10 @@
 import { expect, test } from "./test.ts";
-import { createUser, grace, seedNotes, storedNotes } from "#test/db.ts";
+import { createUser, seedNotes, storedNotes } from "#test/db.ts";
 
 test("requires a title", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1/edit");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await page.getByLabel("Title").fill("");
   await page.getByRole("button", { name: "Save note" }).click();
@@ -14,8 +14,8 @@ test("requires a title", async ({ page, signedIn }) => {
 
 test("rejects a title of more than 100 characters", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1/edit");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await page.getByLabel("Title").fill("x".repeat(101));
   await page.getByRole("button", { name: "Save note" }).click();
@@ -25,8 +25,8 @@ test("rejects a title of more than 100 characters", async ({ page, signedIn }) =
 
 test("rejects content of more than 2000 characters", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1/edit");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await page.getByLabel("Content").fill("x".repeat(2001));
   await page.getByRole("button", { name: "Save note" }).click();
@@ -36,8 +36,8 @@ test("rejects content of more than 2000 characters", async ({ page, signedIn }) 
 
 test("keeps the edits after an error", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await page.goto("/notes/1/edit");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await page.getByLabel("Title").fill("");
   await page.getByLabel("Content").fill("Changed");
@@ -49,23 +49,23 @@ test("keeps the edits after an error", async ({ page, signedIn }) => {
 
 test("stores nothing after an error", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await page.goto("/notes/1/edit");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await page.getByLabel("Title").fill("");
   await page.getByLabel("Content").fill("Changed");
   await page.getByRole("button", { name: "Save note" }).click();
 
   await expect(page.getByText("Title is required.")).toBeVisible();
-  expect(await storedNotes()).toEqual([
+  expect(await storedNotes(user.id)).toEqual([
     { title: "Groceries", content: "Oat milk", favorite: false },
   ]);
 });
 
 test("marks the title invalid", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1/edit");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await page.getByLabel("Title").fill("");
   await page.getByRole("button", { name: "Save note" }).click();
@@ -75,8 +75,8 @@ test("marks the title invalid", async ({ page, signedIn }) => {
 
 test("saves once the error is fixed", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1/edit");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await page.getByLabel("Title").fill("");
   await page.getByRole("button", { name: "Save note" }).click();
@@ -87,26 +87,26 @@ test("saves once the error is fixed", async ({ page, signedIn }) => {
   await expect(page.getByText("Note saved.")).toBeVisible();
 });
 
-test("shows a 404 for the note of another user", async ({ page, signedIn }) => {
+test("shows a 404 for the note of another user", async ({ page, people, signedIn }) => {
   await signedIn();
-  const other = await createUser(grace);
-  await seedNotes(other.id, [{ title: "Grace's" }]);
-  await page.goto("/notes/1/edit");
+  const other = await createUser(people.grace);
+  const [note] = await seedNotes(other.id, [{ title: "Grace's" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await expect(page.getByText("This page could not be found.")).toBeVisible();
 });
 
 test("shows a 404 for a note that does not exist", async ({ page, signedIn }) => {
   await signedIn();
-  await page.goto("/notes/42/edit");
+  await page.goto("/notes/0/edit");
 
   await expect(page.getByText("This page could not be found.")).toBeVisible();
 });
 
 test("counts the characters as one types", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await page.goto("/notes/1/edit");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await page.goto(`/notes/${note!.id}/edit`);
 
   await page.getByLabel("Content").fill("abc");
 

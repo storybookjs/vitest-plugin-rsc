@@ -6,7 +6,8 @@ How to get the quickest feedback loop for the end-to-end scenarios of a Next.js 
 > **Status, 25 October 2026.** None of this is released yet. Fast mode and its speed features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), the pull request of fast mode, and so is everything below unless it names a draft pull request on top of it:
 >
 > - On #251: both modes and every speed feature, `watchDom` in both modes, the wait for the next change of the document (#266), the data layer of the notes apps (#262), one CommonJS object per ES module in the pre-bundles (#264), the patch of `@vitest/mocker` (#258), the profile config at any number of workers (#271), the stylesheets of a route asked once per run (#268), the server layer compiled while Chromium launches (#275), the benchmark's signed-in user from a signed cookie (#276), the `import.meta` of a module once per file (#277), and the benchmark on Bun.
-> - On draft pull requests: `dom-locators` (#255) and the host of the page in Node.js without a browser (#261, and #267 for the benchmark in happy-dom and jsdom). Without a pull request: a preload of the app's client during the setup files (`wip/lifecycle-3-preload`).
+> - On #251 since 25 October: `dom-locators` (#255).
+> - On draft pull requests: the host of the page in Node.js without a browser (#261, and #267 for the benchmark in happy-dom and jsdom). Without a pull request: a preload of the app's client during the setup files (`wip/lifecycle-3-preload`).
 >
 > The headline numbers come from one build, **#251 after #276, before #277, with `dom-locators` (#255) and the host in Node.js merged in**: the walls of a run with 1 and 4 workers, and the time of each kind of request. Both columns of the benchmark sign in through one helper, with the signed cookie of #276. The host in Node.js also changes the browser's side of the plugin; what that does to a run in Chromium isn't measured on its own. A section that uses an earlier build says which.
 
@@ -29,7 +30,7 @@ On the 500 tests of the notes benchmark, on an M1 Pro:
 - **Wait with `expect.element()` and `expect.poll()`, without an `interval`.** With `watchDom`, on in both modes, they look again on the next change of the page: a run of fidelity mode takes about 26 s instead of 60. See [Waiting for the page](#waiting-for-the-page).
 - **Fast mode for the loop, fidelity mode in CI.** Its features took about 16 ms off each test of fidelity mode before #284: on an earlier build, a run of 24.5 s took about 16.6 s. Since #284, fidelity mode is faster, and the gap is about 8–9 ms: see [Fast testing patterns](fast-testing-patterns.md#fast-mode-for-the-loop-fidelity-mode-in-ci). See [The two modes](#the-two-modes).
 - **4 workers.** 6.85 s instead of 14.21 s, with `dom-locators`. See [Workers](#workers).
-- **Clicks and queries in the page.** A click of Vitest's goes to Playwright and back, about 50 ms; one of `user-event` takes 0.1 ms. `dom-locators` (draft #255) takes another 2.0 ms off a test. See [The test's own code](#the-tests-own-code).
+- **Clicks and queries in the page.** A click of Vitest's goes to Playwright and back, about 50 ms; one of `user-event` takes 0.1 ms. `dom-locators` (#255) takes another 2.0 ms off a test. See [The test's own code](#the-tests-own-code).
 - **Vitest on Bun.** A run of one test file starts its first test 0.88 s sooner than on Node.js with `pnpm exec`. See [The start of a run](#the-start-of-a-run).
 - **A warm dependency cache, and a `cacheDir` per config.** Without a cache, one file takes about 1 s longer. See [A cold cache](#a-cold-cache).
 - **Fewer queries, prepared once.** The signed-in user from a signed cookie took 1.4 ms off a test (#276), Drizzle's prepared statements 0.7 ms. See [The data layer](#the-data-layer).
@@ -181,7 +182,7 @@ On the benchmark's notes page, with 20 notes, in fast mode, in the benchmark of 
 
 A click of the DOM's own, `element.click()`, takes 0.040 ms, and so does a fill of its own. Vitest's click and fill are Playwright's: each goes from the page to Node.js and back. Its fill takes 8.0 ms on a CI runner, in the benchmark of primitives (the median of 100). The Testing Library column's clicks and fills are `user-event`'s. That primitive hands `user-event` the element, where the click of `dom-locators` first finds it and checks that it's visible and enabled; its queries are faster, and that's where it saves time.
 
-The micro test of `dom-locators`, `packages/dom-locators/test/micro.test.ts` on #255, times each primitive alone on a static copy of the notes page with 20 notes, without Next or React, against Vitest's own in the same run, so its click renders nothing. In µs per call, the median of 5 runs of the test, each the median of 20 batches of 50, at a resolution of 2 µs:
+The micro test of `dom-locators`, `packages/dom-locators/test/micro.test.ts`, times each primitive alone on a static copy of the notes page with 20 notes, without Next or React, against Vitest's own in the same run, so its click renders nothing. In µs per call, the median of 5 runs of the test, each the median of 20 batches of 50, at a resolution of 2 µs:
 
 | primitive                     | Vitest's `page` | `dom-locators` |
 | ----------------------------- | --------------: | -------------: |
@@ -195,7 +196,7 @@ Of a click of `dom-locators`, 30–32 µs are its events: the pointer and mouse 
 
 ### `dom-locators`
 
-`dom-locators`, on draft [#255](https://github.com/storybookjs/vitest-plugin-rsc/pull/255), is `page` of `vitest/browser` answered inside the document: the same locators, the same elements in the same order, its waits and its actions, without a round trip to Playwright and without Testing Library. A test of `vitest/browser` changes one import:
+`dom-locators` ([#255](https://github.com/storybookjs/vitest-plugin-rsc/pull/255), on #251) is `page` of `vitest/browser` answered inside the document: the same locators, the same elements in the same order, its waits and its actions, without a round trip to Playwright and without Testing Library. A test of `vitest/browser` changes one import:
 
 ```diff
 - import { page } from "vitest/browser";
@@ -206,9 +207,9 @@ Of a click of `dom-locators`, 30–32 µs are its events: the pointer and mouse 
   await expect.element(page.getByText("Note created.")).toBeInTheDocument();
 ```
 
-On the benchmark, the `dom-locators` column takes 2.0 ms per test less than the `user-event` column: 16.26 → 15.25 s, by the median of 5 interleaved rounds, faster in each, on #251 before #262, #264 and #266. All of it is on the page's side. The package's own code cost about 2.2 ms per test on that build (focusing an element 0.43, the pointer events 0.45, checking that it's visible 0.14), and replaces Vitest's locators, 1.4 ms, and `user-event`, 2.3.
+On the benchmark, the `dom-locators` column takes 2.0 ms per test less than the `user-event` column: 16.26 → 15.25 s, by the median of 5 interleaved rounds, faster in each, on #251 before #262, #264 and #266. All of it is on the page's side. The package's own code cost about 2.2 ms per test on that build, and replaces Vitest's locators, 1.4 ms, and `user-event`, 2.3. In that build's CPU profile (one run, the profiler on, 2.4 ms per test), half of it is the browser's own work that it calls: a focus 0.40, the layout and the style that the visibility check reads 0.35, which Playwright's actions force too, and the dispatch of the events 0.2. Its own JavaScript, 1.1 ms, is mostly its queries; the package's README says what is left of it.
 
-What differs from Playwright's actions: every event is the page's own, so `isTrusted` is `false`, and an action doesn't wait for an element to stop moving or for what covers it to go. The package's README, on #255, has the full table. `dom-locators` is private: the repository's benchmark and playgrounds use it, and it isn't on npm.
+What differs from Playwright's actions: every event is the page's own, so `isTrusted` is `false`, and an action doesn't wait for an element to stop moving or for what covers it to go. The package's README, `packages/dom-locators/README.md`, has the full table. `dom-locators` is private: the repository's benchmark and playgrounds use it, and it isn't on npm.
 
 ### Testing Library's `user-event`
 
@@ -231,7 +232,7 @@ The benchmark's config lists Testing Library in `host.packages` of `vitestPlugin
 
 The database runs in the tab, on the thread that also clicks and renders: a query is CPU time, not a round trip. In the profile of [Where the time goes](#where-the-time-goes), the app's code and its database take 3.31 ms of a test's 26.60; in the earlier profile, before #262 and the signed cookie of #276, the database alone took 5.1 of 30.9, about as much as all of Next. In a timings run of the `user-event` column on #251 before #268, with #262 and the signed cookie of #276, its queries take 1.9 s of the tests' 13.0 s, about 3.8 ms per test, measured otherwise than a profile; Postgres in WebAssembly is about half of a query's time. So what makes a data layer fast in production makes it fast here: fewer queries, and less work around each.
 
-The notes apps look the signed-in user up once per render, with React's `cache()`, and empty the tables before each test with one string of `DELETE`s. The benchmark also keeps the user in a signed cookie for a few minutes (#276), counts the notes only for a search, and prepares its queries. [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests) has the code of each, what it saved in the benchmark, and the database's time per kind of request.
+The notes apps look the signed-in user up once per render, with React's `cache()`. The notes demo empties the tables before each test with one string of `DELETE`s; the benchmark did too, until each of its tests had a user of its own, and the numbers on this page were measured with it. The benchmark also keeps the user in a signed cookie for a few minutes (#276), counts the notes only for a search, and prepares its queries. [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests) has the code of each, what it saved in the benchmark, and the database's time per kind of request.
 
 Two that didn't pay in the benchmark: `TRUNCATE` instead of the `DELETE`s, which [the same section](databases.md#a-fast-data-layer-in-tests) explains, and PGlite without durability, with `synchronous_commit` and `full_page_writes` off, which changed nothing (15.26 and 15.34 s by the median of 5 interleaved rounds): PGlite doesn't sync to disk in the tests already.
 
@@ -321,7 +322,7 @@ npx vitest run --maxWorkers 4
 
 Each worker loads Next's runtime before its first test, so many workers on few cores can time out the first test. The notes demo sets `maxWorkers: 4`. Test files of about the same length, rather than one long one, let more workers help.
 
-The benchmark compares Vitest with Playwright on 1 worker. Playwright's tests share one database there, Postgres in Docker, so they can't run in parallel; every worker of Vitest has a database of its own. A run of Vitest with 4 workers is a different comparison, not the same benchmark faster.
+The benchmark compares Vitest with Playwright at 1 and at 4 workers. Each test has a user and notes of its own, so Playwright's workers share one `next start` and one Postgres, `fullyParallel`, as a project's suite runs; every worker of Vitest is a page with a database of its own. At 1 worker the two compare test by test; at 4, what each needs to run the suite on one machine. The [benchmark's README](../playground/vitest-vs-playwright-notes/README.md) has the numbers.
 
 ## Without a browser
 

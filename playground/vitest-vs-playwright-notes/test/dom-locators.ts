@@ -1,9 +1,18 @@
-import { expect } from "vitest";
+import { expect, test as base } from "vitest";
 import { page, type Locator } from "dom-locators";
+import { ada, grace, person, type Person } from "./people.ts";
 
-// The helpers of tests/dom-locators/: test/vitest.ts, by test/write-dom-locators-tests.ts.
+// The helpers of tests/dom-locators/: test/vitest.ts, by test/write-columns.ts.
 
 export { signedIn } from "./sign-in.ts";
+
+/** Vitest's `test` with `people`: Ada and Grace of this test, for the tests that fill the forms. */
+export const test = base.extend<{ people: { ada: Person; grace: Person } }>({
+  // oxlint-disable-next-line no-empty-pattern -- Vitest reads the fixtures a fixture uses from this pattern.
+  people: async ({}, use) => {
+    await use({ ada: person(ada), grace: person(grace) });
+  },
+});
 
 /** The titles of the list of notes, in order. */
 export async function expectTitles(titles: string[]): Promise<void> {

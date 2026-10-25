@@ -41,6 +41,16 @@ The ported files keep the Apache License 2.0 header and say what changed:
   Changed: the engines take a locator's arguments instead of a selector
   string; the role engine looks at the candidates of a role only.
 
+Functions after Playwright's, of the same license, in files of the package's
+own (playwright-core 1.64.1, packages/playwright-core/src/server/injected/):
+
+- src/errors.ts: `previewNode()`, after `previewNode()` of injectedScript.ts.
+- src/actionability.ts: `retarget()`, `isReadonly()` and its roles, after
+  `retarget()` of injectedScript.ts and `getReadonly()` of roleUtils.ts.
+- src/form-controls.ts: what `fill()`, `selectOptions()` and `upload()` do
+  to a control, after `fill()`, `selectOptions()` and `setInputFiles()` of
+  injectedScript.ts.
+
 Also from Vitest (https://github.com/vitest-dev/vitest, MIT License,
 Copyright (c) 2021-Present VoidZero Inc. and Vitest contributors): the CSS
 path of `elementLocator()` in src/locator.ts, after

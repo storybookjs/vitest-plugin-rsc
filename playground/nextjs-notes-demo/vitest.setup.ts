@@ -1,7 +1,6 @@
 import { vi, beforeAll, beforeEach, afterEach, afterAll, expect, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { setupWorker } from "msw/browser";
-import * as dbModule from "#lib/db.ts";
 import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
 import { TEST_NOW } from "#test/now.ts";
 
@@ -11,7 +10,17 @@ import { TEST_NOW } from "#test/now.ts";
 // each test without the app's cookies.
 vi.mock("#lib/db.ts");
 
-const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
+// The page's clock stopped at TEST_NOW, as in the stories: the date of a note
+// that a test writes is the same on every run. Stopped before the database
+// does any work, here before it loads, and kept stopped through the file's
+// tests: Postgres in PGlite times its own timeouts by the page's `Date.now()`
+// too. A timeout that it armed by the real clock is months away by the
+// stopped one, longer than a `setTimeout` can wait, which fires it early, and
+// Postgres arms it again: a busy loop, from 10 s after the arm for as long as
+// the clock stays stopped.
+vi.setSystemTime(new Date(TEST_NOW));
+
+const { resetDb } = (await import("#lib/db.ts")) as typeof import("#lib/__mocks__/db.ts");
 
 const disableMotionStyle = document.createElement("style");
 disableMotionStyle.textContent = `
@@ -58,11 +67,18 @@ beforeAll(async () => {
     quiet: true,
     serviceWorker: { url: "/mockServiceWorker.js" },
   });
+  // The real clock between files, after every hook of the file, the plugin's
+  // `afterAll` too: Browser Mode imports the setup files again for the next
+  // file by a URL with `Date.now()` in it, which a stopped clock would
+  // repeat, and an import of the same URL runs nothing.
+  return () => {
+    vi.useRealTimers();
+  };
 });
 
 let consoleError: MockInstance<typeof console.error>;
 
-beforeEach(async () => {
+beforeEach(async ({ onTestFinished }) => {
   consoleError = vi.spyOn(console, "error");
   consoleError.mockClear();
   // The plugin has left the page of the previous test by now, so the pointer
@@ -71,13 +87,13 @@ beforeEach(async () => {
   worker.resetHandlers();
   await resetDb();
 
-  // The page's clock stopped at TEST_NOW, as in the stories: the date of a
-  // note that a test writes is the same on every run.
-  vi.setSystemTime(new Date(TEST_NOW));
-
-  return () => {
+  // A test's own timers and time go, the stopped clock stays. The last thing
+  // the test does: after the test's own `onTestFinished`, which may give the
+  // real clock back.
+  onTestFinished(() => {
     vi.useRealTimers();
-  };
+    vi.setSystemTime(new Date(TEST_NOW));
+  });
 });
 
 afterEach(async () => {

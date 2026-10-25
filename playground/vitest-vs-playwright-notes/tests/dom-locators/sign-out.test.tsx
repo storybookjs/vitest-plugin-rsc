@@ -14,13 +14,13 @@ test("signs out", async () => {
 });
 
 test("ends the session", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/notes" });
 
   await page.getByRole("button", { name: "Sign out" }).click();
 
   await expect.element(page.getByText("You are signed out.")).toBeInTheDocument();
-  expect(await sessionCount()).toBe(0);
+  expect(await sessionCount(user.id)).toBe(0);
 });
 
 test("shows the links to sign in after signing out", async () => {

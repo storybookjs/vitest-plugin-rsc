@@ -15,3 +15,4 @@ CREATE TABLE IF NOT EXISTS "notes" (
 	"content" text DEFAULT '' NOT NULL,
 	"favorite" boolean DEFAULT false NOT NULL
 );
+CREATE INDEX IF NOT EXISTS "notes_owner_id_index" ON "notes" ("owner_id");

@@ -74,14 +74,14 @@ test("marks the title invalid", async ({ page, signedIn }) => {
 });
 
 test("stores nothing after an error", async ({ page, signedIn }) => {
-  await signedIn();
+  const user = await signedIn();
   await page.goto("/notes/new");
 
   await page.getByLabel("Content").fill("No title");
   await page.getByRole("button", { name: "Create note" }).click();
 
   await expect(page.getByText("Title is required.")).toBeVisible();
-  expect(await storedNotes()).toEqual([]);
+  expect(await storedNotes(user.id)).toEqual([]);
 });
 
 test("creates the note once the error is fixed", async ({ page, signedIn }) => {

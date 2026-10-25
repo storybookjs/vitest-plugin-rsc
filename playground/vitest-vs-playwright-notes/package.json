@@ -11,7 +11,8 @@
     "start": "next start",
     "test:vitest": "bun --bun vitest run --configLoader native",
     "test:vitest:node": "vitest run --configLoader native",
-    "test:playwright": "playwright test"
+    "test:playwright": "playwright test",
+    "write-columns": "node test/write-columns.ts"
   },
   "dependencies": {
     "@next/routing": "16.4.0",

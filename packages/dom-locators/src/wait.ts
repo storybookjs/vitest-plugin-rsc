@@ -8,6 +8,8 @@ const clearTimeout = globalThis.clearTimeout;
 // A change of what an element is that is no change of the DOM, like a
 // stylesheet that loads or a layout that settles, is seen this late.
 const pollInterval = 50;
+// The longest delay of a timer: a longer timeout, or Infinity, has none.
+const longestDelay = 2 ** 31 - 1;
 
 /** What a look found, or `undefined` for nothing yet. */
 export type Look<T> = () => { value: T } | undefined;
@@ -17,7 +19,8 @@ export type Look<T> = () => { value: T } | undefined;
  * after each batch of changes of the DOM: one MutationObserver for the whole
  * wait, and the records of one microtask checkpoint, however many callbacks
  * they make, are one look. And every 50 ms besides. Rejects with what `look`
- * throws, and with `timedOut()` after `timeout` milliseconds, at once for 0.
+ * throws, and with `timedOut()` after `timeout` milliseconds, at once for 0,
+ * never for a timeout longer than a timer can wait.
  */
 export function waitUntil<T>(look: Look<T>, timeout: number, timedOut: () => unknown): Promise<T> {
   let now: { value: T } | undefined;
@@ -65,9 +68,12 @@ export function waitUntil<T>(look: Look<T>, timeout: number, timedOut: () => unk
       again();
       if (!settled) poll = setTimeout(repeat, pollInterval);
     }, pollInterval);
-    const deadline = setTimeout(() => {
-      done();
-      reject(timedOut());
-    }, timeout);
+    const deadline =
+      timeout <= longestDelay
+        ? setTimeout(() => {
+            done();
+            reject(timedOut());
+          }, timeout)
+        : undefined;
   });
 }
