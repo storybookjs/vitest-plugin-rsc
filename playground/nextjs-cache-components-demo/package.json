@@ -7,7 +7,7 @@
     "test": "bun --bun vitest --configLoader native",
     "test:run": "bun --bun vitest run --configLoader native",
     "test:run:node": "vitest run --configLoader native",
-    "build": "bun --bun --conditions=vitest-plugin-rsc-source vite build --configLoader native"
+    "build": "bun --bun --conditions=vitest-plugin-rsc-source node_modules/vite/bin/vite.js build --configLoader native"
   },
   "dependencies": {
     "@next/routing": "16.4.0",

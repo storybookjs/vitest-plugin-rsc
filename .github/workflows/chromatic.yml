@@ -46,6 +46,7 @@ jobs:
         working-directory: playground/nextjs-notes-demo
         env:
           STORYBOOK_DISABLE_TELEMETRY: "1"
+        # `bunx`: `bun storybook` would run the demo's script of that name.
         run: bunx --bun storybook build --output-dir storybook-static
       - uses: chromaui/action@latest
         with:

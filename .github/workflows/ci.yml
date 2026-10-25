@@ -113,11 +113,12 @@ jobs:
             projects: --project 'nextjs-notes-demo-storybook*' --project '!nextjs-notes-demo-storybook'
           - part: other projects
             projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*'
-          # On Node.js too: a few tests of the plugin check its stand-ins
-          # for Node's modules and the browser's Blob against the runtime's
-          # own, which Bun's differ from. They skip on Bun.
-          - part: plugin on Node.js
-            projects: --project vitest-plugin-rsc
+          # On Node.js too: most users run Vitest there, and a few tests of
+          # the plugin check its stand-ins for Node's modules and the
+          # browser's Blob against the runtime's own, which Bun's differ
+          # from. They skip on Bun.
+          - part: other projects on Node.js
+            projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*'
             script: test:dist:node
     steps:
       - uses: actions/checkout@v6
@@ -131,7 +132,7 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
-      - run: bunx --bun playwright install --with-deps --only-shell chromium
+      - run: bun --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - run: pnpm ${{ matrix.script || 'test:dist' }} ${{ matrix.projects }}
 
@@ -163,7 +164,7 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: pnpm install --frozen-lockfile
-      - run: bunx --bun playwright install --with-deps --only-shell chromium
+      - run: bun --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test the Next.js playgrounds
         env:
@@ -201,13 +202,13 @@ jobs:
       # name different releases for a moment.
       - name: Install Next.js ${{ matrix.next }}
         run: |
-          version=$(npm view next@${{ matrix.next }} version)
+          version=$(bun pm view next@${{ matrix.next }} version)
           pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@$version @next/routing@$version
           pnpm --filter nextjs-cache-components-demo add --config.minimum-release-age=0 next@$version @next/routing@$version
           pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$version @next/env@$version @next/routing@$version
           pnpm --filter nextjs-db-recipes add --config.minimum-release-age=0 next@$version @next/routing@$version
           pnpm --filter nextjs-e2e-demo exec bun -p "'next@' + require('next/package.json').version"
-      - run: bunx --bun playwright install --with-deps --only-shell chromium
+      - run: bun --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test the Next.js playgrounds
         env:

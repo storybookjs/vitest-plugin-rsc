@@ -17,6 +17,8 @@ The playgrounds are the plugin's test bed, and most examples in the docs come fr
 
 ## Running tests
 
+The scripts run on [Bun](https://bun.sh), at the version of `.bun-version`, and pnpm on Node.js: install both.
+
 ```bash
 pnpm test                                          # the fast projects, under a minute
 pnpm test playground/nextjs-e2e-demo/app/cookies.test.tsx   # one file

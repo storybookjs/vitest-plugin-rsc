@@ -64,7 +64,7 @@ jobs:
         run: |
           pnpm --filter next-conformance add --config.minimum-release-age=0 "next@$NEXT" "@next/routing@$NEXT"
           pnpm --filter next-conformance exec bun -p "'next@' + require('next/package.json').version"
-      - run: bunx --bun playwright install --with-deps --only-shell chromium
+      - run: bun --bun playwright install --with-deps --only-shell chromium
       - run: pnpm --filter next-conformance test
       - name: Run the fixtures
         run: |

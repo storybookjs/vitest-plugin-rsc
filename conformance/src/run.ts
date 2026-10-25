@@ -208,8 +208,8 @@ function runFixture(fixture: Fixture, isSecondRun: boolean): Promise<FixtureRun>
   const child = spawn(
     process.execPath,
     [
-      // Bun takes the condition from its arguments only, Node from
-      // NODE_OPTIONS too, which every process it starts inherits.
+      // For Bun, which takes the condition from its arguments only. Node.js
+      // takes it from NODE_OPTIONS too, and so do the processes it starts.
       "--conditions=vitest-plugin-rsc-source",
       vitest,
       "run",

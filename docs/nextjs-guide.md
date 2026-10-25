@@ -820,7 +820,7 @@ Give Bun a dependency cache of its own in your Vitest config. Vite's hash of the
 cacheDir: process.versions.bun ? "node_modules/.vite-bun" : undefined,
 ```
 
-The playgrounds of this repo, and its own scripts and CI, run on Bun by default: `pnpm test:run` there is `bun --bun vitest run --configLoader native`, and their Vite scripts run on Bun too. `pnpm test:run:node` runs the tests on Node.js, on a machine without Bun. Bun ignores the `--conditions` of `NODE_OPTIONS`, so a script that needs a condition passes it to Bun: `bun --bun --conditions=vitest-plugin-rsc-source vite build`.
+The playgrounds of this repo run on Bun by default: `pnpm test:run` there is `bun --bun vitest run --configLoader native`, and their Vite scripts run on Bun too. `pnpm test:run:node` runs the tests on Node.js, on a machine without Bun. Bun ignores the `--conditions` of `NODE_OPTIONS`, and keeps its own only for a file it runs itself, not for a bin it starts by its name, so a script that needs a condition passes it to Bun with the file of the bin: `bun --bun --conditions=vitest-plugin-rsc-source node_modules/vite/bin/vite.js build`.
 
 Vitest is made for Node.js, not Bun, so keep a run on Node.js in CI.
 

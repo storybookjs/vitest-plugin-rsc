@@ -44,7 +44,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # One version for every step: canary may publish while the job runs.
       - id: version
-        run: echo "version=$(npm view next@canary version)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(bun pm view next@canary version)" >> "$GITHUB_OUTPUT"
       # pnpm waits a day before it installs a new release; this run is for
       # the one canary names now. The packages that go with `next` are at
       # its version.
@@ -57,7 +57,7 @@ jobs:
           pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$VERSION @next/env@$VERSION @next/routing@$VERSION
           pnpm --filter nextjs-db-recipes add --config.minimum-release-age=0 next@$VERSION @next/routing@$VERSION
           pnpm --filter nextjs-e2e-demo exec bun -p "'next@' + require('next/package.json').version"
-      - run: bunx --bun playwright install --with-deps --only-shell chromium
+      - run: bun --bun playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test the Next.js playgrounds, development
         env:
@@ -89,7 +89,7 @@ jobs:
         run: |
           pnpm --filter vitest-plugin-rsc add -D --config.minimum-release-age=0 next@$VERSION @next/routing@$VERSION
           pnpm build
-          pnpm exec tsgo --build packages/vitest-plugin-rsc
+          bunx --bun tsgo --build packages/vitest-plugin-rsc
 
   # One open issue for the failures, with a comment for each one after it.
   # The nightly run, or one by hand on the default branch: a run on another

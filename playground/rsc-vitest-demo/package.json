@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --bun --conditions=vitest-plugin-rsc-source vite --configLoader native",
-    "build": "bun --bun --conditions=vitest-plugin-rsc-source vite build --configLoader native",
+    "dev": "bun --bun --conditions=vitest-plugin-rsc-source node_modules/vite/bin/vite.js --configLoader native",
+    "build": "bun --bun --conditions=vitest-plugin-rsc-source node_modules/vite/bin/vite.js build --configLoader native",
     "check": "tsc -b",
     "preview": "bun --bun vite preview --configLoader native",
     "test": "bun --bun vitest --configLoader native",

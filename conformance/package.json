@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "conformance": "bun src/run.ts",
-    "test": "bun test src/*.test.ts shim/*.test.ts"
+    "test": "bun test ./src/*.test.ts ./shim/*.test.ts"
   },
   "dependencies": {
     "@next/routing": "16.4.0",
