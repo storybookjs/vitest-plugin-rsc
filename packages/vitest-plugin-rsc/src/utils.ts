@@ -38,6 +38,9 @@ import {
 (globalThis as { __vitest_plugin_rsc_vite_client__?: unknown }).__vitest_plugin_rsc_vite_client__ =
   pageClient;
 
+// Where a module imports Vite's client from.
+const viteClientUrl = "/@vite/client";
+
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";
 const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
@@ -170,7 +173,9 @@ export function createEnvironmentRunner(
     const since = first?.version;
     if (since !== undefined && since !== modules.version) {
       const question: ChangedQuestion = { environment, since };
-      const changed = await askDevServer<string[]>(changedEvent, question);
+      const changed = pageHost.modules
+        ? modulesOfFiles(runner, pageHost.modules.changedAfter(since))
+        : await askDevServer<string[]>(changedEvent, question);
       first = modules;
       return changed;
     }
@@ -181,6 +186,13 @@ export function createEnvironmentRunner(
 }
 
 const takes = new WeakMap<ModuleRunner, () => Promise<string[]>>();
+
+// The ids of the modules of `files` that the runner evaluated.
+function modulesOfFiles(runner: ModuleRunner, files: string[]): string[] {
+  return files.flatMap((file) =>
+    Array.from(runner.evaluatedModules.fileToModulesMap.get(file) ?? [], (node) => node.id),
+  );
+}
 
 /**
  * For a runner of `createEnvironmentRunner()` that outlives a page load: it
@@ -279,11 +291,14 @@ pageHost.listen({
 /**
  * The version of the modules of `environment` that the dev server has: when
  * Vite last invalidated one of them, see `versionOf()` in module-versions.ts.
- * The one the page heard of, or else the server's answer.
+ * The one the page heard of, or else the server's answer. In a worker of
+ * Node.js the host's, which moves with a run of Vitest (`modules` of
+ * page-host.ts).
  */
 export function versionOfModules(environment: string): Promise<number> {
   // The modules of a build do not change.
   if (builtLayers?.[environment]) return Promise.resolve(0);
+  if (pageHost.modules) return Promise.resolve(pageHost.modules.version());
   const heard = heardVersions.get(environment);
   if (heard !== undefined && asked.has(environment)) return Promise.resolve(heard);
   const known = asking.get(environment);
@@ -411,7 +426,8 @@ async function invokeForPageLoad(
 // each once the one before it has run: a round trip to the server for every
 // module of a page, in a row. The server says what a module imports (see
 // `describeModule()` in index.ts), so those are asked for right away, all at
-// once, and theirs when they arrive.
+// once, and theirs when they arrive. Not in a worker of Node.js, whose host
+// asks Vitest's RPC, a fraction of a millisecond a module, one at a time.
 function fetchOnce(
   environment: string,
   payload: InvokePayload,
@@ -513,6 +529,9 @@ const pageLoadEvaluator: ModuleEvaluator = {
     Object.seal(context[ssrModuleExportsKey]);
   },
   async runExternalModule(file) {
+    // Vite's client, which Vitest's RPC leaves to the runner: the page's own
+    // instance, as the dev server serves it to a runner (vite-client.ts).
+    if (file === viteClientUrl) return pageClient;
     if (!isHostModule(file)) return import(/* @vite-ignore */ file);
     // What the page serves for a module of its own has that module as its
     // default export: see host-module.ts. A static build has it in the
@@ -638,5 +657,8 @@ function toBrowserCoverageFileUrl(file: string) {
 }
 
 function invokeDevServer(environment: string, payload: InvokePayload) {
-  return pageHost.request(invokeEvent, { environment, payload }) as Promise<InvokeResult>;
+  return (
+    pageHost.modules?.invoke(environment, payload) ??
+    (pageHost.request(invokeEvent, { environment, payload }) as Promise<InvokeResult>)
+  );
 }

@@ -1,10 +1,11 @@
 import { init, runBaseTests, setupEnvironment } from "vitest/worker";
+import type { WorkerGlobalState } from "vitest";
 import type { WorkerRun } from "../worker-run.ts";
 
 // The entry of a worker of Node.js whose page the plugin hosts: Vitest's own
 // entry of its forks pool, over the public `init()` of `vitest/worker`
-// (`@experimental`), and one thing more: the page's runtime gets Vitest's RPC
-// and the context of the run, see worker-run.ts. Vitest's `ForksPoolWorker`
+// (`@experimental`), and one thing more: as a run starts, the page's runtime
+// gets Vitest's RPC and what the run says, see worker-run.ts. Vitest's `ForksPoolWorker`
 // forks it as `<distPath>/workers/forks.js`: see worker-pool.ts.
 
 // `workerRunKey` of worker-run.ts: this file imports no module of the page.
@@ -39,8 +40,14 @@ const onError = (error: NodeJS.ErrnoException) => {
 };
 processOn("error", onError);
 
-const handOver = ({ rpc, ctx }: WorkerRun) => {
-  (globalThis as unknown as Record<PropertyKey, WorkerRun>)[workerRunKey] = { rpc, ctx };
+// One object for the worker: the files that changed are the worker's, also
+// those of a run without a page.
+const handOver = ({ rpc, ctx }: WorkerGlobalState) => {
+  const scope = globalThis as unknown as Record<PropertyKey, WorkerRun | undefined>;
+  const run = (scope[workerRunKey] ??= { rpc, providedContext: {}, changed: [] });
+  run.rpc = rpc;
+  run.providedContext = ctx.providedContext;
+  if (ctx.invalidates?.length) run.changed.push(ctx.invalidates);
 };
 
 init({

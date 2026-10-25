@@ -9,6 +9,7 @@ import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
+import { builtinsKey, type ProvidedBuiltins } from "./worker-run.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 import {
   answerPage,
@@ -256,6 +257,7 @@ type VitestProject = {
     environmentOptions?: Record<string, Record<string, unknown> | undefined>;
   };
   vite: ViteDevServer;
+  provide(key: string, value: unknown): void;
 };
 // What Vitest gives `configureVitest`.
 type VitestPluginContext = {
@@ -285,6 +287,18 @@ async function startWorkerPage(project: VitestProject): Promise<void> {
     ...(settings.navigation as object | undefined),
   };
   await optimizersSettled(project.vite);
+  // What a runner of each environment leaves to Node.js, which the page's
+  // runners ask its environment for, and Vitest's RPC does not answer: see
+  // vitest-modules.ts. As Vite's environment answers `getBuiltins`.
+  const builtins: ProvidedBuiltins = {};
+  for (const [name, environment] of Object.entries(project.vite.environments)) {
+    builtins[name] = environment.config.resolve.builtins.map((builtin) =>
+      typeof builtin === "string"
+        ? { type: "string", value: builtin }
+        : { type: "RegExp", source: builtin.source, flags: builtin.flags },
+    );
+  }
+  project.provide(builtinsKey, builtins);
 }
 
 // A worker of Node.js imports a pre-bundled dependency by the version that

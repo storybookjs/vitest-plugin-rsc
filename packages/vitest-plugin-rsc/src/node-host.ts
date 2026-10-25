@@ -2,6 +2,7 @@ import { createNavigation } from "./navigation-shim.ts";
 import { channelTo } from "./node-channel.ts";
 import "./node-dom.ts";
 import type { PageHost, WebApis } from "./page-host.ts";
+import { vitestModules } from "./vitest-modules.ts";
 
 // The host of a page in a worker of Node.js, with a DOM of happy-dom or
 // jsdom: Vitest without Browser Mode, which has no WebSocket to the dev
@@ -115,6 +116,7 @@ export function nodeHost(origin: string): PageHost {
   return {
     request,
     listen,
+    modules: vitestModules(),
     navigation,
     loadsStylesheets: false,
     serverWebApis: webApis,

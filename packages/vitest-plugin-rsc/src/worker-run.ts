@@ -1,18 +1,35 @@
-import type { RuntimeRPC, WorkerGlobalState } from "vitest";
+import type { RuntimeRPC } from "vitest";
 
 // What the plugin's worker entry (workers/forks.ts) hands the page's runtime
-// in a worker of Node.js, as Vitest runs a test file there: Vitest's own RPC
+// in a worker of Node.js, as Vitest runs test files there: Vitest's own RPC
 // to the dev server, whose `fetch()` answers for any environment of the
-// project, and the context of the run, which names the files that changed
-// since the last one. Nothing in a browser, or in a worker of another entry.
+// project, what the project provides, and the files that changed, which
+// Vitest names as a run starts. Nothing in a browser.
 
 /** The key of the run on `globalThis`, which the worker's entry sets. */
 export const workerRunKey = Symbol.for("vitest-plugin-rsc:worker-run");
 
 export type WorkerRun = {
   rpc: Pick<RuntimeRPC, "fetch">;
-  ctx: Pick<WorkerGlobalState["ctx"], "invalidates">;
+  /** What the project provides, as `inject()` of Vitest has it. */
+  providedContext: Record<string, unknown>;
+  /**
+   * The files that changed, for every run of this worker that named some
+   * (`invalidates` of Vitest's context of the run), in order.
+   */
+  changed: string[][];
 };
+
+/**
+ * What the plugin provides the worker (`project.provide()`, index.ts): the
+ * modules that a runner of each environment leaves to Node.js, as the
+ * environment's `getBuiltins` answers them, which Vitest's RPC does not.
+ */
+export const builtinsKey = "vitest-plugin-rsc:builtins";
+export type ProvidedBuiltins = Record<
+  string,
+  ({ type: "string"; value: string } | { type: "RegExp"; source: string; flags: string })[]
+>;
 
 /** The run of this worker of Node.js, from the plugin's worker entry. */
 export function workerRun(): WorkerRun | undefined {

@@ -5,6 +5,8 @@
 // import it as `virtual:vitest-plugin-rsc/page-host`, and nothing else of the
 // page tells the two apart.
 
+import type { InvokePayload, InvokeResult } from "./built-layers.ts";
+
 export type PageHost = {
   /**
    * Sends `data` to the dev server at `event`, and resolves with what it
@@ -20,6 +22,12 @@ export type PageHost = {
    * after an answer comes after the answer resolved, or with `missed()`.
    */
   listen(news: PageNews): void;
+  /**
+   * Where the runners of the page get the modules of an environment, where
+   * not over `request()`: in a worker of Node.js from Vitest's own RPC, see
+   * vitest-modules.ts.
+   */
+  readonly modules?: PageModules;
   /**
    * What fires the `navigate` events of the Navigation API for the document:
    * the browser's `navigation`, or a stand-in for a DOM without one. None
@@ -43,6 +51,19 @@ export type PageHost = {
    * signal are the DOM's, which Node's `Request` does not take.
    */
   fromPage(init: RequestInit | undefined): RequestInit | undefined;
+};
+
+/**
+ * The modules of the environments that the page runs, and their versions,
+ * from a source of the host's own: see `modules` of `PageHost`.
+ */
+export type PageModules = {
+  /** What the dev server answers an invoke of a runner of `environment`. */
+  invoke(environment: string, payload: InvokePayload): Promise<InvokeResult>;
+  /** The version of the modules of every environment, which a change moves. */
+  version(): number;
+  /** The files that changed after `version`. */
+  changedAfter(version: number): string[];
 };
 
 /** What the page hears of the dev server unasked: see `listen()`. */
