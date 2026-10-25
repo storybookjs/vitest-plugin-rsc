@@ -19,6 +19,13 @@ export const versionEvent = "vitest-plugin-rsc:react-client:version";
  */
 export const changedEvent = "vitest-plugin-rsc:react-client:changed";
 export type ChangedQuestion = { environment: string; since: number };
+/**
+ * Where the dev server tells the page that Vite invalidated modules of an
+ * environment, with their version from then on: see `onInvalidation()` in
+ * module-versions.ts.
+ */
+export const modulesChangedEvent = "vitest-plugin-rsc:react-client:modules-changed";
+export type ModulesChanged = { environment: string; version: number };
 /** Where the dev server answers what the page asks over the websocket. */
 export const answerEvent = "vitest-plugin-rsc:react-client:invoke-result";
 

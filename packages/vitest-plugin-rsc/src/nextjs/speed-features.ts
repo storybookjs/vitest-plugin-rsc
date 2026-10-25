@@ -1,51 +1,13 @@
-import { forgetCheckedVersions } from "../utils.ts";
 import type { SpeedFeature } from "./mode.ts";
 import { registry } from "./registry.ts";
 
-// The speed features in the page: whether one is on, and what `cacheDevServer`
-// and `watchDom` do there. Which are on, the mode of `vitestPluginNext()` and
-// the options of the features decide: see `SpeedOptions` in mode.ts.
-//
-// What the dev server answers about the files of a test, like the
-// stylesheets of the host's files or whether a module changed, seldom changes
-// while a test file runs: in watch mode a change of a file runs the file
-// again. So with `cacheDevServer` an answer is kept until the test file ends,
-// where it is asked for again for every page and every test otherwise. The
-// caches are the registry's, as the layers that ask are module graphs of their
-// own.
-
-const caches = () => (registry.testFileCaches ??= new Set());
+// The speed features in the page: whether one is on, and what `watchDom`
+// does there. Which are on, the mode of `vitestPluginNext()` and the options
+// of the features decide: see `SpeedOptions` in mode.ts.
 
 /** Whether a speed feature is on in the page. */
 export function speedFeature(feature: SpeedFeature): boolean {
   return registry.speedFeatures?.[feature] === true;
-}
-
-/**
- * What `ask` answers for `key`: with `cacheDevServer` the answer of the first
- * time in the test file, else a new one. An answer that fails is asked for
- * again.
- */
-export function oncePerTestFile<T>(
-  cache: Map<string, Promise<T>>,
-  key: string,
-  ask: () => Promise<T>,
-): Promise<T> {
-  if (!speedFeature("cacheDevServer")) return ask();
-  caches().add(cache as Map<string, Promise<unknown>>);
-  let answer = cache.get(key);
-  if (!answer) {
-    answer = ask();
-    cache.set(key, answer);
-    answer.catch(() => cache.delete(key));
-  }
-  return answer;
-}
-
-/** Forgets the answers of `oncePerTestFile()`, as a test file ends. */
-export function forgetTestFileAnswers(): void {
-  for (const cache of caches()) cache.clear();
-  forgetCheckedVersions();
 }
 
 // Vitest's `expect.element()` looks for an element that is not there yet
