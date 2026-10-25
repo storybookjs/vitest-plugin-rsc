@@ -1001,7 +1001,12 @@ test("gives the server layers Node's own modules for a page in a worker of Node.
   });
   // `fastCrypto` puts its stand-ins over Node's own `node:crypto`.
   const fastCrypto = await ssr.resolve("node:crypto", page);
-  expect(ssr.load.call({}, fastCrypto as string)).toContain('export * from "node:crypto";');
+  // Each of its names, which a pre-bundle of CommonJS that requires it has
+  // only where they are named: not by an `export *` of Node's module.
+  const fastCryptoCode = ssr.load.call({}, fastCrypto as string)!;
+  expect(fastCryptoCode).toContain('import own from "node:crypto";');
+  expect(fastCryptoCode).toMatch(/export const \{ [^}]*\bcreateHash\b[^}]*\} = own;/);
+  expect(fastCryptoCode).not.toContain("export *");
 });
 
 test("gives the rsc layer the ssr layer's contexts for Next's shared-runtime modules, as Next's build for Node.js does", async () => {

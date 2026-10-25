@@ -11,6 +11,7 @@
 // Only in a test run of Vitest, with the option: see plugin.ts.
 
 import fs from "node:fs";
+import { isBuiltin } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizePath } from "vite";
@@ -143,11 +144,19 @@ export function fastCryptoModule(name: string, nodeCrypto: string): string | und
   if (name === "node-crypto") {
     const own = JSON.stringify(nodeCrypto);
     const names = ["pbkdf2", "pbkdf2Sync", "scrypt", "scryptSync", "argon2", "argon2Sync"];
+    // Node's own module is no file of a build: a pre-bundle that requires
+    // this module has its names only where they are named here, not from
+    // an `export *` of it. They are the names of this process's Node.js.
+    const reexports = isBuiltin(nodeCrypto)
+      ? `export const { ${Object.keys(process.getBuiltinModule("node:crypto"))
+          .filter((key) => /^[A-Za-z_$][\w$]*$/.test(key) && !names.includes(key))
+          .join(", ")} } = own;\n`
+      : `export * from ${own};\n`;
     return (
       `import own from ${own};\n` +
       `import { Buffer } from "node:buffer";\n` +
       `import { nodeCrypto } from ${from};\n` +
-      `export * from ${own};\n` +
+      reexports +
       `const fast = nodeCrypto(Buffer);\n` +
       `export const { ${names.join(", ")} } = fast;\n` +
       `export default { ...own, ...fast };\n`
