@@ -110,7 +110,7 @@ With Better Auth, a lookup is a check of the cookie's signature and two queries,
 
 **Prepare the queries of every request.** Drizzle's [`.prepare()`](https://orm.drizzle.team/docs/perf-queries) builds the SQL of a query once, where a query built in place builds it on every call. On a server, node-postgres also has Postgres parse it once per connection. PGlite parses every query again, so in a test the gain is Drizzle's. In the benchmark, a page load and a navigation take 0.1 ms less and a Server Action 0.19 ms less, about 0.7 ms per test.
 
-**Reset the tables in one round trip.** The notes apps send one string of `DELETE`s, where `TRUNCATE` would rewrite the files of every table and its indexes, and the recipes send the `DELETE`s and `INSERT`s that put back the rows of their migrations. A few rows are gone in 0.28 ms, before each test.
+**Reset the tables in one round trip.** The notes apps send one string of `DELETE`s, and the recipes send the `DELETE`s and `INSERT`s that put back the rows of their migrations. A few rows are gone in 0.3 ms, before each test. `TRUNCATE` is slower here: it gives every table and index new files, which took 1.4 ms per test in the benchmark, and the first query of the next test took twice as long.
 
 The rest is done already:
 
