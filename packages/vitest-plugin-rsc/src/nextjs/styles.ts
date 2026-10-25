@@ -350,11 +350,15 @@ export function createStyles(options: StylesOptions): Styles {
   // the module it was loaded after. Some modules never have a result of their
   // own in Vite's graph, like a module that fails to compile: these are
   // loaded once, and not for every request. Until Vite invalidates the
-  // module, or a file changes for one that failed.
-  const loads = new Map<
-    string,
-    { module: Promise<EnvironmentModuleNode | undefined>; invalidated: number | undefined }
-  >();
+  // module, which it has in its graph also when it failed to compile, as a
+  // change of its file does, also on a server without a watcher of its own,
+  // a project's under Vitest. Or until a file changes, for one that Vite
+  // could not find.
+  type Load = {
+    module: Promise<EnvironmentModuleNode | undefined>;
+    invalidated: number | undefined;
+  };
+  const loads = new Map<string, Load>();
 
   // What Next's build does for the client entry of a segment file
   // (`FlightClientEntryPlugin`): it follows the imports of the file in the
@@ -386,24 +390,33 @@ export function createStyles(options: StylesOptions): Styles {
       // `/@id/__x00__…`, which Vite's own server unwraps before it loads it.
       if (url.startsWith("/@id/")) url = url.slice("/@id/".length).replace("__x00__", "\0");
       const key = `${layer}:${url}`;
+      const inGraph = () => graphs[layer].moduleGraph.getModuleByUrl(url).catch(() => undefined);
       let loaded = loads.get(key);
-      const node = await loaded?.module;
-      if (node && node.lastInvalidationTimestamp !== loaded!.invalidated) loaded = undefined;
+      if (loaded) {
+        const node = (await loaded.module) ?? (await inGraph());
+        if (node && node.lastInvalidationTimestamp !== loaded.invalidated) loaded = undefined;
+      }
       if (!loaded) {
-        const loading = graphs[layer]
-          .transformRequest(url)
-          .then(() => graphs[layer].moduleGraph.getModuleByUrl(url))
-          .catch((error: { code?: string }) => {
-            if (error?.code === "ERR_LOAD_URL") {
-              vite.config.logger.warnOnce(
-                `vitest-plugin-rsc: the CSS of ${url} is not linked: ${String(error)}`,
-              );
-            }
-            return undefined;
-          });
-        loaded = { module: loading, invalidated: undefined };
-        const entry = loaded;
-        void loading.then((found) => (entry.invalidated = found?.lastInvalidationTimestamp));
+        const entry: Load = {
+          module: graphs[layer]
+            .transformRequest(url)
+            .then(inGraph)
+            .catch((error: { code?: string }) => {
+              if (error?.code === "ERR_LOAD_URL") {
+                vite.config.logger.warnOnce(
+                  `vitest-plugin-rsc: the CSS of ${url} is not linked: ${String(error)}`,
+                );
+              }
+              return undefined;
+            })
+            // The invalidation it loaded after, by the time it has.
+            .then(async (found) => {
+              entry.invalidated = (found ?? (await inGraph()))?.lastInvalidationTimestamp;
+              return found;
+            }),
+          invalidated: undefined,
+        };
+        loaded = entry;
         loads.set(key, loaded);
       }
       return loaded.module;

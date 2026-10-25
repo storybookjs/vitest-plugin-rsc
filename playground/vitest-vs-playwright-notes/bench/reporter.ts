@@ -37,7 +37,8 @@ export const benchMode = `${env.VITEST_PLUGIN_RSC_MODE === "fast" ? "fast" : "fi
 const label = env.BENCH_LABEL || benchMode;
 
 mark("node: process start (performance.timeOrigin)", performance.timeOrigin);
-// The shell's time as it started the command, in ms: `BENCH_SHELL_START=$(date +%s%3N)`.
+// The shell's time as it started the command, in ms: `BENCH_SHELL_START=$(date +%s%3N)`,
+// with GNU `date` (`gdate` on macOS, whose `date` has no `%N`).
 if (env.BENCH_SHELL_START) mark("shell: command start", Number(env.BENCH_SHELL_START));
 
 /** Marks that vitest.bench.config.ts has been evaluated. */
@@ -51,15 +52,24 @@ type Handler = (
   next: () => void,
 ) => void;
 
-/** A Vite plugin that marks the steps of Vite's startup, and the first module it serves. */
+/**
+ * A Vite plugin that marks the steps of Vite's startup: the config hooks
+ * (its own runs first, the plugins' after it, until configResolved), the
+ * server, when it listens, and the first module each environment transformed.
+ */
 export function startupMarks() {
-  let served = false;
+  const transformed = new Set<string>();
   return {
     name: "bench-startup-marks",
     enforce: "pre" as const,
+    config: () => void mark("vite: config hooks start"),
     configResolved: () => void mark("vite: configResolved"),
-    configureServer: (server: { middlewares: { stack: { route: string; handle: Handler }[] } }) => {
+    configureServer: (server: {
+      middlewares: { stack: { route: string; handle: Handler }[] };
+      httpServer: { once(event: "listening", listener: () => void): void } | null;
+    }) => {
       mark("vite: configureServer");
+      server.httpServer?.once("listening", () => mark("vite: server listening"));
       // The first request of the tester's page, which Vitest serves itself at
       // `/?sessionId=`, and when it was served: first in the stack, before
       // Vitest's own middlewares, which answer it.
@@ -78,11 +88,12 @@ export function startupMarks() {
       return () => void mark("vite: configureServer, after Vite's middlewares");
     },
     buildStart: () => void mark("vite: buildStart"),
-    transform: () => {
+    transform(this: { environment?: { name: string } }) {
       transforms.push(epoch());
-      if (served) return;
-      served = true;
-      mark("vite: first module transformed");
+      const environment = this.environment?.name ?? "?";
+      if (transformed.has(environment)) return;
+      transformed.add(environment);
+      mark(`vite: first module of the ${environment} environment transformed`);
     },
   };
 }
@@ -193,6 +204,9 @@ export class BenchReporter implements Reporter {
   }
   onTestCaseReady(_test: TestCase) {
     this.once("node: first onTestCaseReady");
+  }
+  onTestCaseResult(_test: TestCase) {
+    this.once("node: first onTestCaseResult");
   }
   onTestRunEnd(modules: readonly TestModule[]) {
     mark("node: onTestRunEnd");

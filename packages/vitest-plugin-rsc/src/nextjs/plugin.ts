@@ -951,7 +951,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // Vitest says it runs in the env of its process, before it loads a
         // config: what tells a test run from a dev server here.
         // oxlint-disable-next-line no-process-env
-        const fastCrypto = chosen.fastCrypto && !isBuild && process.env.VITEST !== undefined;
+        const testRun = !isBuild && process.env.VITEST !== undefined;
+        const fastCrypto = chosen.fastCrypto && testRun;
         speedFeatures = { ...chosen, fastCrypto };
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
@@ -1228,7 +1229,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                   "development|production",
                 ],
               },
-              dev: { moduleRunnerTransform: true },
+              // The plugin's setup file loads the ssr layer, and the page asks
+              // for its modules one after the other as it finds their
+              // imports. Vite compiles a file of `dev.warmup`, and what it
+              // imports, as its server starts to listen, which under Vitest
+              // is as the browser launches: by the time the page asks, they
+              // are compiled. Not the rsc layer: it is the `client`
+              // environment, which also serves Vitest's own pages, and with
+              // no cache of pre-bundled dependencies yet Vite holds those
+              // back until no module of the environment is being compiled.
+              // A mock does not reach this layer, which runs in a module
+              // runner of the plugin.
+              dev: { moduleRunnerTransform: true, ...(testRun && { warmup: [ownFile("ssr")] }) },
               optimizeDeps: {
                 ...optimizeDeps("ssr"),
                 // Its entries: see `vitest-plugin-rsc:next-scan`.
