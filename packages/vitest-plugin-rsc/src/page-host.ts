@@ -13,6 +13,14 @@ export type PageHost = {
    */
   request(event: string, data: object, expires?: boolean): Promise<unknown>;
   /**
+   * Hands `news` what the dev server tells the page unasked, like a change of
+   * its modules (`tellPages()` in page-bridge.ts), in order with the answers
+   * of `request()`: an answer that the server sent after a piece of news
+   * resolves after `news` heard it, and a piece of news that the server sent
+   * after an answer comes after the answer resolved, or with `missed()`.
+   */
+  listen(news: PageNews): void;
+  /**
    * What fires the `navigate` events of the Navigation API for the document:
    * the browser's `navigation`, or a stand-in for a DOM without one. None
    * where the browser has none.
@@ -35,6 +43,33 @@ export type PageHost = {
    * signal are the DOM's, which Node's `Request` does not take.
    */
   fromPage(init: RequestInit | undefined): RequestInit | undefined;
+  /**
+   * The directory of the server's own files, like the cache of Next's build
+   * in `.next/`: in a browser the root of the disk in memory, `""`, and in a
+   * worker of Node.js, whose disk is the machine's, a directory of the
+   * worker's own in the run's temporary directory, gone as Vitest closes.
+   */
+  readonly serverDir: string;
+  /**
+   * Runs `callback` in a task of its own after the microtasks, as a server's
+   * `setImmediate()`, for the speed feature `immediates`: by a message of one
+   * channel in a browser, which no browser delays as it does a timeout, and
+   * by Node's own `setImmediate()` in a worker of Node.js, which keeps the
+   * stores of Node's `AsyncLocalStorage`, as a message does not. Returns what
+   * cancels it.
+   */
+  serverImmediate(callback: () => void): () => void;
+};
+
+/** What the page hears of the dev server unasked: see `listen()`. */
+export type PageNews = {
+  /** A piece of news, at `event`. */
+  heard(event: string, data: unknown): void;
+  /**
+   * The host may have missed news, like when its connection closed, or
+   * brought it before an answer that the server sent before it.
+   */
+  missed(): void;
 };
 
 /** The web APIs that a server and a browser both have, and Node.js its own of. */

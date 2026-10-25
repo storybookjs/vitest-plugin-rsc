@@ -74,6 +74,19 @@ test("reads fetch, Request and Response from the server", async () => {
   );
 });
 
+test("makes its abort controllers and signals with the server's", async () => {
+  class ServerAbortController {}
+  const ServerAbortSignal = { timeout: () => "server signal" };
+  vi.stubGlobal("__server__", {
+    AbortController: ServerAbortController,
+    AbortSignal: ServerAbortSignal,
+  });
+  expect(await run(`var result = new AbortController().constructor.name;`)).toBe(
+    "ServerAbortController",
+  );
+  expect(await run(`var result = AbortSignal.timeout(1);`)).toBe("server signal");
+});
+
 test("has React's Flight server in the rsc layer queue a microtask with the server's queueMicrotask", async () => {
   const serverCode = createServerCode(registry);
   const compile = async (layer: "rsc" | "ssr", file: string) =>
@@ -562,4 +575,42 @@ test("leaves the async functions of a file that does not parse as they are, with
     transform.call(context, `export const load = async () => <p>{await data()}</p>;`, page),
   ).toBe(undefined);
   expect(warn).toHaveBeenCalledWith(expect.stringContaining(`${page} do not keep their stores`));
+});
+
+test("compiles nothing for the stores where the server's own AsyncLocalStorage carries them, in a worker of Node.js", async () => {
+  const serverCode = createServerCode(registry);
+  serverCode.configure(root, "native");
+  serverCode.addTestFiles((candidate) => candidate.endsWith(".test.tsx"));
+  const asyncFunction = `export async function cache() { await generate(); }`;
+  const nextModule = "/app/node_modules/next/dist/esm/server/use-cache/use-cache-wrapper.js";
+  // Next's modules that await in a store, the app's source files, and
+  // React's Flight server: as they are, but for what server code is compiled
+  // for otherwise.
+  expect(
+    serverCode
+      .asyncFunctionsOptimizerPlugin("rsc")
+      .transform.call({ warn: vi.fn() }, asyncFunction, nextModule),
+  ).toBeUndefined();
+  const appPlugin = serverCode.asyncFunctionsPlugin("client");
+  const transform = (appPlugin.transform as { handler?: unknown }).handler ?? appPlugin.transform;
+  expect(
+    await (transform as (this: object, code: string, id: string) => unknown).call(
+      { environment: { config: { cacheDir: "/cache" } }, warn: vi.fn() },
+      asyncFunction,
+      path.join(root, "app/page.tsx"),
+    ),
+  ).toBeUndefined();
+  const flightServer =
+    "/app/node_modules/next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.edge.production.js";
+  const flight = await serverCode
+    .optimizerPlugin("rsc")
+    .transform.call(
+      { warn: vi.fn() },
+      `var schedule = queueMicrotask; function performWork(request) {}`,
+      flightServer,
+    );
+  expect(flight?.code ?? "").not.toContain("performWork(request, performWorkOfReact)");
+  expect(flight?.code ?? "").not.toContain(`${registry}.queueMicrotask`);
+  // And the pre-bundles say so in their key.
+  expect(serverCode.cacheKey.__vitest_plugin_rsc_async_context__).toBe('"native"');
 });

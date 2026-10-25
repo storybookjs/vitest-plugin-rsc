@@ -115,6 +115,9 @@ export type NextRegistry = {
   fetch: typeof fetch;
   /** The network itself: no request of it is the app's, and Next caches none. */
   network: typeof fetch;
+  /** Those of the server's web APIs, whose streams take their signals. */
+  AbortController: typeof AbortController;
+  AbortSignal: typeof AbortSignal;
   /** Node's, for Next's server: a task after the microtasks. Not globals. */
   setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
   clearImmediate(id: unknown): void;
@@ -166,6 +169,11 @@ export type NextRegistry = {
   nodeFiles?(): string[];
   /** The directory of the build on the server's disk, of this generation: see cache.ts. */
   buildDir(): string;
+  /**
+   * The directory of the server's own files, which the page's host has:
+   * `""` in a browser, a temporary directory in Node.js (page-host.ts).
+   */
+  serverDir(): string;
   /**
    * Next's build's verdict on a route of the app, by its page name and its
    * pathname, in the rsc layer: nothing for a route it renders at every

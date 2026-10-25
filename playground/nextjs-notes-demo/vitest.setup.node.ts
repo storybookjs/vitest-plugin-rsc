@@ -1,3 +1,5 @@
+import "@testing-library/jest-dom/vitest";
+import "dom-locators/expect-element";
 import { vi, beforeAll, beforeEach, afterEach, afterAll, expect, type MockInstance } from "vitest";
 import { setupServer } from "msw/node";
 import * as dbModule from "#lib/db.ts";

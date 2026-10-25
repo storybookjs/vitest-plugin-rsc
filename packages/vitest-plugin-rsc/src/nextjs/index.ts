@@ -39,8 +39,12 @@ await rscLayer();
  * it is sent, and it never settles once that page is left, or without one.
  */
 export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  // Not the browser's Request, which drops a `cookie` header.
-  const request = new registry.Request(input, init);
+  // Not the browser's Request, which drops a `cookie` header. A path is of
+  // the page, as the browser's resolves it, and Node's does not.
+  const request = new registry.Request(
+    typeof input === "string" ? new URL(input, window.location.href) : input,
+    init,
+  );
   return sendRequest(request, {
     from: openContext().store,
     credentials: request.credentials !== "omit",

@@ -61,8 +61,8 @@ export default defineConfig({
   // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
   cacheDir,
   // What lib/__mocks__/db.ts imports, which no file that Vite scans imports.
-  // In Node.js, PGlite runs as on Node.js, which imports it itself: a
-  // pre-bundle would have the stand-ins of a browser for Node's modules.
+  // In Node.js, PGlite runs as on Node.js, which imports it itself, with its
+  // files from its package.
   optimizeDeps: dom
     ? { include: ["drizzle-orm/pglite"], exclude: ["@electric-sql/pglite"] }
     : { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },

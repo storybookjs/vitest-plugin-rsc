@@ -101,36 +101,68 @@ const browserProject = (name: string, mode: Mode) =>
     },
   });
 
-// The tests of the app in a Node.js worker, with happy-dom for the document,
-// where the browser projects run in Chromium. The same plugins: without
-// Browser Mode the plugin is the page's host itself (SB-2419).
-const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
+// The tests of the app in a Node.js worker, with happy-dom or jsdom for the
+// document, where the browser projects run in Chromium, in fidelity mode,
+// and with happy-dom in fast mode too, as the benchmark's columns of a DOM of
+// Node.js run. The same plugins: without Browser Mode the plugin is the
+// page's host itself (SB-2419). Its server runs on Node.js itself, with
+// Node's `AsyncLocalStorage`, which components/async-context.node.test.tsx
+// probes, with `page` of dom-locators for the one of `vitest/browser`. With
+// `cacheDevServer` a page load asks the dev server nothing of its modules,
+// and the page takes the news of a change, which the host hears on a stream
+// of its own: see components/changing-probe.node.test.tsx.
+//
+// A `.tcp.node.test` file is the TCP project's: the app's own `lib/db.ts`, on
+// node-postgres, without the mock, reaches Postgres over TCP: PGlite, served
+// by pglite-socket in the worker (vitest.setup.tcp.ts). The server layers
+// have Node's own `net` there.
+const nodeProject = (
+  name: string,
+  environment: "happy-dom" | "jsdom",
+  {
+    overTcp = false,
+    mode = "fidelity",
+    cacheDevServer = mode === "fast",
+    files,
+  }: { overTcp?: boolean; mode?: Mode; cacheDevServer?: boolean; files?: string[] } = {},
+) =>
   defineProject({
     root,
     envPrefix: ["VITE_", "CI"],
     resolve: {
       tsconfigPaths: true,
       conditions: [...vitestPluginRscSourceConditions, "test"],
+      alias: [{ find: /^vitest\/browser$/, replacement: "dom-locators" }],
     },
     // PGlite sees Node.js here, and runs as on Node.js, and MSW's server is
     // one of Node.js: Node.js imports them itself, where a pre-bundle would
-    // have the stand-ins of a browser for the modules of Node.js, and the
-    // server's web APIs.
-    optimizeDeps: { include: ["drizzle-orm/pglite"], exclude: ["@electric-sql/pglite", "msw"] },
+    // have the server's web APIs. And pglite-socket, which serves PGlite.
+    optimizeDeps: {
+      include: ["drizzle-orm/pglite"],
+      exclude: ["@electric-sql/pglite", "@electric-sql/pglite-socket", "msw"],
+    },
     plugins: [
       vitestPluginRSC(),
       // oxlint-disable-next-line no-process-env
       vitestPluginNext({
         build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
+        mode,
         // Testing Library, which the tests query the page with, where the
         // browser projects have `vitest/browser`: it asks for `document`.
         browserModules: ["**/node_modules/@testing-library/**"],
+        // And dom-locators, `page` of the probes, and jest-dom's matchers:
+        // the page's own modules, as `vitest` is.
+        host: { packages: ["dom-locators", "@testing-library/jest-dom"] },
+        cacheDevServer,
       }),
+      // For components/changing-probe.node.test.tsx.
+      fileChangeService(),
     ],
     test: {
       name,
-      include: ["**/*.node.test.{ts,tsx}"],
-      exclude: ["e2e/**", "node_modules"],
+      provide: { cacheDevServer },
+      include: files ?? [overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}"],
+      exclude: ["e2e/**", "node_modules", ...(overTcp ? [] : ["**/*.tcp.node.test.{ts,tsx}"])],
       environment,
       isolate: false,
       // What Vitest gives a test in Browser Mode, where Node.js has 5 s: the
@@ -140,12 +172,22 @@ const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
       // before the worker starts, out of a test's time.
       testTimeout: 15_000,
       expect: { poll: { timeout: 10_000 } },
-      setupFiles: ["./vitest.setup.node.ts"],
+      setupFiles: [overTcp ? "./vitest.setup.tcp.ts" : "./vitest.setup.node.ts"],
     },
   });
 
 export const nextjsNotesProjects = [
-  nodeProject("nextjs-notes-demo-happy-dom", "happy-dom"),
+  nodeProject("nextjs-notes-demo-happy-dom", "happy-dom", { cacheDevServer: true }),
+  // In fast mode the probes of the stores, not yet the pages: with `keepApp`,
+  // PGlite, the test's database, arms a timer as long as the real time is
+  // ahead of the clock that the setup file sets, 172 days, which Node.js
+  // clamps to 1 ms, again and again, and the test hangs.
+  nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", {
+    mode: "fast",
+    files: ["components/async-context.node.test.tsx"],
+  }),
+  nodeProject("nextjs-notes-demo-jsdom", "jsdom"),
+  nodeProject("nextjs-notes-demo-tcp", "happy-dom", { overTcp: true }),
   browserProject("nextjs-notes-demo-browser", "fidelity"),
   browserProject("nextjs-notes-demo-fast", "fast"),
   // Every story of the app, as a test of Storybook's Vitest addon, which

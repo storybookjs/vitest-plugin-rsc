@@ -7,8 +7,8 @@ import { notes } from "#db/schema.ts";
 import { signedInAs, testUser } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
-// Tests of page.test.tsx in a Node.js worker with happy-dom: see the node
-// project of vitest.config.ts.
+// Tests of page.test.tsx in a Node.js worker with happy-dom or jsdom: see the
+// node projects of vitest.config.ts.
 
 // Testing Library's `screen` is of the `<body>` there was as it loaded, and a
 // page has a `<body>` of its own, as after a page load: the queries are of
@@ -40,4 +40,16 @@ test("favorite toggle updates stored favorite state", async () => {
     })
     .toBe(true);
   expect(await screen().findByRole("button", { name: "Unfavorite note" })).toBeTruthy();
+});
+
+// A page records the listeners that React and Next add to `window` as they
+// load, and takes them back as it is left: the window's own method stays.
+test("page loads leave the window's addEventListener as it was", async () => {
+  await signedInAs();
+  const addEventListener = window.addEventListener;
+  for (let load = 0; load < 3; load++) {
+    await renderServer({ url: "/notes" });
+    expect(await screen().findByRole("heading", { name: "Notes" })).toBeTruthy();
+  }
+  expect(window.addEventListener).toBe(addEventListener);
 });

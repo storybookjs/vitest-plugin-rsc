@@ -5,6 +5,9 @@ Your server code runs in a browser tab, which has no Node.js. So `vitestPluginNe
 > [!NOTE]
 > All of this comes with `vitestPluginNext()`. On its own, `vitestPluginRSC()` only provides `node:async_hooks`.
 
+> [!TIP]
+> Without Browser Mode, in a project with `environment: "happy-dom"` or `"jsdom"`, none of this applies but [Fast crypto](#fast-crypto) of fast mode: your server code runs on Node.js itself, with Node's own modules. See [Without Browser Mode](nextjs-guide.md#without-browser-mode).
+
 ## What just works
 
 APIs that Node.js and browsers share need no stand-in at all: `fetch`, `Request`, `Response`, `Headers`, `URL`, `FormData`, Web Streams, `TextEncoder`, `Blob`, `crypto.subtle`, `crypto.randomUUID()`, `structuredClone` and timers.
@@ -115,3 +118,5 @@ test("shows the note on disk", async () => {
 - **Only server code has it.** A Client Component has no `fs`, just like in Next.
 
 How it works: [The Server's Disk](internals/next-routes.md#the-servers-disk).
+
+Without Browser Mode, with happy-dom or jsdom, your server code runs on Node.js, and `node:fs` is your machine's disk: see [The disk without Browser Mode](nextjs-guide.md#the-disk-without-browser-mode).

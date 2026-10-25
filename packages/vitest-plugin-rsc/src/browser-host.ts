@@ -1,4 +1,4 @@
-import type { PageHost } from "./page-host.ts";
+import type { PageHost, PageNews } from "./page-host.ts";
 import { answerEvent, webSocketInfoPath, webSocketQuery } from "./page-protocol.ts";
 
 // The host of a page in a browser: its requests to the dev server go over a
@@ -11,14 +11,7 @@ type PendingInvoke = {
   reject: (error: unknown) => void;
   timeoutId: ReturnType<typeof setTimeout> | undefined;
 };
-type InvokeResultMessage = {
-  type?: string;
-  event?: string;
-  data?: {
-    id?: string;
-    result?: unknown;
-  };
-};
+type SocketMessage = { type?: string; event?: string; data?: unknown };
 
 // Before anything replaces it, like a mock of the network.
 const nativeFetch = globalThis.fetch;
@@ -38,16 +31,40 @@ const now = performance.now.bind(performance);
 let lastAnswer = 0;
 
 const pendingInvokes = new Map<string, PendingInvoke>();
+// What the page listens to the server with: the socket brings the news and
+// the answers in the order the server sent them.
+const listeners = new Set<PageNews>();
 
 const browserHost: PageHost = {
   request: requestOverWebSocket,
+  listen: (listener) => {
+    listeners.add(listener);
+  },
   navigation: (window as { navigation?: EventTarget }).navigation,
   loadsStylesheets: true,
   serverWebApis: globalThis,
   // One realm: the page's are the server's.
   fromPage: (init) => init,
+  serverDir: "",
+  serverImmediate,
 };
 export default browserHost;
+
+// A task each, by a message of one channel, in the order they were asked for.
+const immediates = new Map<symbol, () => void>();
+const channel = new MessageChannel();
+channel.port1.onmessage = () => {
+  const [id, run] = immediates.entries().next().value ?? [];
+  if (id === undefined) return;
+  immediates.delete(id);
+  run!();
+};
+function serverImmediate(callback: () => void): () => void {
+  const id = Symbol("immediate");
+  immediates.set(id, callback);
+  channel.port2.postMessage(null);
+  return () => immediates.delete(id);
+}
 
 // Rejects once the server has sent nothing for `invokeTimeout`, unless the
 // request does not `expire`.
@@ -100,6 +117,9 @@ async function openReactClientWebSocket() {
 
   socket.addEventListener("message", handleWebSocketMessage);
   socket.addEventListener("close", () => {
+    // Also one that closes after the next has opened: it may have missed
+    // news.
+    for (const listener of listeners) listener.missed();
     if (webSocket === socket) {
       webSocket = undefined;
     }
@@ -138,35 +158,30 @@ function waitForWebSocketOpen(socket: WebSocket) {
 }
 
 function handleWebSocketMessage(event: MessageEvent) {
-  const result = parseInvokeResultMessage(event.data);
-  if (!result) return;
+  const message = parseMessage(event.data);
+  if (message?.type !== "custom" || typeof message.event !== "string") return;
+  if (message.event !== answerEvent) {
+    for (const listener of listeners) listener.heard(message.event, message.data);
+    return;
+  }
+  const { id, result } = (message.data ?? {}) as { id?: unknown; result?: unknown };
+  if (typeof id !== "string") return;
 
   lastAnswer = now();
-  const pending = pendingInvokes.get(result.id);
+  const pending = pendingInvokes.get(id);
   if (!pending) {
     return;
   }
 
   clearTimeout(pending.timeoutId);
-  pendingInvokes.delete(result.id);
-  pending.resolve(result.result);
+  pendingInvokes.delete(id);
+  pending.resolve(result);
 }
 
-function parseInvokeResultMessage(raw: unknown) {
-  if (typeof raw !== "string") {
-    return undefined;
-  }
-
+function parseMessage(raw: unknown): SocketMessage | undefined {
+  if (typeof raw !== "string") return undefined;
   try {
-    const message = JSON.parse(raw) as InvokeResultMessage;
-    if (
-      message.type !== "custom" ||
-      message.event !== answerEvent ||
-      typeof message.data?.id !== "string"
-    ) {
-      return undefined;
-    }
-    return { id: message.data.id, result: message.data.result };
+    return JSON.parse(raw) as SocketMessage;
   } catch {
     return undefined;
   }

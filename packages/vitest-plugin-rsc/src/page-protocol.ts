@@ -4,7 +4,7 @@
 // and the server answers at `answerEvent` with `{ id, result }`. On the
 // WebSocket of a page in a browser (browser-host.ts), or, for a page in a
 // worker of Node.js, where Vitest has no WebSocket without Browser Mode, a
-// listener of HTTP of the plugin's own (node-host.ts). Names and types only:
+// listener of HTTP of the plugin's own (node-channel.ts). Names and types only:
 // the page imports this file, in a browser too, and the server's side of the
 // channel, with Node's `http`, is page-bridge.ts.
 
@@ -39,3 +39,15 @@ export type PageAnswer<T> = { answer: T } | { error: string };
 export type PageRequest = { event: string; data: object };
 /** Where the listener of `listenForPage()` takes a `PageRequest`. */
 export const pageRequestPath = "/@vitest-plugin-rsc/page-request";
+/**
+ * Where a page in a worker of Node.js listens to the news of the dev server,
+ * which a page in a browser hears on its socket: a line of JSON for each
+ * piece, `{ told, event, data }`, after a first line `{ told }`. `told` is
+ * how many pieces the server had told by then.
+ */
+export const pageNewsPath = "/@vitest-plugin-rsc/page-news";
+/**
+ * The header of an answer of the listener: how many pieces of news the server
+ * had told as it sent the answer, which the page hears before the answer.
+ */
+export const toldHeader = "x-vitest-plugin-rsc-told";

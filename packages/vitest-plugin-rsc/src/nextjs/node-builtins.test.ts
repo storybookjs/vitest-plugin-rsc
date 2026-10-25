@@ -10,33 +10,46 @@ import {
   unenvModules,
   written,
 } from "../../scripts/node-modules.ts";
-import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
+import { browserMapping, isNativeNodeModule, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
 
 // The built files, which a run of the source uses too.
 const nodeDir = path.resolve(outputDir, "../../dist/node");
 
 test("gives the file of the package's module for a module of Node.js, with or without `node:`", () => {
-  expect(nodeModuleOf("node:fs")).toBe(`${nodeDir}/fs.js`);
-  expect(nodeModuleOf("fs")).toBe(`${nodeDir}/fs.js`);
-  expect(nodeModuleOf("node:fs/promises")).toBe(`${nodeDir}/fs/promises.js`);
-  expect(nodeModuleOf("os")).toBe(`${nodeDir}/os.js`);
-  expect(nodeModuleOf("node:sqlite")).toBe(`${nodeDir}/sqlite.js`);
-  expect(nodeModuleOf("node:crypto")).toBe(`${nodeDir}/crypto.js`);
+  expect(nodeModuleOf("node:fs", "stand-ins")).toBe(`${nodeDir}/fs.js`);
+  expect(nodeModuleOf("fs", "stand-ins")).toBe(`${nodeDir}/fs.js`);
+  expect(nodeModuleOf("node:fs/promises", "stand-ins")).toBe(`${nodeDir}/fs/promises.js`);
+  expect(nodeModuleOf("os", "stand-ins")).toBe(`${nodeDir}/os.js`);
+  expect(nodeModuleOf("node:sqlite", "stand-ins")).toBe(`${nodeDir}/sqlite.js`);
+  expect(nodeModuleOf("node:crypto", "stand-ins")).toBe(`${nodeDir}/crypto.js`);
   expect(isNodeModule(`${nodeDir}/fs.js`)).toBe(true);
   expect(isNodeModule(path.resolve(nodeDir, "../nextjs/ssr.js"))).toBe(false);
   expect(isNodeModule("vitest-plugin-rsc/node/fs")).toBe(false);
 });
 
 test("leaves a package alone, and the package's own `async_hooks`", () => {
-  expect(nodeModuleOf("memfs")).toBeUndefined();
-  expect(nodeModuleOf("fs-extra")).toBeUndefined();
-  expect(nodeModuleOf("node:async_hooks")).toBeUndefined();
+  expect(nodeModuleOf("memfs", "stand-ins")).toBeUndefined();
+  expect(nodeModuleOf("fs-extra", "stand-ins")).toBeUndefined();
+  expect(nodeModuleOf("node:async_hooks", "stand-ins")).toBeUndefined();
+});
+
+test("gives Node's own module in a worker of Node.js, by its `node:` name", () => {
+  expect(nodeModuleOf("fs", "native")).toBe("node:fs");
+  expect(nodeModuleOf("node:fs/promises", "native")).toBe("node:fs/promises");
+  expect(nodeModuleOf("net", "native")).toBe("node:net");
+  expect(nodeModuleOf("node:test", "native")).toBe("node:test");
+  expect(nodeModuleOf("memfs", "native")).toBeUndefined();
+  expect(isNativeNodeModule("node:net")).toBe(true);
+  expect(isNativeNodeModule(`${nodeDir}/net.js`)).toBe(false);
+  // Every one of them: none is a stand-in there.
+  const names = builtinModules.filter((name) => !name.startsWith("_") && name !== "async_hooks");
+  expect(names.filter((name) => !nodeModuleOf(name, "native"))).toEqual([]);
 });
 
 test("has a module for every module of Node.js but a few", () => {
   // Not the internals of Node's own, like `_stream_duplex`.
   const names = builtinModules.filter((name) => !name.startsWith("_"));
-  const without = names.filter((name) => !nodeModuleOf(name));
+  const without = names.filter((name) => !nodeModuleOf(name, "stand-ins"));
   expect(without.sort()).toEqual(["async_hooks", "node:sea", "node:test", "node:test/reporters"]);
 });
 
