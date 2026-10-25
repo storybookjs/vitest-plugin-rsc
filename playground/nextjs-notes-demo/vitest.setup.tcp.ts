@@ -17,6 +17,10 @@ import dataDirUrl from "#test/pglite/db.tgz?url";
 // The data dir by the URL that Vite serves it at, of the page's origin, as
 // lib/__mocks__/db.ts has it.
 const dataDir = await fetch(new URL(dataDirUrl, location.href));
+// The clock stopped at TEST_NOW before the database does any work, and kept
+// stopped: see vitest.setup.ts. Between files too, where Browser Mode needs
+// the real clock, and Node.js does not.
+vi.setSystemTime(new Date(TEST_NOW));
 const postgres = new PGlite({ loadDataDir: await dataDir.blob() });
 // The app's pool and a test's own connection at once.
 const server = new PGLiteSocketServer({ db: postgres, port: 0, maxConnections: 20 });
@@ -35,14 +39,14 @@ const emptyAllTables = [
 
 let consoleError: MockInstance<typeof console.error>;
 
-beforeEach(async () => {
+beforeEach(async ({ onTestFinished }) => {
   consoleError = vi.spyOn(console, "error");
   consoleError.mockClear();
   await postgres.exec(emptyAllTables);
-  vi.setSystemTime(new Date(TEST_NOW));
-  return () => {
+  onTestFinished(() => {
     vi.useRealTimers();
-  };
+    vi.setSystemTime(new Date(TEST_NOW));
+  });
 });
 
 afterEach(() => {

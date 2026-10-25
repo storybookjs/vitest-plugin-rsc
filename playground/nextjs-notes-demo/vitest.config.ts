@@ -187,10 +187,9 @@ const nodeProject = (
 
 export const nextjsNotesProjects = [
   nodeProject("nextjs-notes-demo-happy-dom", "happy-dom", { cacheDevServer: true }),
-  // In fast mode the probes of the stores, not yet the pages: with `keepApp`,
-  // PGlite, the test's database, arms a timer as long as the real time is
-  // ahead of the clock that the setup file sets, 172 days, which Node.js
-  // clamps to 1 ms, again and again, and the test hangs.
+  // In fast mode the probes of the stores, not yet the pages: the pages of
+  // app/notes/page.node.test.tsx time out in fast mode. Not because of the
+  // database's timers, which vitest.setup.node.ts keeps on one clock.
   nodeProject("nextjs-notes-demo-happy-dom-fast", "happy-dom", {
     mode: "fast",
     files: ["components/async-context.node.test.tsx"],
