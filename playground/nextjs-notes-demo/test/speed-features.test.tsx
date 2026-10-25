@@ -59,8 +59,18 @@ function recordFlightRequests(): () => string[] {
   return () => timings.filter((t) => t.kind === "flight").map((t) => new URL(t.url).pathname);
 }
 
-// The module of the probe that renders the page: one of its own for every
-// page load.
+// Whether the pages from now on render in the app of the page before: Next's
+// client sets `window.next` as it starts, which takes the mark off. A kept
+// app starts anew too once the dev server has changed a module of the
+// browser layer, which the first pages of a run can do, as Vite compiles
+// them: the tests take the app as it is.
+function markApp(): () => boolean {
+  const next = (window as { next?: { keptApp?: boolean } }).next!;
+  next.keptApp = true;
+  return () => (window as { next?: { keptApp?: boolean } }).next?.keptApp === true;
+}
+
+// The evaluation of the module of the probe that renders the page.
 const probeModule = async () => {
   await renderServer({ url: "/speed-features" });
   return (await page.getByText(/^Module \d/).findElement()).textContent;
@@ -68,10 +78,12 @@ const probeModule = async () => {
 
 test("keepApp: the modules of the page before stay, with their state", async () => {
   const first = await probeModule();
+  const sameApp = markApp();
   const second = await probeModule();
 
-  if (keptApp) expect(second).toBe(first);
-  else expect(second).not.toBe(first);
+  // A page load evaluates the modules of the app again.
+  if (!keptApp) expect(sameApp()).toBe(false);
+  expect(second === first).toBe(sameApp());
 });
 
 test("keepApp: no hydration mismatch, as the page renders on the client", async () => {
@@ -110,51 +122,40 @@ test("keepApp: no preloads of the server's HTML, and flightLoads: Flight's respo
   expect(document.head.querySelector('meta[name="next-size-adjust"]')).toBeNull();
 });
 
-// The status of a page is the server's while it renders the HTML. A page of
-// the kept app has none: the document of `ssr: false`, or the response of
-// Flight, whose status is 200.
-const lostStatus = keptApp;
-
-test("keepApp: the 404 of a page that is not found", async () => {
+// The status of a page is the server's while it renders the HTML, which a
+// page of the kept app has none of: the page reads it from the error in the
+// payload, see page-status.test.tsx.
+test("every mode: the 404 of a page that is not found", async () => {
   const { response } = await expectingErrors(async () => {
     const rendered = await renderServer({ url: "/notes/not-a-guid" });
     await expect.element(page.getByText("This page could not be found.")).toBeVisible();
     return rendered;
   });
 
-  expect(response.status).toBe(lostStatus ? 200 : 404);
+  expect(response.status).toBe(404);
 });
 
-test("keepApp: the 500 of a page that fails to render", async () => {
-  const { response, errors, reported } = await expectingErrors(async () => {
-    const reportError = vi.mocked(window.reportError);
+test("every mode: the 500 of a page that fails to render", async () => {
+  const { response, errors } = await expectingErrors(async () => {
     const rendered = await renderServer({ url: "/speed-features?fail" });
     await expect.poll(() => rendered.errors).not.toEqual([]);
-    return { ...rendered, reported: reportError.mock.calls.length };
+    return rendered;
   });
 
-  expect(response.status).toBe(lostStatus ? 200 : 500);
+  expect(response.status).toBe(500);
   // The test hears of the error in either.
   expect(errors).not.toEqual([]);
-  // Next reports it with the `reportError` that it found as its modules
-  // loaded: the kept app's are from before the spy.
-  expect(reported).toBe(keptApp ? 0 : 1);
 });
 
-test("keepApp without flightLoads: a page that redirects opens before it redirects", async () => {
+test("every mode: a page that redirects opens its target", async () => {
   // Signed out: the page sends the browser to sign in.
   const { response } = await renderServer({ url: "/notes/new" });
 
-  // Followed as a browser follows the 307 of the document, and with
-  // `flightLoads`, the request of Flight of the target. A document of
-  // `ssr: false` is a 200 with the payload, and Next's router redirects once
-  // it renders, after `renderServer()`.
-  const followed = !keptApp || flightLoads;
-  expect(response.redirected).toBe(followed);
-  expect(new URL(response.url).pathname).toBe(followed ? "/auth/sign-in" : "/notes/new");
-  expect(window.location.pathname).toBe(followed ? "/auth/sign-in" : "/notes/new");
-  await expect.element(page.getByLabelText("Email")).toBeInTheDocument();
+  // As a browser follows the 307 of the document.
+  expect(response.redirected).toBe(true);
+  expect(new URL(response.url).pathname).toBe("/auth/sign-in");
   expect(window.location.pathname).toBe("/auth/sign-in");
+  await expect.element(page.getByLabelText("Email")).toBeInTheDocument();
 });
 
 test("every mode: the cookies that a page load sets", async () => {
