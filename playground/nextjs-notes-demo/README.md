@@ -9,7 +9,7 @@ Tests open routes with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/te
 Only two things:
 
 - **The database**, `#lib/db.ts`. Tests and stories get an in-memory PGlite database instead, one per document, emptied before each test or story. See `lib/__mocks__/db.ts`, mocked with `vi.mock()` in `vitest.setup.ts` and `sb.mock()` in `.storybook/preview.tsx`.
-- **The clock**, frozen at `TEST_NOW` from `test/now.ts`, so a note shows the same date on every run. Tests use `vi.setSystemTime()` in `vitest.setup.ts`. Storybook uses `MockDate.set()` from [mockdate](https://github.com/boblauer/MockDate), as Storybook's docs suggest, in the `beforeAll` of `.storybook/preview.tsx`.
+- **The clock**, frozen at `TEST_NOW` from `test/now.ts`, so a note shows the same date on every run. Tests use `vi.setSystemTime()` in `vitest.setup.ts`. Storybook uses `MockDate.set()` from [mockdate](https://github.com/boblauer/MockDate), as Storybook's docs suggest, in the `beforeAll` of `.storybook/preview.tsx`. The tests stop it before the database does any work, and keep it stopped through the tests of a file: PGlite's Postgres times its own timeouts by that clock, and a timeout that it armed by the real clock is months away by the stopped one, which leaves Postgres re-arming it in a busy loop.
 
 Everything else is the real app: Better Auth on that database, its session cookie, `cookies()` and `headers()`, flash cookies and redirects. A test signs in with `signedInAs()` from `test/auth.ts`, which creates a session in the database and its signed cookie, just like Better Auth would.
 
