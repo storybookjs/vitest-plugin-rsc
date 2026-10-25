@@ -25,8 +25,11 @@ const merged = mergeConfig(config, {
   },
 });
 // Not merged: in place of the tests, the bench, and its marks of startup
-// around the setup files (the plugin puts its own before them).
-merged.test!.include = ["bench/*.test.tsx"];
+// around the setup files (the plugin puts its own before them). Or, with
+// `BENCH_INCLUDE`, a glob of the app's tests: the marks of startup of a run of
+// those, like the one file of a developer's loop.
+// oxlint-disable-next-line no-process-env
+merged.test!.include = [process.env.BENCH_INCLUDE || "bench/*.test.tsx"];
 merged.test!.setupFiles = [
   "./bench/startup-first.ts",
   "./vitest.setup.ts",
