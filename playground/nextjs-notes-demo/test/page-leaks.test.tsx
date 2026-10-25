@@ -146,25 +146,30 @@ countListeners(document);
 // A collection of the whole heap: in Node, with the collector that V8 exposes
 // with its flag, and in Chromium, which the browser projects start with that
 // flag (vitest.config.ts).
-const collect = isNodeHost ? exposeGc() : (globalThis as { gc?: () => void }).gc;
+type Collect = (options: { type: "major"; execution: "async" }) => Promise<void>;
+const collect = isNodeHost ? exposeGc() : (globalThis as { gc?: Collect }).gc;
 
-function exposeGc(): () => void {
+function exposeGc(): Collect {
   const v8 = process.getBuiltinModule("node:v8");
   const vm = process.getBuiltinModule("node:vm");
   v8.setFlagsFromString("--expose-gc");
-  return vm.runInNewContext("gc") as () => void;
+  return vm.runInNewContext("gc") as Collect;
 }
 
-function collectAll() {
+// In a task of its own, with nothing on the stack. A collection that the
+// test calls takes every word of the stack that could point into the heap
+// for a pointer, and in Chromium the DOM is on that heap (Oilpan): a stale
+// word on the stack kept a body there now and then.
+async function collectAll() {
   expect(collect, "a collector of the heap").toBeTypeOf("function");
-  collect!();
-  collect!();
+  await collect!({ type: "major", execution: "async" });
+  await collect!({ type: "major", execution: "async" });
 }
 
 // The heap after a collection: Chromium's is precise with the flag
 // `--enable-precise-memory-info`, which the browser projects start with too.
-function heapUsed() {
-  collectAll();
+async function heapUsed() {
+  await collectAll();
   if (isNodeHost) return process.memoryUsage().heapUsed;
   return (performance as { memory?: { usedJSHeapSize: number } }).memory!.usedJSHeapSize;
 }
@@ -232,7 +237,7 @@ const bodies: WeakRef<HTMLElement>[] = [];
 test.for(Array.from({ length: PAGES }, (_, index) => index))(
   "opens /notes, with a Server Action and a navigation: page %i",
   async (index) => {
-    if (index === WARMUP && measuresHeap) heapAfterWarmup = heapUsed();
+    if (index === WARMUP && measuresHeap) heapAfterWarmup = await heapUsed();
     await signedInAs();
     await db.insert(notes).values({ ownerId: testUser.id, title: "Leaky note" });
     await renderServer({ url: "/notes" });
@@ -290,11 +295,13 @@ leavesNo("leaves no stylesheet in the head", (it) => it.stylesheets);
 
 // But for the last page: jsdom keeps the body of the page that was left last,
 // until the next one, one page and no more.
-test("keeps no body of a page that was left", () => {
+test("keeps no body of a page that was left", async () => {
   expect(bodies).toHaveLength(PAGES);
-  collectAll();
-  const kept = bodies.slice(WARMUP, -1).filter((body) => body.deref()).length;
-  expect(kept, "pages left after the warmup whose body is kept").toBe(0);
+  await collectAll();
+  const kept = bodies.flatMap((body, index) =>
+    index >= WARMUP && index < PAGES - 1 && body.deref() ? [index] : [],
+  );
+  expect(kept, "pages left after the warmup whose body is kept").toEqual([]);
 });
 
 // A page that is kept is the whole of its module graph: 2 to 3 MB in
@@ -302,9 +309,9 @@ test("keeps no body of a page that was left", () => {
 // to 0.8 MB a page, which no check here names yet. The bound is half a kept
 // page; the check of the bodies above names a kept page. Both are read when
 // no page is open.
-test.runIf(measuresHeap)("grows the heap by less than a kept page would", () => {
+test.runIf(measuresHeap)("grows the heap by less than a kept page would", async () => {
   expect(heapAfterWarmup).toBeGreaterThan(0);
-  const perPage = (heapUsed() - heapAfterWarmup) / (PAGES - WARMUP);
+  const perPage = ((await heapUsed()) - heapAfterWarmup) / (PAGES - WARMUP);
   const bound = isNodeHost ? 3072 : 1024;
   expect(Math.round(perPage / 1024), "kB of heap per page after the warmup").toBeLessThan(bound);
 });
