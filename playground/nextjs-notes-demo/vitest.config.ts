@@ -128,6 +128,12 @@ const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
       exclude: ["e2e/**", "node_modules"],
       environment,
       isolate: false,
+      // What Vitest gives a test in Browser Mode, where Node.js has 5 s: the
+      // first test of a file opens its route, which compiles that route and
+      // the first modules of the browser layer, as with Browser Mode. The ssr
+      // layer loads in the setup file, and the optimizer's first bundling
+      // before the worker starts, out of a test's time.
+      testTimeout: 15_000,
       expect: { poll: { timeout: 10_000 } },
       setupFiles: ["./vitest.setup.node.ts"],
     },
