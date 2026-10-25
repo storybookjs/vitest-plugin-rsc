@@ -236,9 +236,7 @@ interface KeyPlan {
   shortcut: boolean;
   /** The text control the key is pressed on, whose caret it moves. */
   control: TextControl | undefined;
-  /** That control, if it is not read-only: the key edits its text. */
-  text: TextControl | undefined;
-  /** The edit of the text the key makes. */
+  /** The edit of its text the key makes, which a read-only control refuses. */
   edit: Edit | undefined;
 }
 
@@ -282,15 +280,15 @@ function planOf(
     if (/^Key[CVX]$/.test(definition.code)) throw unsupported("of the clipboard");
   }
   let edit: Edit | undefined;
-  if (text && !shortcut) {
+  if (control && !control.disabled && !shortcut) {
     if (named === "Backspace") edit = backwardDeletion;
     else if (named === "Delete") edit = forwardDeletion;
     else if (definition.charCode !== undefined && named !== "Enter") edit = insertion(named);
-    if (edit && !keepsEdit(text, edit)) {
+    if (edit && text && !keepsEdit(text, edit)) {
       throw unsupported(`in an input of type ${text.type}, which would not keep it as typed,`);
     }
   }
-  return { definition, held, shortcut, control, text, edit };
+  return { definition, held, shortcut, control, edit };
 }
 
 /**
@@ -302,7 +300,7 @@ function planOf(
  */
 function pressKey(
   element: HTMLElement,
-  { definition, held, shortcut, control, text, edit }: KeyPlan,
+  { definition, held, shortcut, control, edit }: KeyPlan,
 ): void {
   const init: KeyboardEventInit = {
     key: definition.key,
@@ -334,7 +332,7 @@ function pressKey(
   }
   let clickAfterKeyup = false;
   if (act) {
-    if (edit && text) editText(text, edit);
+    if (edit && control) editText(control, edit);
     else if (definition.key === "Enter") onEnter(element);
     else if (definition.key === "Tab") focusNext(element, isVisible, !!held.shiftKey);
     else if (caretKeys.has(definition.key)) {
@@ -445,9 +443,8 @@ function characterBoundary(value: string, index: number, direction: -1 | 1): num
 /**
  * Playwright's `pressSequentially(text)`: a press of each character's key,
  * Enter for a line break, and for a character the keyboard has no key for,
- * like "é", its text alone, as `keyboard.insertText()`: into a text control
- * that is not read-only, nowhere else, and a `contenteditable` element
- * throws.
+ * like "é", its text alone, as `keyboard.insertText()`: into a text control,
+ * nowhere else, and a `contenteditable` element throws.
  */
 export function pressSequentially(element: HTMLElement, text: string): void {
   focusForPress(element);
@@ -457,8 +454,8 @@ export function pressSequentially(element: HTMLElement, text: string): void {
     else if (/^[\x20-\x7e]$/.test(char)) press(target, char);
     else if (isTextControl(target)) {
       const edit = insertion(char);
-      if (target.readOnly || target.disabled) continue;
-      if (!keepsEdit(target, edit)) {
+      if (target.disabled) continue;
+      if (!target.readOnly && !keepsEdit(target, edit)) {
         throw new UnsupportedError(
           `pressSequentially() of "${char}" in an input of type ${target.type}, which would not keep it as typed, is not in dom-locators yet: ${escapeHatch}.`,
         );

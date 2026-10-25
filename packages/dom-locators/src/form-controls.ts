@@ -162,11 +162,13 @@ export function keepsEdit(element: TextControl, edit: Edit): boolean {
 /**
  * `edit` of a text control: `beforeinput`, which may cancel it, then the
  * new value, the caret after what it inserted, and `input` if the value
- * changed. `selection` is for a control without a selection of its own to
- * read, like an email input.
+ * changed; of a read-only control, `beforeinput` alone, as Chrome's.
+ * `selection` is for a control without a selection of its own to read,
+ * like an email input.
  */
 export function editText(element: TextControl, edit: Edit, selection?: [number, number]): void {
   if (!element.dispatchEvent(inputEvent(edit.inputType, edit.data, true))) return;
+  if (element.readOnly) return;
   const before = element.value;
   const { value, from, inserted } = apply(element, edit, selection);
   if (value === before) return;
