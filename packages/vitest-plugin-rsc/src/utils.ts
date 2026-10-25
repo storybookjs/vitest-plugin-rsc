@@ -8,6 +8,7 @@ import {
   ssrImportMetaKey,
   ssrModuleExportsKey,
   type ModuleEvaluator,
+  type ModuleRunnerImportMeta,
   type ModuleRunnerTransport,
 } from "vite/module-runner";
 import hostModules from "virtual:vitest-plugin-rsc/host-modules";
@@ -123,6 +124,28 @@ function getRunner(environment: string): ModuleRunner {
   return runner;
 }
 
+// What `import.meta` of a module says of its file: its path, its directory
+// and its URL. The same for every runner of the environment, so it is worked
+// out once per file. Vite's runner works it out again for every module of
+// every page load: a third of what a page load spent evaluating the
+// browser layer's modules, in normalizing paths and parsing URLs. Each
+// module still gets an `import.meta` of its own.
+const importMetas = new Map<string, ModuleRunnerImportMeta>();
+
+function importMetaOf(environment: string, file: string): ModuleRunnerImportMeta {
+  const key = `${environment}\n${file}`;
+  let meta = importMetas.get(key);
+  if (!meta) {
+    const layer = builtLayers?.[environment];
+    meta = createDefaultImportMeta(file);
+    // A module of a build has the URL of the file it would be, from which it
+    // names the files of the build, like its CSS.
+    if (layer) meta.url = builtUrl(layer, file);
+    importMetas.set(key, meta);
+  }
+  return meta;
+}
+
 // A runner of an environment. A module of the page is the page's own, and a
 // static build has the modules of the environment in a file of its own.
 function createRunner(
@@ -147,14 +170,8 @@ function createRunner(
           hostModule(payload) ?? (layer ? built.invoke(layer, payload) : invoke(payload)),
       },
       hmr: false,
-      createImportMeta: (file) =>
-        Object.assign(createDefaultImportMeta(file), {
-          // A module of a build has the URL of the file it would be, from
-          // which it names the files of the build, like its CSS.
-          ...(layer && { url: builtUrl(layer, file) }),
-          // The timers its code calls: see timers.ts.
-          [timersKey]: timers,
-        }),
+      // The timers its code calls: see timers.ts.
+      createImportMeta: (file) => ({ ...importMetaOf(environment, file), [timersKey]: timers }),
     },
     droppingImportsOnceClosed(isClosed),
   );
