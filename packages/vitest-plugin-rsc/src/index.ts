@@ -9,6 +9,7 @@ import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
 import { moduleFilesPlugin } from "./module-files.ts";
+import { mswDependenciesPlugin } from "./msw-dependencies.ts";
 import { mapOfRelatedLookup } from "./related-lookup.ts";
 import {
   hostsPageInNode,
@@ -275,6 +276,7 @@ export function vitestPluginRSC(): Plugin[] {
     // Vitest's project may have another object for it.
     ...workerPlugins(page, (event, data) => answerOf(devServer!, event, data)),
     moduleFilesPlugin(page),
+    mswDependenciesPlugin(page),
     dependencySourceMapPlugin(),
     dependencyTransformPlugin(),
     createReactClientCoveragePlugin(),
