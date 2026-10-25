@@ -76,7 +76,8 @@ class Socket extends EventTarget {
     });
   }
 }
-// The server changes the modules of an environment, and tells the page.
+// The server changes the modules of an environment, and tells the page. The
+// tests share the page's state, in order: the versions it heard of.
 function change(environment: string, version: number) {
   versions.set(environment, version);
   const data = JSON.stringify({
@@ -88,7 +89,6 @@ function change(environment: string, version: number) {
 }
 
 vi.stubGlobal("WebSocket", Socket);
-vi.stubGlobal("dispatchEvent", () => true);
 vi.stubGlobal("window", { location: new URL("http://localhost:63315/") });
 vi.stubGlobal("fetch", async () => Response.json({ token: "t", path: "/socket" }));
 const {
@@ -127,6 +127,16 @@ test("asks for the versions of the modules once, and then hears of a change from
   expect(versionsAsked).toEqual(["client", "client"]);
 });
 
+test("asks again once its socket has closed, which may have missed a change", async () => {
+  await checkFetchedModules();
+  versionsAsked.length = 0;
+  for (const socket of sockets) socket.dispatchEvent(new Event("close"));
+  await checkFetchedModules();
+  expect(versionsAsked.sort()).toEqual(["client", "react_client"]);
+});
+
+// After the tests before: the page has asked for the versions, and heard of
+// changes since.
 test("fetches the modules of a page load again after a change, also one that came during a load", async () => {
   await checkFetchedModules();
   await createEnvironmentRunner("react_client").import("/entry.js");

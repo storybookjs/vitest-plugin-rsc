@@ -273,12 +273,14 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // them, so the one that arrives last is the latest.
 //
 // The page reads a version here once it has asked for it, in `asked`, and
-// asks again after `forgetHeardVersions()`: as a test file ends, and when its
-// socket closes, which may have missed a change. A change that reaches the
-// server through another connection than the page's, like Vitest's own or a
-// request of HTTP, is ordered by such a question: its answer comes after
-// every change the server made before it. Between two, the page sees it once
-// the server's news of it has arrived.
+// asks again after `forgetHeardVersions()`: at a page load, as a test file
+// ends, and when its socket closes, which may have missed a change. A change
+// that reaches the server through another connection than the page's, like
+// Vitest's own or a request of HTTP, is ordered by such a question: its
+// answer comes after every change the server made before it. Within a page,
+// the page sees it once the server's news of it has arrived. That needs the
+// news and the answers on one connection: a page that asks another way, with
+// no news, has to ask every time.
 const heardVersions = new Map<string, number>();
 let asked = new Set<string>();
 
@@ -765,14 +767,10 @@ function parseMessage(raw: unknown): SocketMessage | undefined {
   }
 }
 
-// The page hears of a change of the modules of an environment, and so does
-// a test that changes a file itself, at `modulesChangedEvent` of the window,
-// to wait for the page to have heard of it.
 function heardModulesChange(changed: Partial<ModulesChanged> | undefined) {
   const { environment, version } = changed ?? {};
   if (typeof environment !== "string" || typeof version !== "number") return;
   heardVersions.set(environment, version);
-  dispatchEvent(new CustomEvent(modulesChangedEvent, { detail: { environment, version } }));
 }
 
 function rejectPendingInvokes(error: unknown) {

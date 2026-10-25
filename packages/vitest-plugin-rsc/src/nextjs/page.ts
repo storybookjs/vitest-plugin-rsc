@@ -6,6 +6,7 @@ import {
   checkFetchedModules,
   createEnvironmentRunner,
   environmentModule,
+  forgetHeardVersions,
   versionOfModules,
 } from "../utils.ts";
 import {
@@ -271,6 +272,11 @@ export async function loadPage(
   const loading = (async () => {
     await leaving;
     page.signal.throwIfAborted();
+    // A page load asks the dev server for the versions of its modules, as a
+    // browser asks for a page: a change that reached the server through
+    // another connection, like a request of the test, is ordered before
+    // it. Within the page, the page reads what the server told it since.
+    forgetHeardVersions();
     // A page that is not one of the kept app starts an app of its own, and so
     // does one when there is none, like after a first page whose app did not
     // start, or when the dev server has changed modules of the browser layer
@@ -399,8 +405,10 @@ async function openPage(
   // module graph of its own for the browser layer. A page that is left keeps
   // no module graph: what of it stays, like an error whose stack has the
   // frames that loaded a module, cannot reach its modules through the runner.
-  // The version of the modules that it starts with, or an older one: see `kept`.
+  // The version of the modules that it starts with, or an older one: see
+  // `kept`. Its runner takes the modules of a check after it.
   const modules = inKeptApp ? await versionOfModules("react_client") : 0;
+  if (inKeptApp) await checkFetchedModules();
   superseded();
   const runner = createEnvironmentRunner("react_client");
   deferForApp(() => void runner.close());

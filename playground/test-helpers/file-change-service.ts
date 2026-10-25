@@ -10,9 +10,7 @@ type VitestPlugin = { configureVitest(context: { vitest: Vitest }): void };
  * the dev server invalidates the modules of the file as Vitest's watcher
  * does for a change. With `content`, that is what the file has from then on
  * for the dev server, which leaves the file as it is. Without, it has what is
- * in the file again. Answers with the versions of the modules of each
- * environment that has the file, which the page hears of: see
- * file-changed.ts.
+ * in the file again.
  */
 export function fileChangeService(): Plugin & VitestPlugin {
   const contents = new Map<string, string>();
@@ -33,14 +31,7 @@ export function fileChangeService(): Plugin & VitestPlugin {
         if (content === null) contents.delete(changed);
         else contents.set(changed, content);
         vitest!.invalidateFile(changed);
-        const versions: Record<string, number> = {};
-        for (const [name, { moduleGraph }] of Object.entries(server.environments)) {
-          for (const node of moduleGraph.getModulesByFile(changed) ?? []) {
-            versions[name] = Math.max(versions[name] ?? 0, node.lastInvalidationTimestamp);
-          }
-        }
-        response.setHeader("content-type", "application/json");
-        response.end(JSON.stringify({ versions }));
+        response.end();
       });
     },
     load: (id) => contents.get(id.split("?")[0]!),

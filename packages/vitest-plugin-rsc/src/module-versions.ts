@@ -45,7 +45,8 @@ export function changedAfter(graph: EnvironmentModuleGraph | undefined, version:
  * sees, one that Vitest's watcher tells the graph of itself, which a plugin
  * hears of in no hook, the optimizer's, and a plugin's own. So that is where
  * it is heard. Vite's HMR stamps a module that an update no longer imports
- * without it, which changes no code.
+ * without it: that changes no code, but moves the version of `versionOf()`,
+ * which the page then sees at its next question.
  */
 export function onInvalidation(server: ViteDevServer, changed: (environment: string) => void) {
   const pending = new Set<string>();
