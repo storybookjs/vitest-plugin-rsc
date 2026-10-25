@@ -63,6 +63,16 @@ test("lists the routes of the app, one for each pathname", async () => {
   expect(route(routes, "/board").page).toBe("/board/@team/page");
 });
 
+test("has the entry of a page import the module of each segment once, not at every request", async () => {
+  const project = await loadNextProject(root);
+  const { code } = await project.loadRouteEntry(route(project.routes, "/notes/[id]"));
+
+  // Next's loader tree gets each module with a function that it calls for
+  // every request: see `loadingOnce()` in project/entries.ts.
+  expect(code).toContain("instrumentModuleGetter(__vitest_plugin_rsc_once__(() => import(");
+  expect(code).not.toContain("instrumentModuleGetter(() => import(");
+});
+
 // An app of its own, next to the demo so that it finds the same Next.
 function appWith(files: string[], config: object = {}): string {
   const dir = fs.mkdtempSync(path.join(root, ".app-"));
