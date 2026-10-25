@@ -13,6 +13,7 @@ import {
 } from "vite/module-runner";
 import hostModules from "virtual:vitest-plugin-rsc/host-modules";
 import builtLayers from "virtual:vitest-plugin-rsc/layers";
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
 import {
   builtUrl,
@@ -23,22 +24,22 @@ import {
 import { isHostModule } from "./host-module.ts";
 import { runnerTimers, timersKey } from "./timers.ts";
 import {
-  answerEvent,
   changedEvent,
   invokeEvent,
   modulesChangedEvent,
   versionEvent,
-  webSocketInfoPath,
-  webSocketQuery,
   type ChangedQuestion,
   type ModulesChanged,
   type PageAnswer,
-} from "./websocket-bridge.ts";
+} from "./page-protocol.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
 // below evaluate: see vite-client.ts.
 (globalThis as { __vitest_plugin_rsc_vite_client__?: unknown }).__vitest_plugin_rsc_vite_client__ =
   pageClient;
+
+// Where a module imports Vite's client from.
+const viteClientUrl = "/@vite/client";
 
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";
@@ -55,26 +56,17 @@ type ViteFetchResult = {
   invalidate?: boolean;
 };
 
-type WebSocketInfo = { token: string; path: string };
-type PendingInvoke = {
-  resolve: (result: unknown) => void;
-  reject: (error: unknown) => void;
-  timeoutId: ReturnType<typeof setTimeout> | undefined;
-};
-type SocketMessage = { type?: string; event?: string; data?: unknown };
-
-// Before anything replaces it: this request is for the dev server, or for a
-// file of a static build.
+// Before anything replaces it: this request is for a file of a static build.
 const nativeFetch = globalThis.fetch;
 
 /**
- * Asks the dev server what a plugin answers at `event`, over the websocket of
- * the page: see `answerPage()` in websocket-bridge.ts.
+ * Asks the dev server what a plugin answers at `event`, through the host of
+ * the page: see `answerPage()` in page-bridge.ts.
  */
 export async function askDevServer<T>(event: string, question: object): Promise<T> {
   // Without a timeout, as a request of HTTP: one question can take a while,
   // like the first walk of a route, which compiles all of it.
-  const result = (await requestOverWebSocket(event, question, false)) as PageAnswer<T>;
+  const result = (await pageHost.request(event, question, false)) as PageAnswer<T>;
   if ("error" in result) {
     throw new Error(`vitest-plugin-rsc: the dev server failed to answer ${event}: ${result.error}`);
   }
@@ -89,27 +81,10 @@ const built = createBuiltLayers(
   Object.values(builtLayers ?? {}).filter((layer) => layer !== undefined),
 );
 
-let webSocket: WebSocket | undefined;
-let webSocketPromise: Promise<WebSocket> | undefined;
-let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;
-let nextInvokeId = 0;
-const invokeTimeout = 30_000;
-// A test's own timers may be fake.
-const setTimeout = globalThis.setTimeout;
-const clearTimeout = globalThis.clearTimeout;
-const now = performance.now.bind(performance);
-// When the server last answered. A page asks for its modules at once, and a
-// dev server that compiles them for the first time answers them one by one:
-// a request waits for the ones before it, so it times out when the server has
-// been silent, not when it is old.
-let lastAnswer = 0;
-
-const pendingInvokes = new Map<string, PendingInvoke>();
-
 const runners = new Map<string, ModuleRunner>();
 
 // One module runner per Vite environment that runs in the page next to the
-// browser tests. All of them share this websocket.
+// browser tests. All of them share the host's channel to the dev server.
 function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
@@ -165,7 +140,7 @@ function createRunner(
       // The timers its code calls: see timers.ts.
       createImportMeta: (file) => ({ ...importMetaOf(environment, file), [timersKey]: timers }),
     },
-    droppingImportsOnceClosed(isClosed),
+    droppingImportsOnceClosed(isClosed, evaluatorOf(environment)),
   );
   return runner;
 }
@@ -246,7 +221,7 @@ export function importReactClient<T = any>(id: string): Promise<T> {
 }
 
 async function invokeEnvironment(environment: string, payload: InvokePayload) {
-  const result = await invokeOverWebSocket(environment, payload);
+  const result = await invokeDevServer(environment, payload);
   // Coverage is collected for the modules the browser itself runs.
   return environment === "react_client" ? await withReactClientCoverage(result) : result;
 }
@@ -257,7 +232,7 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 // every module, also for a module it already has, which is hundreds of
 // requests for one page. They are answered here, for as long as the server
 // says that its modules are the ones that were fetched: see `versionOf()`
-// in index.ts.
+// in module-versions.ts.
 type FetchedModules = { version: number; results: Map<string, Promise<InvokeResult>> };
 
 const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
@@ -267,22 +242,21 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 }
 
 // The versions of the modules of the environments as the page last heard of
-// them from the dev server, which tells the page of every change of them on
-// its socket, before any answer it makes after it: see `onInvalidation()` in
-// module-versions.ts. The socket brings both in the order the server sent
-// them, so the one that arrives last is the latest.
+// them from the dev server, which tells the page of every change of them,
+// before any answer it makes after it: see `onInvalidation()` in
+// module-versions.ts. The host of the page brings both in the order the server
+// sent them (`listen()` in page-host.ts), so the one that arrives last is the
+// latest.
 //
 // The page reads a version here once it has asked for it, in `asked`, and
 // asks again after `forgetHeardVersions()`: at a page load, as a test file
-// starts, and when its socket closes, which may have missed a change. A change
+// starts, and when its host may have missed a change, like when its socket
+// closed. A change
 // that reaches the server through another connection than the page's, like
 // Vitest's own or a request of HTTP, is ordered by such a question: its
 // answer comes after every change the server made before it. Within a page,
-// the page sees it once the server's news of it has arrived. That needs the
-// news and the answers on one connection, in order: a host of the page that
-// asks another way, like over HTTP, has to subscribe to the news on its own
-// connection, or else the page asks for the versions with every request,
-// as before the news. See docs/internals/architecture.md.
+// the page sees it once the server's news of it has arrived. See
+// docs/internals/architecture.md.
 const heardVersions = new Map<string, number>();
 let asked = new Set<string>();
 // The questions on their way since then: one for every environment.
@@ -294,6 +268,16 @@ export function forgetHeardVersions(): void {
   asked = new Set();
   asking = new Map();
 }
+
+pageHost.listen?.({
+  heard(event, data) {
+    if (event !== modulesChangedEvent) return;
+    const { environment, version } = (data ?? {}) as Partial<ModulesChanged>;
+    if (typeof environment !== "string" || typeof version !== "number") return;
+    heardVersions.set(environment, version);
+  },
+  missed: forgetHeardVersions,
+});
 
 /**
  * The version of the modules of `environment` that the dev server has: when
@@ -309,8 +293,9 @@ export function versionOfModules(environment: string): Promise<number> {
   if (known) return known;
   const askedNow = asked;
   const askingNow = asking;
-  const answer = requestOverWebSocket(versionEvent, { environment }) as Promise<number>;
-  // Before the next message of the socket, so before a change after it.
+  const answer = pageHost.request(versionEvent, { environment }) as Promise<number>;
+  // Before news of a change after it, which the host brings after the
+  // answer, or says it `missed()`: see `listen()` in page-host.ts.
   const version = answer.then((version) => {
     heardVersions.set(environment, version);
     askedNow.add(environment);
@@ -429,7 +414,9 @@ async function invokeForPageLoad(
 // each once the one before it has run: a round trip to the server for every
 // module of a page, in a row. The server says what a module imports (see
 // `describeModule()` in index.ts), so those are asked for right away, all at
-// once, and theirs when they arrive.
+// once, and theirs when they arrive. In a worker of Node.js only for what the
+// dev server answers there (vitest-modules.ts): Vitest's RPC says nothing of
+// a module's imports, and answers in a fraction of a millisecond.
 function fetchOnce(
   environment: string,
   payload: InvokePayload,
@@ -505,53 +492,83 @@ const strict = '"use strict";';
 // load gets its modules from what the tab has fetched, and a module that was
 // fetched once is the same code for every page. What a module is, its exports
 // and its state, is in what it is called with, so every page still gets its
-// own. The code follows `"use strict";` on its line, as in coverage.ts.
-const compiledModules = new WeakMap<object, (...args: unknown[]) => Promise<unknown>>();
+// own. The code follows `"use strict";` on its line, as in coverage.ts. The
+// browser layer's in the page's realm, and the server's in this one: see
+// `compileInPage()` of page-host.ts.
+type Compile = (
+  params: readonly string[],
+  body: string,
+) => (...args: unknown[]) => Promise<unknown>;
 
-const pageLoadEvaluator: ModuleEvaluator = {
-  // The lines of the function before the code of the module.
-  startOffset: (() => {
-    const source = String(new AsyncFunction("a", "b", `${strict}/*code*/`));
-    return source.slice(0, source.indexOf("/*code*/")).split("\n").length - 1;
-  })(),
-  async runInlinedModule(context, code, module) {
-    // The answer of the server, which the pages share.
-    const fetched = module.meta as { code?: string } | undefined;
-    const shared = fetched?.code === code ? fetched : undefined;
-    let run = shared && compiledModules.get(shared);
-    if (!run) {
-      // The server names a module in its source map, and a dependency comes
-      // without one: see `dependencySourceMapPlugin()` in index.ts.
-      // On a line of its own: React and Next have it in a string.
-      if (!sourceUrlLineRE.test(code)) code += `\n//# sourceURL=${module.id}`;
-      run = new AsyncFunction(...contextKeys, strict + code);
-      if (shared) compiledModules.set(shared, run);
-    }
-    await run(...contextKeys.map((key) => context[key]));
-    Object.seal(context[ssrModuleExportsKey]);
-  },
-  async runExternalModule(file) {
-    if (!isHostModule(file)) return import(/* @vite-ignore */ file);
-    // What the page serves for a module of its own has that module as its
-    // default export: see host-module.ts. A static build has it in the
-    // host's build, which the list imports it from.
-    const load = hostModules ? hostModules[file] : () => import(/* @vite-ignore */ file);
-    if (!load) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
-    return ((await load()) as { default?: unknown }).default;
-  },
-};
+const compileHere: Compile = (params, body) => new AsyncFunction(...params, body);
+
+// The lines of the function before the code of the module.
+const startOffset = (() => {
+  const source = String(new AsyncFunction("a", "b", `${strict}/*code*/`));
+  return source.slice(0, source.indexOf("/*code*/")).split("\n").length - 1;
+})();
+
+function pageLoadEvaluator(compile: Compile): ModuleEvaluator {
+  const compiledModules = new WeakMap<object, (...args: unknown[]) => Promise<unknown>>();
+  return {
+    startOffset,
+    async runInlinedModule(context, code, module) {
+      // The answer of the server, which the pages share.
+      const fetched = module.meta as { code?: string } | undefined;
+      const shared = fetched?.code === code ? fetched : undefined;
+      let run = shared && compiledModules.get(shared);
+      if (!run) {
+        // The server names a module in its source map, and a dependency comes
+        // without one: see `dependencySourceMapPlugin()` in index.ts.
+        // On a line of its own: React and Next have it in a string.
+        if (!sourceUrlLineRE.test(code)) code += `\n//# sourceURL=${module.id}`;
+        run = compile(contextKeys, strict + code);
+        if (shared) compiledModules.set(shared, run);
+      }
+      await run(...contextKeys.map((key) => context[key]));
+      Object.seal(context[ssrModuleExportsKey]);
+    },
+    runExternalModule,
+  };
+}
+
+const evaluators = new Map<string, ModuleEvaluator>();
+function evaluatorOf(environment: string): ModuleEvaluator {
+  let evaluator = evaluators.get(environment);
+  if (!evaluator) {
+    const compile = environment === "react_client" ? pageHost.compileInPage : compileHere;
+    evaluators.set(environment, (evaluator = pageLoadEvaluator(compile)));
+  }
+  return evaluator;
+}
+
+async function runExternalModule(file: string) {
+  // Vite's client, which Vitest's RPC leaves to the runner: the page's own
+  // instance, as the dev server serves it to a runner (vite-client.ts).
+  if (file === viteClientUrl) return pageClient;
+  if (!isHostModule(file)) return import(/* @vite-ignore */ file);
+  // What the page serves for a module of its own has that module as its
+  // default export: see host-module.ts. A static build has it in the
+  // host's build, which the list imports it from.
+  const load = hostModules ? hostModules[file] : () => import(/* @vite-ignore */ file);
+  if (!load) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
+  return ((await load()) as { default?: unknown }).default;
+}
 
 // A runner that is closed, like the one of a page that has been left, settles
 // no more `import()` of its modules, as a browser drops what a page loads once
 // the page has gone: also one that it started before, and one that fails
 // because the runner is closed.
-function droppingImportsOnceClosed(isClosed: () => boolean): ModuleEvaluator {
+function droppingImportsOnceClosed(
+  isClosed: () => boolean,
+  evaluator: ModuleEvaluator,
+): ModuleEvaluator {
   const dropped = () => new Promise<never>(() => {});
   return {
-    ...pageLoadEvaluator,
+    ...evaluator,
     runInlinedModule(context, code, module) {
       const load = context[ssrDynamicImportKey];
-      return pageLoadEvaluator.runInlinedModule(
+      return evaluator.runInlinedModule(
         {
           ...context,
           [ssrDynamicImportKey]: (...args) =>
@@ -655,162 +672,9 @@ function toBrowserCoverageFileUrl(file: string) {
   return url.href;
 }
 
-function invokeOverWebSocket(environment: string, payload: InvokePayload) {
-  return requestOverWebSocket(invokeEvent, {
-    environment,
-    payload,
-  }) as Promise<InvokeResult>;
-}
-
-// Rejects once the server has sent nothing for `invokeTimeout`, unless the
-// request does not `expire`.
-async function requestOverWebSocket(event: string, data: object, expires = true): Promise<unknown> {
-  const socket = await getReactClientWebSocket();
-  const id = String(++nextInvokeId);
-
-  return new Promise((resolve, reject) => {
-    const sent = now();
-    const pending: PendingInvoke = {
-      resolve,
-      reject,
-      timeoutId: expires ? setTimeout(expire, invokeTimeout) : undefined,
-    };
-    function expire() {
-      const silent = now() - Math.max(sent, lastAnswer);
-      if (silent < invokeTimeout) {
-        pending.timeoutId = setTimeout(expire, invokeTimeout - silent);
-        return;
-      }
-      pendingInvokes.delete(id);
-      reject(new Error(`React client websocket invoke timed out: ${event} ${id}`));
-    }
-
-    pendingInvokes.set(id, pending);
-    try {
-      socket.send(JSON.stringify({ type: "custom", event, data: { id, ...data } }));
-    } catch (error) {
-      clearTimeout(pending.timeoutId);
-      pendingInvokes.delete(id);
-      reject(error);
-    }
-  });
-}
-
-async function getReactClientWebSocket() {
-  if (webSocket?.readyState === WebSocket.OPEN) {
-    return webSocket;
-  }
-
-  webSocketPromise ??= openReactClientWebSocket().finally(() => {
-    webSocketPromise = undefined;
-  });
-  return webSocketPromise;
-}
-
-async function openReactClientWebSocket() {
-  const info = await getWebSocketInfo();
-  const socket = new WebSocket(createWebSocketUrl(info), "vite-hmr");
-
-  socket.addEventListener("message", handleWebSocketMessage);
-  socket.addEventListener("close", () => {
-    // Also one that closes after the next has opened: it may have missed a
-    // change.
-    forgetHeardVersions();
-    if (webSocket === socket) {
-      webSocket = undefined;
-    }
-    rejectPendingInvokes(new Error("React client websocket connection closed"));
-  });
-
-  await waitForWebSocketOpen(socket);
-  webSocket = socket;
-  return socket;
-}
-
-function waitForWebSocketOpen(socket: WebSocket) {
-  return new Promise<void>((resolve, reject) => {
-    const cleanup = () => {
-      socket.removeEventListener("open", handleOpen);
-      socket.removeEventListener("error", handleError);
-      socket.removeEventListener("close", handleClose);
-    };
-    const handleOpen = () => {
-      cleanup();
-      resolve();
-    };
-    const handleError = () => {
-      cleanup();
-      reject(new Error("React client websocket connection failed"));
-    };
-    const handleClose = () => {
-      cleanup();
-      reject(new Error("React client websocket closed before opening"));
-    };
-
-    socket.addEventListener("open", handleOpen);
-    socket.addEventListener("error", handleError);
-    socket.addEventListener("close", handleClose);
-  });
-}
-
-function handleWebSocketMessage(event: MessageEvent) {
-  const message = parseMessage(event.data);
-  if (message?.type !== "custom") return;
-  if (message.event === modulesChangedEvent) {
-    heardModulesChange(message.data as Partial<ModulesChanged> | undefined);
-    return;
-  }
-  const { id, result } = (message.data ?? {}) as { id?: unknown; result?: unknown };
-  if (message.event !== answerEvent || typeof id !== "string") return;
-
-  lastAnswer = now();
-  const pending = pendingInvokes.get(id);
-  if (!pending) {
-    return;
-  }
-
-  clearTimeout(pending.timeoutId);
-  pendingInvokes.delete(id);
-  pending.resolve(result);
-}
-
-function parseMessage(raw: unknown): SocketMessage | undefined {
-  if (typeof raw !== "string") return undefined;
-  try {
-    return JSON.parse(raw) as SocketMessage;
-  } catch {
-    return undefined;
-  }
-}
-
-function heardModulesChange(changed: Partial<ModulesChanged> | undefined) {
-  const { environment, version } = changed ?? {};
-  if (typeof environment !== "string" || typeof version !== "number") return;
-  heardVersions.set(environment, version);
-}
-
-function rejectPendingInvokes(error: unknown) {
-  for (const pending of pendingInvokes.values()) {
-    clearTimeout(pending.timeoutId);
-    pending.reject(error);
-  }
-  pendingInvokes.clear();
-}
-
-function createWebSocketUrl(info: WebSocketInfo) {
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const url = new URL(`${protocol}://${window.location.host}${info.path}`);
-  url.searchParams.set("token", info.token);
-  url.searchParams.set(webSocketQuery, "1");
-  return url;
-}
-
-async function getWebSocketInfo() {
-  webSocketInfoPromise ??= nativeFetch(webSocketInfoPath).then(async (response) => {
-    if (!response.ok) {
-      throw new Error("Failed to fetch React client websocket info");
-    }
-    return response.json() as Promise<WebSocketInfo>;
-  });
-  return webSocketInfoPromise;
+function invokeDevServer(environment: string, payload: InvokePayload) {
+  return (
+    pageHost.modules?.invoke(environment, payload) ??
+    (pageHost.request(invokeEvent, { environment, payload }) as Promise<InvokeResult>)
+  );
 }

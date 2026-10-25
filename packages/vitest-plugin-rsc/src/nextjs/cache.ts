@@ -33,8 +33,12 @@ declare global {
 // that was still running when its test ended, and stores its result
 // afterwards, under the key it already had and in the directory it had.
 let generation = 0;
-/** The directory of the build on the server's disk, `/.next/<generation>`. */
-export const buildDir = (): string => `/.next/${generation}`;
+/**
+ * The directory of the build on the server's disk, `.next/<generation>` in
+ * the host's directory of the server's files: `/.next/<generation>` in a
+ * browser.
+ */
+export const buildDir = (): string => `${registry.serverDir()}/.next/${generation}`;
 // Also for the keys of a `"use cache"` function, which Next keeps in a cache
 // of its own, in the rsc layer: use-cache.ts.
 registry.cacheGeneration = () => generation;
@@ -87,7 +91,7 @@ export function restoreIncrementalCache(): void {
  * `getIncrementalCache()` of Next's server passes. Without headers it is the
  * cache between requests, for a test that calls a cached function itself.
  */
-export function shareIncrementalCache(headers = new Headers()): void {
+export function shareIncrementalCache(headers: Headers = new registry.Headers()): void {
   const cache = new IncrementalCache({
     // With these two Next takes its own handler, the one `next start` uses.
     // It keeps the entries on the disk, as `next start` keeps a prerendered

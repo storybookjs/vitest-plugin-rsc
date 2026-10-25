@@ -1,5 +1,10 @@
 import { afterAll, expect, test, vi } from "vitest";
 
+const serverImmediate = vi.hoisted(() => vi.fn((_callback: () => void) => () => {}));
+vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
+  // A host of Node.js, whose immediates are the runtime's.
+  default: { immediatesOfRuntime: true, serverImmediate },
+}));
 vi.mock("virtual:vitest-plugin-rsc/next-env", () => ({
   default: { ASSIGNED_FIRST: "of-the-env", NOT_ASSIGNED: "of-the-env" },
 }));
@@ -29,4 +34,16 @@ test("the bytes of a form decode the same at every call, as Node's Buffer decode
   expect(te.utf8Slice()).toBe("テ");
   expect(te.utf8Slice(0, 3)).toBe("テ");
   expect((new Uint8Array([0x61, 0x00]) as unknown as Slices).ucs2Slice()).toBe("a");
+});
+
+test("a server's setImmediate is the host's of the runtime, also without the speed feature", async () => {
+  await import("./globals.ts");
+  const { registry } = await import("./registry.ts");
+  const callback = vi.fn();
+
+  registry.setImmediate(callback, "an argument");
+  expect(serverImmediate).toHaveBeenCalledOnce();
+  serverImmediate.mock.calls[0]![0]();
+
+  expect(callback).toHaveBeenCalledWith("an argument");
 });

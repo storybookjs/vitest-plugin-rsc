@@ -24,8 +24,17 @@ const manifest = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"
   peerDependenciesMeta: Record<string, { optional?: boolean }>;
 };
 
-/** What only Vitest loads. */
-const vitestFiles = ["nextjs/setup.js"];
+/**
+ * What only Vitest loads: the setup files that the plugin gives it by their
+ * path, and the pool of a page in a worker of Node.js with the entry of its
+ * worker, which the plugin loads by its path in Vitest's config (index.ts).
+ */
+const vitestFiles = [
+  "nextjs/setup-browser.js",
+  "nextjs/setup-node.js",
+  "worker-pool.js",
+  "workers/forks.js",
+];
 
 const isVitest = (specifier: string) => /^(?:vitest|@vitest\/[^/]+)(?:\/|$)/.test(specifier);
 
@@ -84,19 +93,40 @@ test("runs in Vitest 5.0.4 and later, and says so in an older one", () => {
   expect(() => assertVitestVersion("5.0.0-beta.4")).toThrow("this is Vitest 5.0.0-beta.4");
 });
 
+// The files of the build that import `file`, by a path from theirs.
+function importersOf(file: string): string[] {
+  return builtFiles.filter((importer) =>
+    importsOf(path.join(distDir, importer)).some(
+      (specifier) =>
+        specifier.startsWith(".") &&
+        path.posix.join(path.posix.dirname(importer), specifier) === file,
+    ),
+  );
+}
+
 describe.skipIf(runsSource)("the build", () => {
   test("is there", () => {
     expect(builtFiles.length).toBeGreaterThan(0);
   });
 
-  test("imports Vitest in the setup files only", () => {
+  // Or in a chunk of what the setup files share, like setup.ts, which only
+  // they import.
+  test("imports Vitest in the files that only Vitest loads", () => {
     const importing = builtFiles.filter((file) =>
       importsOf(path.join(distDir, file)).some(isVitest),
     );
-    expect(importing.sort()).toEqual(vitestFiles.sort());
+    expect(importing).toContain("nextjs/setup-browser.js");
+    for (const file of importing) {
+      if (vitestFiles.includes(file)) continue;
+      expect(importersOf(file), file).not.toEqual([]);
+      expect(
+        importersOf(file).filter((importer) => !vitestFiles.includes(importer)),
+        file,
+      ).toEqual([]);
+    }
   });
 
-  test("has no other file import the setup files", () => {
+  test("has no other file import the files that only Vitest loads", () => {
     const importing = builtFiles.filter((file) =>
       importsOf(path.join(distDir, file)).some((specifier) =>
         vitestFiles.some((vitestFile) => specifier.endsWith(`/${path.basename(vitestFile)}`)),

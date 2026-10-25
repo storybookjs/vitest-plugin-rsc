@@ -56,6 +56,18 @@ test("writes the global, as a polyfill of a module does", () => {
   expect((globalThis as { requestIdleCallback?: unknown }).requestIdleCallback).toBe(polyfill);
 });
 
+test("drops an immediate of Node.js once the runner is closed, as a page in a worker of Node.js has", async () => {
+  let closed = false;
+  const timers = runnerTimers(() => closed);
+  const fired: string[] = [];
+  const setImmediate = timers.setImmediate as (callback: () => void) => unknown;
+  setImmediate(() => fired.push("open"));
+  closed = true;
+  setImmediate(() => fired.push("closed"));
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 10));
+  expect(fired).toEqual([]);
+});
+
 test("calls nothing once the runner is closed, as a browser drops the timers of a page that is left", () => {
   vi.useFakeTimers();
   let closed = false;

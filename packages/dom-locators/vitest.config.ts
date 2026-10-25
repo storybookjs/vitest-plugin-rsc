@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL("./", import.meta.url));
 // The package's suite in Chromium, against `vitest/browser`'s page and
 // Playwright's own actions, and the part of it that needs no browser in the
 // two DOMs of Node.js, against ivya, the engine of Vitest's locators, in the
-// same DOM.
+// same DOM, with the package's `expect.element()` for Vitest's.
 export const domLocatorsProjects = [
   defineProject({
     root,
@@ -31,8 +31,13 @@ export const domLocatorsProjects = [
       root,
       test: {
         name: `dom-locators (${environment})`,
-        include: ["test/node/**/*.test.{ts,tsx}", "test/wait.test.ts"],
+        include: [
+          "test/node/**/*.test.{ts,tsx}",
+          "test/wait.test.ts",
+          "test/expect-element.test.ts",
+        ],
         environment,
+        setupFiles: ["./test/node/setup.ts"],
         // jsdom is slow: the oracle's tables take it seconds on a CI runner,
         // where Vitest gives a test 5 s in Node.js.
         testTimeout: 20_000,

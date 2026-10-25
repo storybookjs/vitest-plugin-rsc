@@ -1,5 +1,7 @@
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import { pageFetch } from "./app-requests.ts";
 import { followNavigation } from "./document-loads.ts";
+import { fromPage } from "./from-page.ts";
 import { streamedContentQueue } from "./document.ts";
 import { appHasNavigations } from "./host-document.ts";
 import { PageStore } from "./page-store.ts";
@@ -71,20 +73,49 @@ function descriptorOf(target: object | null, name: string): PropertyDescriptor |
   }
 }
 
+// What the context's `fetch` left to the document's: where the DOM hands
+// the page's requests over, they are not the app's to ask again.
+const leftToDocument = new WeakSet<Request>();
+
+// The requests of the page that do not go through its `fetch`, where the DOM
+// hands them over, like happy-dom: those of its `XMLHttpRequest` and the
+// resources it loads go to the app as a request of the context's `fetch`
+// does. What is not the app's the DOM sends itself, as what the context's
+// `fetch` left to the document's.
+const interceptedFetch = pageFetch<undefined>(
+  () => opened?.store,
+  () => async () => undefined,
+);
+const handsOver = pageHost.interceptRequests(async (request) =>
+  leftToDocument.has(request) ? undefined : interceptedFetch(...fromPage(request)),
+);
+
 // A request of the page that is not the app's goes to the `fetch` the
 // document had: the browser's, or one of the host's, like a mock of the
-// network.
+// network. Where the DOM hands requests over, with what the page asked for,
+// as one `Request`, which is what it gives its interceptor, and which keeps
+// `init` where happy-dom's `fetch` drops it for a `Request`. The app gets the
+// request as the server's (from-page.ts).
+const toDocument =
+  (input: RequestInfo | URL, init: RequestInit | undefined) => (): typeof fetch => {
+    const documentFetch = savedValue<typeof fetch>(fetchBinding) ?? registry.network;
+    // One realm: the request as the app was asked, a copy of a body it read.
+    if (!handsOver) return documentFetch;
+    return () => {
+      const request = new window.Request(input, init);
+      leftToDocument.add(request);
+      return documentFetch(request);
+    };
+  };
 const fetchBinding: Binding = {
-  target: globalThis,
+  target: window,
   name: "fetch",
   own: {
     configurable: true,
     enumerable: true,
     writable: true,
-    value: pageFetch(
-      () => opened?.store,
-      () => savedValue<typeof fetch>(fetchBinding) ?? registry.network,
-    ),
+    value: (input: RequestInfo | URL, init?: RequestInit) =>
+      pageFetch(() => opened?.store, toDocument(input, init))(...fromPage(input, init)),
   },
 };
 
@@ -148,7 +179,7 @@ const isDocuments = (binding: Binding, descriptor: PropertyDescriptor | undefine
   (saved.has(binding) && same(descriptor, saved.get(binding))) ||
   same(descriptor, original.get(binding));
 
-const navigation = (window as { navigation?: EventTarget }).navigation;
+const { navigation } = pageHost;
 
 // The navigations of the app that would load the document: see document-loads.ts.
 const followed = (event: Event) => {

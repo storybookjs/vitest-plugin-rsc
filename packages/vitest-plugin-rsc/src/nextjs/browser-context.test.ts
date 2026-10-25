@@ -10,6 +10,15 @@ vi.mock("./app-requests.ts", () => ({
       store() ? Promise.resolve(new Response("the app")) : network()(input, init),
 }));
 vi.mock("./document-loads.ts", () => ({ followNavigation: () => {} }));
+// The host of a browser, whose navigations are the document's.
+vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
+  default: {
+    get navigation() {
+      return (globalThis.window as { navigation?: EventTarget }).navigation;
+    },
+    interceptRequests: () => false,
+  },
+}));
 vi.mock("./document.ts", () => ({
   streamedContentQueue: { configurable: true, get: () => undefined, set: () => {} },
 }));
@@ -50,7 +59,16 @@ function browserDocument() {
   }
   const local = new Storage();
   const session = new Storage();
+  const fetch = async () => new Response("the network");
+  // One realm, as a browser's: the page's web APIs are its global's.
+  const { Request, Response, Headers, FormData, Blob } = globalThis;
   const window = {
+    fetch,
+    Request,
+    Response,
+    Headers,
+    FormData,
+    Blob,
     cookieStore: {},
     CookieStore: class CookieStore {},
     CookieChangeEvent: class CookieChangeEvent {},
@@ -60,7 +78,6 @@ function browserDocument() {
     localStorage: { configurable: true, enumerable: true, get: () => local },
     sessionStorage: { configurable: true, enumerable: true, get: () => session },
   });
-  const fetch = async () => new Response("the network");
   return { window, document: new Document(), fetch, local };
 }
 
@@ -73,7 +90,6 @@ beforeEach(() => {
   vi.stubGlobal("window", browser.window);
   vi.stubGlobal("self", browser.window);
   vi.stubGlobal("document", browser.document);
-  vi.stubGlobal("fetch", browser.fetch);
 });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -88,7 +104,7 @@ const windowNames = ["localStorage", "sessionStorage", "cookieStore", "CookieSto
 test("puts back what the document had when the context closes", async () => {
   const { openContext, closeContext } = await browserContext();
   const before = {
-    fetch: Object.getOwnPropertyDescriptor(globalThis, "fetch"),
+    fetch: Object.getOwnPropertyDescriptor(window, "fetch"),
     window: descriptors(browser.window, windowNames),
   };
 
@@ -96,10 +112,10 @@ test("puts back what the document had when the context closes", async () => {
   expect(Object.getPrototypeOf(window.localStorage) === Storage.prototype).toBe(false);
   expect(Object.hasOwn(document, "cookie")).toBe(true);
   expect("cookieStore" in window).toBe(false);
-  expect(await (await fetch("/")).text()).toBe("the app");
+  expect(await (await window.fetch("/")).text()).toBe("the app");
   closeContext();
 
-  expect(Object.getOwnPropertyDescriptor(globalThis, "fetch")).toEqual(before.fetch);
+  expect(Object.getOwnPropertyDescriptor(window, "fetch")).toEqual(before.fetch);
   expect(descriptors(browser.window, windowNames)).toEqual(before.window);
   expect(Object.hasOwn(document, "cookie")).toBe(false);
   expect(window.localStorage).toBe(browser.local);
@@ -126,7 +142,7 @@ test("has empty cookies and storage in each context, apart from the browser's", 
 test("a stand-in taken in a context is the browser's own outside one", async () => {
   const { openContext, closeContext } = await browserContext();
   openContext();
-  const taken = globalThis.fetch;
+  const taken = window.fetch;
   const storage = window.localStorage;
   const cookie = Object.getOwnPropertyDescriptor(document, "cookie")!;
   storage.setItem("theme", "dark");
@@ -150,91 +166,91 @@ test("passes on to a fetch of the host's that was there before the first context
   const { openContext, closeContext } = await browserContext();
   // Like MSW's, installed as the host starts.
   const mocked = vi.fn(async () => new Response("mocked"));
-  globalThis.fetch = mocked;
+  window.fetch = mocked;
 
   openContext();
-  const taken = globalThis.fetch;
+  const taken = window.fetch;
   closeContext();
 
-  expect(globalThis.fetch).toBe(mocked);
+  expect(window.fetch).toBe(mocked);
   expect(await (await taken("/elsewhere")).text()).toBe("mocked");
 });
 
 test("keeps a patch of fetch that was set in a context, over the next one's", async () => {
   const { openContext, closeContext } = await browserContext();
-  const native = globalThis.fetch;
+  const native = window.fetch;
   openContext();
-  const own = globalThis.fetch;
+  const own = window.fetch;
   // A spy of the test's, which passes on to the context's.
   const spy = vi.fn((input: RequestInfo | URL, init?: RequestInit) => own(input, init));
-  globalThis.fetch = spy;
+  window.fetch = spy;
   closeContext();
 
-  expect(globalThis.fetch).toBe(spy);
-  expect(await (await fetch("/")).text()).toBe("the network");
+  expect(window.fetch).toBe(spy);
+  expect(await (await window.fetch("/")).text()).toBe("the network");
   openContext();
-  expect(globalThis.fetch).toBe(spy);
-  expect(await (await fetch("/")).text()).toBe("the app");
+  expect(window.fetch).toBe(spy);
+  expect(await (await window.fetch("/")).text()).toBe("the app");
   closeContext();
 
   // The spy restored outside a context: the context's is back, and passes
   // on to the browser's, until closing again puts that back.
-  globalThis.fetch = own;
-  expect(await (await fetch("/elsewhere")).text()).toBe("the network");
+  window.fetch = own;
+  expect(await (await window.fetch("/elsewhere")).text()).toBe("the network");
   closeContext();
-  expect(globalThis.fetch).toBe(native);
+  expect(window.fetch).toBe(native);
   expect(spy).toHaveBeenCalledTimes(2);
 });
 
 test("puts back nothing before the first context", async () => {
   const { closeContext, openContext } = await browserContext();
-  const native = globalThis.fetch;
+  const native = window.fetch;
   closeContext();
-  expect(globalThis.fetch).toBe(native);
+  expect(window.fetch).toBe(native);
   expect("cookieStore" in window).toBe(true);
 
   openContext();
-  expect(globalThis.fetch).not.toBe(native);
+  expect(window.fetch).not.toBe(native);
   closeContext();
-  expect(globalThis.fetch).toBe(native);
+  expect(window.fetch).toBe(native);
 });
 
 test("installs its fetch again after a spy from before it was restored in it", async () => {
   const { openContext, closeContext } = await browserContext();
-  const native = globalThis.fetch;
+  const native = window.fetch;
   // A spy of a `beforeAll`, restored by an `afterEach` while the context is open.
   const spy = vi.fn(native);
-  globalThis.fetch = spy;
+  window.fetch = spy;
   openContext();
-  globalThis.fetch = native;
+  window.fetch = native;
   closeContext();
-  expect(globalThis.fetch).toBe(native);
+  expect(window.fetch).toBe(native);
 
   openContext();
-  expect(await (await fetch("/")).text()).toBe("the app");
+  expect(await (await window.fetch("/")).text()).toBe("the app");
   closeContext();
-  expect(globalThis.fetch).toBe(native);
+  expect(window.fetch).toBe(native);
 });
 
 test("keeps a spy over its fetch that outlived the context, without passing on to itself", async () => {
   const { openContext, closeContext } = await browserContext();
   openContext();
-  const own = globalThis.fetch;
+  const own = window.fetch;
   const inner = vi.fn((input: RequestInfo | URL, init?: RequestInit) => own(input, init));
-  globalThis.fetch = inner;
+  window.fetch = inner;
   closeContext();
   // Restored once the context closed: the context's is there, outside one.
-  globalThis.fetch = own;
+  window.fetch = own;
   // A spy of the next file's top level, over it.
   const outer = vi.fn((input: RequestInfo | URL, init?: RequestInit) => own(input, init));
-  globalThis.fetch = outer;
+  window.fetch = outer;
 
   openContext();
-  expect(globalThis.fetch).toBe(outer);
-  expect(await (await fetch("/elsewhere")).text()).toBe("the app");
+  expect(window.fetch).toBe(outer);
+  expect(await (await window.fetch("/elsewhere")).text()).toBe("the app");
   closeContext();
-  globalThis.fetch = own;
+  window.fetch = own;
   closeContext();
-  expect(await (await fetch("/elsewhere")).text()).toBe("the network");
-  expect(globalThis.fetch).not.toBe(own);
+  expect(await (await window.fetch("/elsewhere")).text()).toBe("the network");
+  expect(window.fetch).not.toBe(own);
 });
