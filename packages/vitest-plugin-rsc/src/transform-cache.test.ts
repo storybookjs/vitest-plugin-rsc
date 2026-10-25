@@ -7,12 +7,18 @@ import type { TestProject } from "vitest/node";
 import { answerFromTransformCache, invokeEnvironment, withLinesBefore } from "./transform-cache.ts";
 
 // The page's runners get a module from Vitest's transform cache, and from
-// Vite what Vitest has not: Vitest's `fetch()` is a fake here.
+// Vite what Vitest has not: Vitest's `fetch()` is a fake here, in a build of
+// Vitest of its own.
 
 const fetch = vi.fn();
-vi.mock("vitest/node", () => ({ createMethodsRPC: () => ({ fetch }) }));
-
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-transform-cache-"));
+const fakeFetch = "vitest-plugin-rsc:transform-cache.test";
+Object.assign(globalThis, { [fakeFetch]: fetch });
+fs.writeFileSync(path.join(dir, "package.json"), '{ "type": "module" }');
+fs.writeFileSync(
+  path.join(dir, "node.js"),
+  `export const createMethodsRPC = () => ({ fetch: globalThis[${JSON.stringify(fakeFetch)}] });`,
+);
 const tmp = path.join(dir, "module");
 fs.writeFileSync(tmp, "export default 1;\n// cached");
 
@@ -30,7 +36,11 @@ function setUp({ fsModuleCache = true, invalidated = 0 } = {}) {
     },
     hot: { handleInvoke },
   } as unknown as DevEnvironment;
-  const project = { config: { fsModuleCache }, vite: server } as TestProject;
+  const project = {
+    config: { fsModuleCache },
+    vite: server,
+    vitest: { distPath: dir },
+  } as unknown as TestProject;
   return { server, environment, handleInvoke, project };
 }
 

@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { DevEnvironment, ViteDevServer } from "vite";
 import type { TestProject } from "vitest/node";
 import { invalidatedAt } from "./module-versions.ts";
@@ -43,8 +45,11 @@ const fetchOf = new WeakMap<ViteDevServer, CachedFetch>();
  */
 export async function answerFromTransformCache(project: TestProject): Promise<void> {
   if (!project.config.fsModuleCache || fetchOf.has(project.vite)) return;
-  // Of Vitest, which a test run has loaded.
-  const { createMethodsRPC } = await import("vitest/node");
+  // Of the Vitest that runs the project, by the path of its build: the
+  // plugin does not import Vitest, an optional peer dependency, but for
+  // the setup files (optional-vitest.test.ts).
+  const vitestNode = pathToFileURL(path.join(project.vitest.distPath, "node.js")).href;
+  const { createMethodsRPC } = (await import(vitestNode)) as typeof import("vitest/node");
   const { fetch } = createMethodsRPC(project);
   fetchOf.set(project.vite, fetch as CachedFetch);
 }
