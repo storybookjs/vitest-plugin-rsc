@@ -34,6 +34,10 @@
     },
     "./async-hooks": {
       "types": "./dist/async-hooks.d.ts",
+      "node": {
+        "vitest-plugin-rsc-source": "./src/async-hooks-node.ts",
+        "default": "./dist/async-hooks-node.js"
+      },
       "vitest-plugin-rsc-source": "./src/async-hooks.ts",
       "default": "./dist/async-hooks.js"
     },
@@ -114,6 +118,7 @@
     "assert": "2.1.0",
     "events": "3.3.0",
     "fflate": "0.8.3",
+    "happy-dom": "^21.0.4",
     "memfs": "4.80.0",
     "next": "16.4.0",
     "node-inspect-extracted": "3.3.4",

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { getQuote } from "./lib/quotes.ts";
@@ -216,11 +216,24 @@ test('lets a "use cache: private" function read the request, and keys it by what
   await expect.element(page.getByRole("heading", { name: /^Hello Grace, \d+$/ })).toBeVisible();
 });
 
-test("known limit: a callback of a timer in a cached function reads the request", async () => {
-  // In a deployment the callback tags the entry. Only `await` is compiled.
+// In a worker of Node.js: see vitest.config.ts.
+const onNode = inject("host") === "node";
+
+test.skipIf(onNode)(
+  "known limit: a callback of a timer in a cached function reads the request",
+  async () => {
+    // In a deployment the callback tags the entry. Only `await` is compiled.
+    await renderServer({ url: "/timer" });
+
+    await expect.element(page.getByRole("heading", { name: "cacheTag() throws" })).toBeVisible();
+  },
+);
+
+test.runIf(onNode)("tags a cached function from a callback of a timer, on Node.js", async () => {
+  // Node's own `AsyncLocalStorage` carries the scope of the function there.
   await renderServer({ url: "/timer" });
 
-  await expect.element(page.getByRole("heading", { name: "cacheTag() throws" })).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "tagged" })).toBeVisible();
 });
 
 test("known limit: renders a page that reads the request outside a Suspense boundary", async () => {

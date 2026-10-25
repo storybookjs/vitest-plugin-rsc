@@ -138,7 +138,10 @@ test("an MDX page and autodocs, with server stories in iframes and client storie
 // What Chromatic does with a build: the stories of every entry of the index,
 // which loads every file. The misuse files of this project that do not load
 // reject it with their error, as a file that does not load does in any
-// Storybook. The notes demo's build has every story in extract().
+// Storybook. The notes demo's build has every story in extract(). Storybook
+// loads the files at once, so the error is of whichever fails first: the
+// loader's, or JavaScript's of misuse-server-file.stories.tsx, which throws
+// as it evaluates (see test/storybook.test.ts).
 test("extract() of the preview fails with the error of a file that does not load", async ({
   page,
 }) => {
@@ -152,7 +155,7 @@ test("extract() of the preview fails with the error of a file that does not load
     Object.keys(await (window.__STORYBOOK_PREVIEW__ as Extracting).extract()),
   );
   await expect(extract).rejects.toThrow(
-    /has no story of meta\.story\(\)|so its stories render in the browser|so it is server code|declares the globals|defineServerPreview\(\) got a beforeAll/,
+    /has no story of meta\.story\(\)|so its stories render in the browser|so it is server code|meta is not a function|declares the globals|defineServerPreview\(\) got a beforeAll/,
   );
 });
 
