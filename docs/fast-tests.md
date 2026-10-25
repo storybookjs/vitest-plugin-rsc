@@ -97,12 +97,12 @@ About 0.27 s of it is idle: Next prepares the route for the first time (`resolve
 
 ## The two modes
 
-[Fidelity mode](nextjs-guide.md#fast-mode), the default, gives up nothing for speed: a test sees what a browser shows of your app. Fast mode turns on every speed feature. Each is an option of its own, so you can pick what to give up:
+[Fidelity mode](nextjs-guide.md#fast-mode), the default, gives up nothing for speed unless your tests change files: a test sees what a browser shows of your app. Fast mode turns on every speed feature. Each is an option of its own, so you can pick what to give up:
 
 | feature          | gives up                                                                                      | fidelity: on alone, ms per test saved | fast: off alone, ms per test added | default, fidelity / fast |
 | ---------------- | --------------------------------------------------------------------------------------------- | ------------------------------------: | ---------------------------------: | ------------------------ |
 | `watchDom`       | nothing                                                                                       |               on already; off adds 74 |                                 70 | on / on                  |
-| `cacheDevServer` | a change through another connection than the page's is seen once the server's news of it came |                       5.4 before #284 |                    6.2 before #284 | off / on                 |
+| `cacheDevServer` | a change through another connection than the page's is seen once the server's news of it came |                       5.4 before #284 |                    6.2 before #284 | on / on                  |
 | `keepApp`        | a fresh page per test, the server's HTML, a hydration mismatch, the dev overlay               |                                   3.5 |                                5.4 | off / on                 |
 | `flightLoads`    | the document as the `response`, a 404 or 500 status of a page, `next/font`'s size-adjust meta |                  2.7 (over `keepApp`) |                                1.2 | off / on                 |
 | `skipPrefetch`   | the requests of prefetches, and the routes rendered from them                                 |                                   3.0 |                                1.4 | off / on                 |

@@ -752,7 +752,7 @@ test("takes no other build", () => {
   );
 });
 
-test("turns every speed feature but `watchDom` off in fidelity mode, the default, and on in fast mode", () => {
+test("turns every speed feature but `watchDom` and `cacheDevServer` off in fidelity mode, the default, and on in fast mode", () => {
   const fast = {
     keepApp: true,
     flightLoads: true,
@@ -765,6 +765,7 @@ test("turns every speed feature but `watchDom` off in fidelity mode, the default
   const fidelity = {
     ...Object.fromEntries(Object.keys(fast).map((feature) => [feature, false])),
     watchDom: true,
+    cacheDevServer: true,
   };
   expect(resolveSpeedFeatures({}, {})).toEqual(fidelity);
   expect(resolveSpeedFeatures({ mode: "fidelity" }, {})).toEqual(fidelity);

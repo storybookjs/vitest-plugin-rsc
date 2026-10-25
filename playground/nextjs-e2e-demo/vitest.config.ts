@@ -146,8 +146,11 @@ export default defineProject({
     transformsService(),
     vitestPluginRSC(),
     // The helpers in `test/` work on the page, so they have to see the browser.
-    // Every other module that is not a test file is server code.
-    vitestPluginNext({ browserModules: ["test/**"], build }),
+    // Every other module that is not a test file is server code. Its tests
+    // change files of the app while a test file runs (`fileChanged()` of
+    // test/service.ts), and look at the next page load: what
+    // `cacheDevServer` gives up.
+    vitestPluginNext({ browserModules: ["test/**"], build, cacheDevServer: false }),
     hitsService(),
     bodyService(),
     headersService(),
