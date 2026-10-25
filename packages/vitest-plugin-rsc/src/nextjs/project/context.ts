@@ -6,8 +6,8 @@ import { pageEnvOf, readTestEnv } from "./env.ts";
 
 // The project, and the build code of its own `next`: what the other files in
 // this directory work with. The modules of Next's build that the plugin calls
-// are loaded by compat/build.ts, so one that is gone fails when a run starts,
-// and an export that is gone fails with the same message where it is read.
+// are loaded by compat/build.ts, where they are first read: one that is gone,
+// or an export that is gone, fails with the same message there.
 
 // Next runs a compiled `next.config.ts` as a module without a filename, so
 // Node looks up a relative import of the config, like `./env/server.ts`, from

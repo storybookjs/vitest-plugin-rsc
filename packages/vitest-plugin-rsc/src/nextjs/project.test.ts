@@ -386,6 +386,26 @@ test("says which export of Next's build is gone", async () => {
   );
 });
 
+test("loads a module of Next's build where it is first read, and says there that it does not load", async () => {
+  const next = nextWith({
+    "next/dist/build/webpack/loaders/next-font-loader/index.js": new Error("Cannot find module"),
+  });
+  // The project loads without it: nothing has run the font loader yet.
+  const project = await loadNextProject(root, next);
+  const compiled = await project.compile(
+    sourceOf("fonts/fonts.ts"),
+    appFile("fonts/fonts.ts"),
+    "rsc",
+  );
+  const [request] = /next\/font\/local\/target\.css\?[^']+(?=')/.exec(compiled!.code)!;
+
+  await expect(project.loadFont(request)).rejects.toThrow(
+    changed(
+      "next/dist/build/webpack/loaders/next-font-loader/index.js does not load (Cannot find module)",
+    ),
+  );
+});
+
 test("does not take a route discovery without app pages for an app without routes", async () => {
   const next = nextWith({
     "next/dist/build/route-discovery.js": { discoverRoutes: async () => ({ appPages: {} }) },
