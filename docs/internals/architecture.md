@@ -139,6 +139,8 @@ Without Browser Mode, in a project of Vitest with `environment: "happy-dom"` or 
 
 A worker runs its test files one after the other in one DOM, with `isolate: false`: one Vite dev server for the run, in Vitest's process, and one listener on it; in the worker, the server layers load once, in the setup file, and a database of the page, like PGlite in the notes benchmark, is created once and emptied before each test.
 
+It is no faster and no lighter than Chromium. On the notes benchmark's dom-locators column, in fast mode and production, Vitest on Node.js, with 1 worker, on an M1 Pro, 3 runs each after a warmup: Chromium 15.96 ± 0.18 s, happy-dom 16.70 ± 0.32 s, 1.5 ms more a test, jsdom 27.12 ± 1.77 s, 22 ms more. What a DOM of Node.js saves of Chromium's native work, React's writes of the DOM, style, layout and paint, about 4 ms a test, it spends in its own JavaScript, about 4.5 ms a test in happy-dom and 17 in jsdom, and the HTML of a page load is parsed on the thread of the server. The peak memory of the run's processes is 1.7 GB with Chromium, 2.2 GB with happy-dom and 2.1 GB with jsdom. With 4 workers, Chromium and happy-dom both run 2.2 times as fast as with 1, and each worker adds about 0.7 GB with Chromium and 1.2 GB with happy-dom, a process of Node.js that holds the page, the server, the database and the DOM. Measured on #267.
+
 ### What a DOM of Node.js does otherwise than a browser
 
 What passes in Chromium and may not in a DOM of Node.js, and why. The notes benchmark's dom-locators column skips the tests that a known gap fails, by name (`knownGaps` of its `vitest.config.ts`).
