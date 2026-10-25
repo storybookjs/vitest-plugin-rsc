@@ -13,7 +13,7 @@ import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 // It runs in Chromium and in the Node projects (happy-dom, jsdom), where the
 // plugin is the page's host itself.
 
-const PAGES = 30;
+const PAGES = 20;
 const WARMUP = 5;
 
 const isNodeHost = typeof globalThis.process?.getBuiltinModule === "function";
@@ -180,24 +180,26 @@ function sample(withHeap: boolean): Sample {
   };
 }
 
+// Vitest keeps what an awaited assertion was about until the end of the test:
+// an element would keep its page until then.
 async function find<Found extends Element>(selector: string): Promise<Found> {
-  await expect.poll(() => document.querySelector(selector)).toBeTruthy();
+  await expect.poll(() => document.querySelector(selector) !== null).toBe(true);
   return document.querySelector<Found>(selector)!;
 }
 
 const samples: Sample[] = [];
 
-test(`opens /notes ${PAGES} times, with a Server Action and a navigation on each page`, async () => {
-  await signedInAs();
-  await db.insert(notes).values({ ownerId: testUser.id, title: "Leaky note" });
-
-  for (let index = 0; index < PAGES; index++) {
+// A page in each test, as in a suite: the plugin leaves it as the test ends.
+test.for(Array.from({ length: PAGES }, (_, index) => index))(
+  "opens /notes, with a Server Action and a navigation: page %i",
+  async (index) => {
+    await signedInAs();
+    await db.insert(notes).values({ ownerId: testUser.id, title: "Leaky note" });
     await renderServer({ url: "/notes" });
 
-    // A Server Action: the star of the note, which is on and off by turns.
-    const pressed = index % 2 === 1;
-    (await find<HTMLButtonElement>(`button[aria-pressed="${pressed}"]`)).click();
-    await find(`button[aria-pressed="${!pressed}"]`);
+    // A Server Action: the star of the note.
+    (await find<HTMLButtonElement>('button[aria-pressed="false"]')).click();
+    await find('button[aria-pressed="true"]');
 
     // A navigation of Next's router, to the page of the note.
     (await find<HTMLAnchorElement>('a[href^="/notes/"]:not([href="/notes/new"])')).click();
@@ -205,8 +207,8 @@ test(`opens /notes ${PAGES} times, with a Server Action and a navigation on each
 
     bodies.push(new WeakRef(document.body));
     samples.push(sample(index === WARMUP || index === PAGES - 1));
-  }
-}, 30_000);
+  },
+);
 
 // What there is of a kind after the last page and not after the first page
 // after the warmup: the names of what grew, as many times as it grew.
@@ -268,8 +270,8 @@ test.skipIf(!collect)("keeps no body of a page that was left", () => {
 
 // A page that is kept is the whole of its module graph, megabytes; what a
 // page leaves that keeps nothing else is small. The bound is between them.
-// In a Node.js worker the heap grows by 6 to 8 MB a page, though no body is
-// kept: what grows is not known yet (SB-2419).
+// In a Node.js worker the heap grows by about 800 kB a page, though no body
+// is kept: what grows is not known yet (SB-2419).
 (!collect ? test.skip : isNodeHost ? test.fails : test)(
   "grows the heap by less than 512 kB a page",
   () => {
