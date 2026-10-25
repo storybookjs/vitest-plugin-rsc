@@ -96,8 +96,9 @@ const browserProject = (name: string, mode: Mode) =>
     },
   });
 
-// The tests of the app in a Node.js worker, with happy-dom for the document,
-// where the browser projects run in Chromium. The same plugins: without
+// The tests of the app in a Node.js worker, with happy-dom or jsdom for the
+// document, where the browser projects run in Chromium, in fidelity mode, as
+// the benchmark's columns of a DOM of Node.js run in fast mode. The same plugins: without
 // Browser Mode the plugin is the page's host itself (SB-2419).
 const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
   defineProject({
@@ -141,6 +142,7 @@ const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
 
 export const nextjsNotesProjects = [
   nodeProject("nextjs-notes-demo-happy-dom", "happy-dom"),
+  nodeProject("nextjs-notes-demo-jsdom", "jsdom"),
   browserProject("nextjs-notes-demo-browser", "fidelity"),
   browserProject("nextjs-notes-demo-fast", "fast"),
   // Every story of the app, as a test of Storybook's Vitest addon, which

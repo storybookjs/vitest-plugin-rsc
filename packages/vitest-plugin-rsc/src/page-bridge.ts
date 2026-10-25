@@ -103,9 +103,20 @@ const listeners = new WeakMap<ViteDevServer, Promise<string>>();
 export function listenForPage(server: ViteDevServer): Promise<string> {
   let listening = listeners.get(server);
   if (listening) return listening;
+  // The listener's own host, as the page names it.
+  let host = "";
   const listener = createServer((request, response) => {
     if (request.method !== "POST" || request.url !== pageRequestPath) {
       server.middlewares(request, response);
+      return;
+    }
+    // Only the page's, as a socket of the page needs Vite's token: a page of
+    // another site sends JSON only after a preflight of CORS, which goes to
+    // the dev server, and reads no answer through a name of its own that
+    // resolves to the loopback.
+    if (request.headers.host !== host || request.headers["content-type"] !== "application/json") {
+      response.statusCode = 403;
+      response.end("vitest-plugin-rsc: the listener answers the page of its worker only");
       return;
     }
     answerRequest(server, request, response).catch((error: unknown) => {
@@ -119,7 +130,8 @@ export function listenForPage(server: ViteDevServer): Promise<string> {
     listener.once("error", reject);
     listener.listen(0, "127.0.0.1", () => {
       const { port } = listener.address() as AddressInfo;
-      resolve(`http://127.0.0.1:${port}`);
+      host = `127.0.0.1:${port}`;
+      resolve(`http://${host}`);
     });
   });
   // Keeps no process running, and closes with the server where it has one.
