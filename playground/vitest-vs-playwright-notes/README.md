@@ -16,14 +16,25 @@ Every column runs the same 500 tests with the same assertions. Playwright parall
 
 The 500 tests, Next and React in production, on an M1 Pro with 10 cores, the wall of a run in seconds:
 
-| Runner and setup                                                     |    1 worker |           2 |          4 | Playwright's default, 5 |
+| Runner and setup                                                     |    1 worker |           2 |          4 | 5, Playwright's default |
 | -------------------------------------------------------------------- | ----------: | ----------: | ---------: | ----------------------: |
 | Playwright, one `next start`, each test on its own data              | 206.3 ± 3.5 | 107.4 ± 0.6 | 62.5 ± 2.3 |              56.2 ± 3.2 |
 | Playwright, a `next start` and a database per worker, reset per test | 205.1 ± 0.9 | 107.7 ± 0.4 | 62.2 ± 0.7 |              53.9 ± 0.1 |
-| Vitest, fast mode, user-event                                        |             |           – |            |                       – |
-| Vitest, fast mode, dom-locators                                      |             |           – |            |                       – |
+| Vitest, fast mode, dom-locators                                      |             |             |            |                         |
+| Vitest, fast mode, user-event                                        |             |             |            |                         |
 
-Means of 5 runs after a warmup, 3 at 5 workers, in one interleaved session on 25 October 2026, `next start` after `next build`, Postgres 17 in Docker on tmpfs; every run passed all 500. In the same session, today's column before this change, 1 worker with the tables emptied before each test, took 205.7 ± 1.9 s: at 1 worker, a test costs the same with its own data as with a reset. With more workers each test slows, as they share one machine: by 16 to 26% at 4 workers, short tests the most, and by 29 to 42% at 5, so 4 workers run the suite 3.3× as fast as 1, and 5 workers 3.7×.
+Playwright: the mean of 5 runs after a warmup, 3 at 5 workers, in one session on 25 October 2026 that interleaved both setups (#298 at b0ac2d35, #297 at 33abb13d) with the column before them; `next start` after `next build`, Postgres 17 in Docker on tmpfs. Every run passed all 500. The 1-minute load was 3.7 to 6.5 during the runs with 1 worker and 4.2 to 18.1 with 4 and 5. The two setups are within 1% of each other with 1, 2 and 4 workers; with 5, a server per worker is 2.3 s faster, and the process tree takes 5.3 GB against 4.4 GB, up to 0.9 GB more at 4 and 5 workers. The column before them, 1 worker with the tables emptied before each test, took 205.7 ± 1.9 s in the same session: a test costs the same with data of its own. With more workers each test slows, as they share one machine: by 16 to 26% with 4 workers, the short tests the most, and by 29 to 42% with 5, so 4 workers run the suite 3.3× as fast as 1, and 5 workers 3.7×.
+
+A run costs a part that doesn't grow with the suite and a part per test. In Vitest, the first is 2 to 5 s: Vitest, Vite, the browser and the setup files take about 2.2 s with a warm cache, and the pair of runs of 500 and 3000 tests with happy-dom on 1 worker puts all that doesn't grow at 4.7 s. A test takes about 21 ms on 1 worker: 20.2 ms by that pair. In Playwright, the first is 3 to 5 s, the server's start, `globalSetup` and the wait for the slowest worker: 4.9 s with 1 worker and 3.3 s with 4 and 5 in the runs above. A test takes about 400 ms on 1 worker: 180 ms a short test, 496 ms a flow.
+
+The same suite six times, 3000 tests (each file of `tests/dom-locators/` six times), in Vitest's fast mode on Bun, on the build of `kasper/everything-combined` at 01dce093, with the tables emptied before each test as before #298, the wall in seconds:
+
+| Vitest, 3000 tests |   1 worker |          4 |          5 |          6 |          7 |          8 |
+| ------------------ | ---------: | ---------: | ---------: | ---------: | ---------: | ---------: |
+| Chromium           | 71.4 ± 0.5 | 26.7 ± 0.2 | 23.4 ± 0.1 | 21.6 ± 0.0 | 21.9 ± 0.2 | 23.3 ± 0.9 |
+| happy-dom          | 65.4 ± 2.4 | 27.0 ± 0.2 | 27.2 ± 1.2 | 23.6 ± 0.3 | 26.5 ± 3.7 |            |
+
+2 or 3 runs a cell after a warmup; every run passed (happy-dom skips its 4 known gaps in each copy). From 6 workers up the machine is saturated: the 1-minute load reached 13 to 22 with 6 workers and 33 to 40 with 7 and 8, on 10 cores, for no gain. No file and no copy slowed over a run.
 
 The workflow `.github/workflows/vitest-vs-playwright.yml` runs both and writes what each step took to the summary of the run.
 

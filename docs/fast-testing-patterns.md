@@ -257,7 +257,7 @@ Why it stops there:
 
 On your machine the knee is elsewhere: measure 2, 4 and 6 workers, and take the fewest that are as fast.
 
-Playwright's workers on the same 500 tests, against one `next start` or a server per worker, are in the table of [the benchmark's README](../playground/vitest-vs-playwright-notes/README.md).
+Playwright's workers on the same 500 tests, against one `next start` or a server per worker, are in the table of [the benchmark's README](../playground/vitest-vs-playwright-notes/README.md), with both runners on 3000 tests, each at its best worker count.
 
 ### Without a browser: happy-dom or jsdom
 
