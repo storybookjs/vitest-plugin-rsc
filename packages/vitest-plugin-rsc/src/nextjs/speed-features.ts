@@ -141,7 +141,9 @@ export function findOnEveryChange(locator: object): void {
 // click sets. With `watchDom` every call after the first waits for the next
 // change of the document since the call before instead. Not while the test's
 // timers are fake, which Vitest advances by the interval between the calls,
-// nor with an interval of the caller's: those keep Vitest's.
+// nor with an interval of the caller's: those keep Vitest's poll, at the
+// caller's interval or the config's, which the plugin sets to 5 ms where the
+// config has none (plugin.ts).
 const pollsOnEveryChange = Symbol.for("vitest-plugin-rsc:poll-on-every-change");
 
 type Poll = (this: unknown, fn: (...args: unknown[]) => unknown, options?: object) => unknown;

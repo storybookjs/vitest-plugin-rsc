@@ -94,8 +94,9 @@ export type SpeedOptions = {
    * next change of the document, not after a growing wait: a mutation of the
    * DOM, or an event of what changes without one, like `input` or the `load`
    * of a stylesheet; after 5 ms for what a script sets on a property. Not
-   * with an interval of the poll's own, nor while the test's timers are fake;
-   * an `expect.poll.interval` of the config does not count.
+   * with an interval of the poll's own, nor while the test's timers are fake:
+   * those poll at that interval, or at `expect.poll.interval` of the config,
+   * 5 ms where the config sets none. Else that option does not count.
    *
    * Gives up nothing: it changes when an assertion looks at the DOM, not
    * what it sees. Without it, Vitest waits between the looks, after 0, 20,
