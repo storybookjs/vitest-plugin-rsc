@@ -13,6 +13,9 @@ import type { PageHost, WebApis } from "./page-host.ts";
 // Not an import, which the page's runner would resolve as a module of the
 // app's layer.
 const http = process.getBuiltinModule("node:http");
+const fs = process.getBuiltinModule("node:fs");
+const os = process.getBuiltinModule("node:os");
+const path = process.getBuiltinModule("node:path");
 
 // What worker-web-apis.ts kept of Node's own, as Vitest loads it first in the
 // worker (index.ts).
@@ -114,6 +117,17 @@ function bodyOf(body: FormData | Blob, headers: Headers): RequestInit & { duplex
 // The DOM has no Navigation API: see navigation-shim.ts.
 const navigation = createNavigation(window);
 
+// The server's own files, of this worker: its test files run one after the
+// other, and the workers of a run at once. Made as the first page asks for
+// it, and gone with the worker.
+let serverDir: string | undefined;
+function serverDirOfWorker(): string {
+  if (serverDir) return serverDir;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-"));
+  process.once("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
+  return (serverDir = dir);
+}
+
 /** The host of the page, whose dev server listens at `url`. */
 export function nodeHost(url: string): PageHost {
   // A page asks for hundreds of modules at once: over a few connections, each
@@ -125,6 +139,9 @@ export function nodeHost(url: string): PageHost {
     loadsStylesheets: false,
     serverWebApis: webApis,
     fromPage,
+    get serverDir() {
+      return serverDirOfWorker();
+    },
   };
 }
 

@@ -35,6 +35,13 @@ export type PageHost = {
    * signal are the DOM's, which Node's `Request` does not take.
    */
   fromPage(init: RequestInit | undefined): RequestInit | undefined;
+  /**
+   * The directory of the server's own files, like the cache of Next's build
+   * in `.next/`: in a browser the root of the disk in memory, `""`, and in a
+   * worker of Node.js, whose disk is the machine's, a directory of the
+   * worker's own in the system's temporary directory, gone as it exits.
+   */
+  readonly serverDir: string;
 };
 
 /** The web APIs that a server and a browser both have, and Node.js its own of. */

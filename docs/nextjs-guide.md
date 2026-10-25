@@ -782,7 +782,7 @@ Vitest runs test files in parallel, each worker in its own browser tab, and each
 
 Before every test, the plugin:
 
-- empties the in-memory disk and Next's Data Cache,
+- empties the in-memory disk and Next's Data Cache (without Browser Mode the disk is your machine's, and only Next's cache is emptied: see [The disk without Browser Mode](#the-disk-without-browser-mode)),
 - opens a fresh browser context for your app: no cookies, empty storage.
 
 A database recipe's setup file also resets the database and fixes the clock with `vi.setSystemTime()`. On Postgres and MySQL, even `now()` follows that clock.
@@ -811,6 +811,40 @@ patchedDependencies:
 ```
 
 Then run `pnpm install --config.optimistic-repeat-install=false` once, so that pnpm installs the patched package. The patch is a small helper, `isOptimizedDepFile()`, and a check of it in the transform of both plugins, `vitest:browser:esm-injector` and `vitest:mocks`, in `dist/node.js`. It pins `@vitest/mocker` 5.0.5: on a bump of Vitest, redo it for the new version with `pnpm patch @vitest/mocker`, or drop it once Vitest has the change.
+
+## Without Browser Mode
+
+A Vitest project without Browser Mode, with `environment: "happy-dom"` or `"jsdom"`, runs the page in a worker of Node.js, and the plugin is its host there. Your server code then runs on Node.js itself: it imports Node's own modules, not the browser's stand-ins of [Node.js in the browser](nodejs-in-the-browser.md).
+
+### The disk without Browser Mode
+
+`node:fs` is Node's own, so the disk is your machine's, as with `next start`:
+
+| What                       | In a browser (Browser Mode)                        | In Node.js (happy-dom or jsdom)                                                                         |
+| -------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `node:fs`                  | a disk in memory                                   | your machine's disk                                                                                     |
+| At the start of every test | empty, but for `/tmp`                              | as the last test left it                                                                                |
+| `process.cwd()`            | `/`                                                | Vitest's working directory, your project when you run Vitest there                                      |
+| Your project's files       | not on it                                          | there, so a Server Component can read `content/*.md`                                                    |
+| Next's cache, `.next/`     | `/.next/<n>` on the disk, a new one for every test | a temporary directory of the worker, a new `.next/<n>` in it for every test, gone when the worker exits |
+
+The plugin never writes to your project. What your code writes, it writes to your disk, as it would on a server. So a test that writes a file cleans it up itself. For a test that runs on both, make a directory of its own and tell the app where it is:
+
+```ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { beforeEach, vi } from "vitest";
+
+let dir: string;
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "notes-"));
+  vi.stubEnv("NOTES_DIR", dir);
+  return () => fs.rmSync(dir, { recursive: true, force: true });
+});
+```
+
+In a browser that is a directory of the disk in memory, `/tmp/notes-…`, and in Node.js one of your machine's. A relative path, like `content/today.md`, reads your project's file in Node.js, and in a browser only what the test wrote there.
 
 ## Development or production
 

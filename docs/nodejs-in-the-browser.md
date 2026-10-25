@@ -115,3 +115,5 @@ test("shows the note on disk", async () => {
 - **Only server code has it.** A Client Component has no `fs`, just like in Next.
 
 How it works: [The Server's Disk](internals/next-routes.md#the-servers-disk).
+
+Without Browser Mode, with happy-dom or jsdom, your server code runs on Node.js, and `node:fs` is your machine's disk: see [The disk without Browser Mode](nextjs-guide.md#the-disk-without-browser-mode).

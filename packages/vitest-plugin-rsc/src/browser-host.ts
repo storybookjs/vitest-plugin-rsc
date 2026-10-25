@@ -46,6 +46,7 @@ const browserHost: PageHost = {
   serverWebApis: globalThis,
   // One realm: the page's are the server's.
   fromPage: (init) => init,
+  serverDir: "",
 };
 export default browserHost;
 

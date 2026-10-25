@@ -133,6 +133,8 @@ class ServerResponse extends NativeResponse {
 }
 
 registry.Request = ServerRequest;
+// The directory of the server's own files, which is the host's: see page-host.ts.
+registry.serverDir = () => pageHost.serverDir;
 registry.Response = ServerResponse;
 registry.enterRequestScope = enterAmbientScope;
 registry.openedByRequest = new SequentialAsyncLocalStorage<Opened | undefined>();
