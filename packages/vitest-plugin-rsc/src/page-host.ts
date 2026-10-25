@@ -39,7 +39,7 @@ export type PageHost = {
    * The directory of the server's own files, like the cache of Next's build
    * in `.next/`: in a browser the root of the disk in memory, `""`, and in a
    * worker of Node.js, whose disk is the machine's, a directory of the
-   * worker's own in the system's temporary directory, gone as it exits.
+   * worker's own in the run's temporary directory, gone as Vitest closes.
    */
   readonly serverDir: string;
   /**

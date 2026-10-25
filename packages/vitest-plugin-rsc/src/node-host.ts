@@ -14,7 +14,6 @@ import type { PageHost, WebApis } from "./page-host.ts";
 // app's layer.
 const http = process.getBuiltinModule("node:http");
 const fs = process.getBuiltinModule("node:fs");
-const os = process.getBuiltinModule("node:os");
 // As the host loads, before a test fakes them: a test's fake timers replace
 // the functions of `node:timers` too, not only the globals.
 const { setImmediate: nodeSetImmediate, clearImmediate: nodeClearImmediate } =
@@ -122,18 +121,19 @@ function bodyOf(body: FormData | Blob, headers: Headers): RequestInit & { duplex
 const navigation = createNavigation(window);
 
 // The server's own files, of this worker: its test files run one after the
-// other, and the workers of a run at once. Made as the first page asks for
-// it, and gone with the worker.
+// other, and the workers of a run at once. A directory of its own in the
+// run's, made as the first page asks for it. The run's goes as Vitest closes
+// (../index.ts): a worker that Vitest stops gets no `exit` to clean up in.
 let serverDir: string | undefined;
-function serverDirOfWorker(): string {
-  if (serverDir) return serverDir;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-"));
-  process.once("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
-  return (serverDir = dir);
+function serverDirOfWorker(serverFiles: string): string {
+  return (serverDir ??= fs.mkdtempSync(path.join(serverFiles, "worker-")));
 }
 
-/** The host of the page, whose dev server listens at `url`. */
-export function nodeHost(url: string): PageHost {
+/**
+ * The host of the page, whose dev server listens at `url`, with the server's
+ * files of the run in `serverFiles`.
+ */
+export function nodeHost(url: string, serverFiles: string): PageHost {
   // A page asks for hundreds of modules at once: over a few connections, each
   // kept for the next request.
   const agent: Agent = new http.Agent({ keepAlive: true });
@@ -144,7 +144,7 @@ export function nodeHost(url: string): PageHost {
     serverWebApis: webApis,
     fromPage,
     get serverDir() {
-      return serverDirOfWorker();
+      return serverDirOfWorker(serverFiles);
     },
     // Node's own, not the global, which the DOM or a test's fake timers have.
     serverImmediate(callback) {

@@ -1,5 +1,7 @@
 import "./compile-cache.ts";
+import fs from "node:fs";
 import { isBuiltin } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -83,6 +85,8 @@ export function vitestPluginRSC(): Plugin[] {
   // any other host, like Storybook or a static build, the page is in a
   // browser.
   let inNode = false;
+  // The directory of the server's files of the run, in a worker of Node.js.
+  let serverFiles = "";
   return [
     pageViteClientPlugin(),
     ...referencingTestFilesLast(
@@ -103,9 +107,19 @@ export function vitestPluginRSC(): Plugin[] {
     {
       name: "rsc:run-in-browser",
       // Vitest's hook, which awaits what it returns.
-      configureVitest: (async ({ project, defineCacheKeyGenerator }: VitestPluginContext) => {
+      configureVitest: (async ({
+        vitest,
+        project,
+        defineCacheKeyGenerator,
+      }: VitestPluginContext) => {
         inNode = hostsPageInNode(project.config);
         if (!inNode) return;
+        // The server's own files of the run, like the cache of Next's build:
+        // each worker has a directory in it (node-host.ts). This process
+        // removes it, as a worker that Vitest stops does not run its `exit`.
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-"));
+        serverFiles = dir;
+        vitest.onClose(() => fs.rmSync(dir, { recursive: true, force: true }));
         await startWorkerPage(project);
         // Vitest keeps what it compiled on disk for the next run, by a key
         // without the version of the optimizer's pre-bundles, which it has
@@ -129,7 +143,7 @@ export function vitestPluginRSC(): Plugin[] {
         const url = `${await listenForPage(devServer)}${pageRequestPath}`;
         return (
           `import { nodeHost } from ${JSON.stringify(ownFile("node-host"))};\n` +
-          `export default nodeHost(${JSON.stringify(url)});\n`
+          `export default nodeHost(${JSON.stringify(url)}, ${JSON.stringify(serverFiles)});\n`
         );
       },
       configureServer(server) {
@@ -269,6 +283,7 @@ type VitestProject = {
 };
 // What Vitest gives `configureVitest`.
 type VitestPluginContext = {
+  vitest: { onClose(close: () => void): void };
   project: VitestProject;
   defineCacheKeyGenerator?: (
     generate: (context: { environment: DevEnvironment }) => string,
