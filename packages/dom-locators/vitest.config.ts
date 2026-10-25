@@ -33,6 +33,9 @@ export const domLocatorsProjects = [
         name: `dom-locators (${environment})`,
         include: ["test/node/**/*.test.{ts,tsx}", "test/wait.test.ts"],
         environment,
+        // jsdom is slow: the oracle's tables take it seconds on a CI runner,
+        // where Vitest gives a test 5 s in Node.js.
+        testTimeout: 20_000,
       },
     }),
   ),

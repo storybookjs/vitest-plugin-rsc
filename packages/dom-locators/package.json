@@ -46,7 +46,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitest/browser": "5.0.5",
     "@vitest/browser-playwright": "5.0.5",
-    "happy-dom": "^20.14.6",
+    "happy-dom": "^21.0.4",
     "ivya": "1.8.2",
     "jsdom": "^30.1.3",
     "playwright": "^1.64.0",
