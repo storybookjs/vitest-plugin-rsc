@@ -5,22 +5,26 @@ import config from "./vitest.config.ts";
 
 // vitest.config.ts, with a CPU profile of the page for every test file in
 // profiles/, which test/profile-summary.py sums up: see the profile job of
-// .github/workflows/vitest-vs-playwright.yml.
+// .github/workflows/vitest-vs-playwright.yml. A session of the profiler or
+// the trace per page, by its Playwright page: with `--maxWorkers` above 1,
+// each worker is a page of its own, profiled at the same time.
 
 type Session = { send(method: string, params?: object): Promise<{ profile?: unknown }> };
-let session: Session | undefined;
+const sessions = new Map<object, Session>();
 
 const startProfile: BrowserCommand<[]> = async ({ page }) => {
-  session = (await page.context().newCDPSession(page)) as unknown as Session;
+  const session = (await page.context().newCDPSession(page)) as unknown as Session;
+  sessions.set(page, session);
   await session.send("Profiler.enable");
   await session.send("Profiler.setSamplingInterval", { interval: 200 });
   await session.send("Profiler.start");
 };
 
-const stopProfile: BrowserCommand<[name: string]> = async (_context, name) => {
+const stopProfile: BrowserCommand<[name: string]> = async ({ page }, name) => {
+  const session = sessions.get(page);
   if (!session) return;
+  sessions.delete(page);
   const { profile } = await session.send("Profiler.stop");
-  session = undefined;
   await mkdir("profiles", { recursive: true });
   await writeFile(`profiles/${name}.cpuprofile`, JSON.stringify(profile));
 };
@@ -33,14 +37,17 @@ type TraceSession = Session & {
   on(event: "Tracing.dataCollected", listener: (data: { value: unknown[] }) => void): void;
   once(event: "Tracing.tracingComplete", listener: () => void): void;
 };
-let trace: { session: TraceSession; events: unknown[]; complete: Promise<void> } | undefined;
+const traces = new Map<
+  object,
+  { session: TraceSession; events: unknown[]; complete: Promise<void> }
+>();
 
 const startTrace: BrowserCommand<[]> = async ({ page }) => {
   const session = (await page.context().newCDPSession(page)) as unknown as TraceSession;
   const events: unknown[] = [];
   session.on("Tracing.dataCollected", ({ value }) => events.push(...value));
   const complete = new Promise<void>((resolve) => session.once("Tracing.tracingComplete", resolve));
-  trace = { session, events, complete };
+  traces.set(page, { session, events, complete });
   await session.send("Tracing.start", {
     transferMode: "ReportEvents",
     traceConfig: {
@@ -58,10 +65,11 @@ const startTrace: BrowserCommand<[]> = async ({ page }) => {
   });
 };
 
-const stopTrace: BrowserCommand<[name: string]> = async (_context, name) => {
+const stopTrace: BrowserCommand<[name: string]> = async ({ page }, name) => {
+  const trace = traces.get(page);
   if (!trace) return;
+  traces.delete(page);
   const { session, events, complete } = trace;
-  trace = undefined;
   await session.send("Tracing.end");
   await complete;
   await mkdir("traces", { recursive: true });

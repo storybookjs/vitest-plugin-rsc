@@ -19,6 +19,7 @@ Everything you can do with `vitest-plugin-rsc/nextjs/testing-library`, one examp
 - [Test isolation](#test-isolation)
 - [Development or production](#development-or-production)
 - [Watch mode](#watch-mode)
+- [Fast tests](fast-tests.md): what a test costs, and the quickest feedback loop
 
 > [!TIP]
 > Got a Client Component that only takes props, like a button from your design system? You can test it without Next at all. See [Testing Client Components](use-client-test-files.md).
@@ -821,7 +822,7 @@ See [Development or production](internals/next-routes.md#development-or-producti
 
 ## Fast mode
 
-The plugin runs in one of two modes. Fidelity mode, the default, gives up nothing for speed: a test sees what a browser shows of your app, as CI should run it. Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run in production takes 18 s instead of 26 s on an M1 Pro, and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in fidelity mode:
+The plugin runs in one of two modes. Fidelity mode, the default, gives up nothing for speed: a test sees what a browser shows of your app, as CI should run it. Fast mode is for a quick feedback loop, like an agent's or your watch run's. It gives up some of what a test sees of a browser for speed: on a suite of 500 tests that open the routes of a notes app and click through them with Testing Library's `user-event`, a run in production takes about 16 s instead of 24 s on an M1 Pro, and a page without a server-rendered document loads in a few milliseconds instead of tens. It's experimental. Turn it on in the config, or for one run with an environment variable, and keep CI in fidelity mode:
 
 ```ts
 vitestPluginNext({ mode: "fast" });
@@ -837,7 +838,7 @@ Fast mode turns on every speed feature. Each is an option of its own, which defa
 - **Page loads without a document** (`flightLoads`). A page of the kept app loads with the request Next's router sends for a page, for its Flight payload alone, so the server renders no HTML for it. Its `response` in what `renderServer()` returns is that one: `text/x-component`, not the document. The head has no `<meta name="next-size-adjust">` of `next/font`, and a page that the test leaves while it loads stops rendering on the server: a test of a render that outlives its page passes `ssr: true`. The server handles each page once. A page whose render calls `redirect()`, Suspense or not, loads as its target, as a browser follows the 307 of a document: its `response` is the target's Flight response, with `redirected` and the final URL, and a redirect to another origin throws, as in fidelity mode. A `notFound()` or an error renders its boundary from the payload, with the status 200 of the Flight response: the 404 or the 500 of a render that fails before any of the document is out is not there, as it is not with `keepApp` alone.
 - **No prefetching** (`skipPrefetch`). `<Link>` and `<Form>` don't prefetch.
 - **No delay between the steps of a render** (`immediates`). The server doesn't wait the few milliseconds a browser adds to a timeout of `0` between the steps of a render, unless the test fakes the timers.
-- **Less waiting for the DOM** (`watchDom`), in both modes. `expect.element()` looks for an element again on every change of the DOM, and `expect.poll()` every 5 ms, unless your config sets `expect.poll.interval`. It changes when an assertion looks at the DOM, not what it sees: without it, Vitest waits 20, 50, 100 and then 500 ms between the looks, and a test sees most changes tens of milliseconds late. On an M1 Pro, the 500 tests take 60 s without it and 26 s with it in fidelity mode, and 53 s and 18 s in fast mode. `watchDom: false` turns it off.
+- **Less waiting for the DOM** (`watchDom`), in both modes. `expect.element()` and `expect.poll()` look again on the next change of the document, unless the poll has an interval of its own or the test's timers are fake; an `expect.poll.interval` in the config doesn't count. A change is a mutation of the DOM or an event of what changes without one, like `input` or a stylesheet's `load`; what a script sets on a property, they look at again after 5 ms. It changes when an assertion looks at the DOM, not what it sees: without it, Vitest waits 20, 50, 100, 100 and then 500 ms between the looks, and a test sees most changes tens of milliseconds late. On an M1 Pro, the 500 tests took about 60 s without it and 26 s with it in fidelity mode, and 52 s and 17 s in fast mode. See [Fast tests](fast-tests.md#waiting-for-the-page). `watchDom: false` turns it off.
 - **One answer of the dev server per test file** (`cacheDevServer`). What the dev server says about the stylesheets and the modules of a test file is asked once per test file, not for every page.
 - **Password hashes that cost microseconds** (`fastCrypto`). Password hashes and key derivation of `bcryptjs`, `node:crypto` and Web Crypto cost microseconds, with the same API, so a hash a test makes verifies in the app. See [Fast crypto](nodejs-in-the-browser.md#fast-crypto).
 
@@ -850,9 +851,11 @@ vitestPluginNext({ mode: "fidelity", skipPrefetch: true });
 
 A suite that passes in fast mode should pass in fidelity mode too. CI tells you when it doesn't.
 
+What each feature saves, and what else makes a test cheaper, is in [Fast tests](fast-tests.md).
+
 ## Start sooner on Bun
 
-A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On the notes app of `playground/vitest-vs-playwright-notes` (where `pnpm test:vitest` runs on Bun), a run of one file took 10.4 s with `pnpm exec vitest run` and 7.6 s with `bun --bun vitest run`; once the tests run, they take the same time. About 1.1 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too.
+A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On the notes app of `playground/vitest-vs-playwright-notes` (where `pnpm test:vitest` runs on Bun), a run of one file took about 3.2 s with `pnpm exec vitest run` and 2.3 s with `bun --bun vitest run` on an M1 Pro, and its first test started 0.86 s sooner on Bun; once the tests run, they take the same time. 0.25 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too. More in [Fast tests](fast-tests.md#the-start-of-a-run).
 
 ```bash
 bun --bun vitest run --configLoader native

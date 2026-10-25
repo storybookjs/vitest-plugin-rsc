@@ -308,11 +308,15 @@ function immediate(callback: (...args: unknown[]) => void, args: unknown[]): sym
     }
     return text;
   };
+  // One decoder each: busboy decodes every header and field of a form, and
+  // a decode without `stream` keeps nothing from one call to the next.
+  const utf8 = new TextDecoder("utf-8");
+  const ucs2 = new TextDecoder("utf-16le");
   const decoders: Record<string, (bytes: Uint8Array) => string> = {
     latin1,
     ascii: latin1,
-    utf8: (bytes) => new TextDecoder("utf-8").decode(bytes),
-    ucs2: (bytes) => new TextDecoder("utf-16le").decode(bytes),
+    utf8: (bytes) => utf8.decode(bytes),
+    ucs2: (bytes) => ucs2.decode(bytes),
   };
   for (const [encoding, decode] of Object.entries(decoders)) {
     if (`${encoding}Slice` in Uint8Array.prototype) continue;

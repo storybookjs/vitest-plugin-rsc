@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -7,15 +7,19 @@ import { sessions, users, type User } from "./schema.ts";
 
 export const SESSION_COOKIE = "session";
 
+// A prepared statement, as every request runs it: see notes.ts.
+const sessionUser = db
+  .select({ user: users })
+  .from(sessions)
+  .innerJoin(users, eq(users.id, sessions.userId))
+  .where(eq(sessions.token, sql.placeholder("token")))
+  .prepare("session_user");
+
 /** The signed-in user of the request, by the session cookie. */
 export const currentUser = cache(async (): Promise<User | undefined> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return undefined;
-  const [row] = await db
-    .select({ user: users })
-    .from(sessions)
-    .innerJoin(users, eq(users.id, sessions.userId))
-    .where(eq(sessions.token, token));
+  const [row] = await sessionUser.execute({ token });
   return row?.user;
 });
 
