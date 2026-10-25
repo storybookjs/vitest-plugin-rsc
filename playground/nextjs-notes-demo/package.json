@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite-socket": "0.2.13",
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@opentelemetry/api": "^1.9.1",
