@@ -2,12 +2,30 @@ import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
+import {
+  vitestPluginNext,
+  type NextBuild,
+  type SpeedOptions,
+} from "vitest-plugin-rsc/nextjs/plugin";
 import { cacheDir } from "../test-helpers/vite-cache.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
 // The files of PGlite in the page: see test/pglite-files.ts.
 await writePgliteFiles();
+
+// The benchmark's knob for the price of one speed feature alone:
+// `VITEST_PLUGIN_RSC_FEATURES="watchDom,keepApp=false"` sets each named
+// feature over `VITEST_PLUGIN_RSC_MODE`, on, or off with `=false`.
+const features: SpeedOptions = Object.fromEntries(
+  // oxlint-disable-next-line no-process-env
+  (process.env.VITEST_PLUGIN_RSC_FEATURES ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map((entry) => {
+      const [name, value] = entry.trim().split("=");
+      return [name, value !== "false"];
+    }),
+);
 
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
@@ -26,6 +44,7 @@ export default defineConfig({
       // DOM library it drives: the browser's, the page's own modules, as
       // `vitest` is. Any other package is server code in the page.
       host: { packages: ["@testing-library/user-event", "@testing-library/dom"] },
+      ...features,
     }),
   ],
   test: {
