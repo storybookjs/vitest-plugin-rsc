@@ -9,6 +9,15 @@ import type { PageHost, WebApis } from "./page-host.ts";
 // (node-channel.ts). The plugin makes the host with the listener's origin
 // (index.ts).
 
+// Not an import, which the page's runner would resolve as a module of the
+// app's layer.
+const fs = process.getBuiltinModule("node:fs");
+// As the host loads, before a test fakes them: a test's fake timers replace
+// the functions of `node:timers` too, not only the globals.
+const { setImmediate: nodeSetImmediate, clearImmediate: nodeClearImmediate } =
+  process.getBuiltinModule("node:timers");
+const path = process.getBuiltinModule("node:path");
+
 // What worker-web-apis.ts kept of Node's own, as Vitest loads it first in the
 // worker (index.ts).
 const webApisKey = Symbol.for("vitest-plugin-rsc:worker-web-apis");
@@ -109,8 +118,20 @@ function bodyOf(body: FormData | Blob, headers: Headers): RequestInit & { duplex
 // The DOM has no Navigation API: see navigation-shim.ts.
 const navigation = createNavigation(window);
 
-/** The host of the page, whose dev server listens at `origin`. */
-export function nodeHost(origin: string): PageHost {
+// The server's own files, of this worker: its test files run one after the
+// other, and the workers of a run at once. A directory of its own in the
+// run's, made as the first page asks for it. The run's goes as Vitest closes
+// (../index.ts): a worker that Vitest stops gets no `exit` to clean up in.
+let serverDir: string | undefined;
+function serverDirOfWorker(serverFiles: string): string {
+  return (serverDir ??= fs.mkdtempSync(path.join(serverFiles, "worker-")));
+}
+
+/**
+ * The host of the page, whose dev server listens at `origin`, with the
+ * server's files of the run in `serverFiles`.
+ */
+export function nodeHost(origin: string, serverFiles: string): PageHost {
   const { request, listen } = channelTo(origin);
   return {
     request,
@@ -119,5 +140,13 @@ export function nodeHost(origin: string): PageHost {
     loadsStylesheets: false,
     serverWebApis: webApis,
     fromPage,
+    get serverDir() {
+      return serverDirOfWorker(serverFiles);
+    },
+    // Node's own, not the global, which the DOM or a test's fake timers have.
+    serverImmediate(callback) {
+      const immediate = nodeSetImmediate(callback);
+      return () => nodeClearImmediate(immediate);
+    },
   };
 }

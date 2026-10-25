@@ -43,6 +43,22 @@ export type PageHost = {
    * signal are the DOM's, which Node's `Request` does not take.
    */
   fromPage(init: RequestInit | undefined): RequestInit | undefined;
+  /**
+   * The directory of the server's own files, like the cache of Next's build
+   * in `.next/`: in a browser the root of the disk in memory, `""`, and in a
+   * worker of Node.js, whose disk is the machine's, a directory of the
+   * worker's own in the run's temporary directory, gone as Vitest closes.
+   */
+  readonly serverDir: string;
+  /**
+   * Runs `callback` in a task of its own after the microtasks, as a server's
+   * `setImmediate()`, for the speed feature `immediates`: by a message of one
+   * channel in a browser, which no browser delays as it does a timeout, and
+   * by Node's own `setImmediate()` in a worker of Node.js, which keeps the
+   * stores of Node's `AsyncLocalStorage`, as a message does not. Returns what
+   * cancels it.
+   */
+  serverImmediate(callback: () => void): () => void;
 };
 
 /** What the page hears of the dev server unasked: see `listen()`. */

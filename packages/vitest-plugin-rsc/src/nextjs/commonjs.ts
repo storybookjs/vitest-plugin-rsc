@@ -60,6 +60,13 @@ export type CommonJsOptions = {
    * webpack. Without this, every `require()` is an import.
    */
   resolves?: (source: string) => Promise<boolean>;
+  /**
+   * Whether a `require()` of `source` returns the default export of its
+   * module: a module of Node.js that is Node's own, whose default export is
+   * its `module.exports`, where the namespace of `node:events` is not the
+   * class. Without this, a module of Node.js is the ES module of a stand-in.
+   */
+  requiresDefault?: (source: string) => boolean;
 };
 
 export type Node = { type: string; start: number; end: number; [key: string]: unknown };
@@ -86,7 +93,7 @@ const identifier = /^[A-Za-z_$][\w$]*$/;
 /** Compiles CommonJS in a module into ES module code. Nothing for a module without it. */
 export async function compileCommonJs(
   code: string,
-  { lang, resolves }: CommonJsOptions = {},
+  { lang, resolves, requiresDefault = () => false }: CommonJsOptions = {},
 ): Promise<{ code: string; map: ReturnType<MagicString["generateMap"]> } | undefined> {
   if (!/\brequire\s*\(|\bmodule\.exports\b|\bexports\.[\w$]+\s*=/.test(code)) return;
   const ast = (await parseAstAsync(code, { lang })) as unknown as Node & { body: Node[] };
@@ -140,13 +147,18 @@ export async function compileCommonJs(
     }
     let name = imports.get(source);
     if (!name) imports.set(source, (name = `$$cjs${imports.size}`));
-    const value = defaultOnly.test(source) ? `${name}.default` : `$$cjsRequire(${name})`;
+    const value =
+      defaultOnly.test(source) || requiresDefault(source)
+        ? `${name}.default`
+        : `$$cjsRequire(${name})`;
     output.overwrite(call.start, call.end, value);
   }
   let header = [...imports]
     .map(([source, name]) => `import * as ${name} from ${JSON.stringify(source)};\n`)
     .join("");
-  if ([...imports.keys()].some((source) => !defaultOnly.test(source))) header += requireHelper;
+  if ([...imports.keys()].some((source) => !defaultOnly.test(source) && !requiresDefault(source))) {
+    header += requireHelper;
+  }
   if (missing) header += missingHelper;
   if (isCommonJs) {
     header += "var module = { exports: {} }, exports = module.exports;\n";
@@ -174,6 +186,8 @@ export async function compileCommonJs(
 export function createCommonJsPlugin(
   layerOf: (environment: string) => NextLayer | undefined,
   isAppCode: (file: string, layer: NextLayer) => boolean,
+  /** Whether the layer imports Node's own module for `source`: see node-builtins.ts. */
+  isNativeNodeModule: (source: string, layer: NextLayer) => boolean,
 ): Plugin {
   return {
     name: "vitest-plugin-rsc:next-commonjs",
@@ -189,6 +203,7 @@ export function createCommonJsPlugin(
       return compileCommonJs(code, {
         lang: extension[1] as CommonJsOptions["lang"],
         resolves: async (source) => (await this.resolve(source, id)) !== null,
+        requiresDefault: (source) => isNativeNodeModule(source, layer),
       });
     },
   };
