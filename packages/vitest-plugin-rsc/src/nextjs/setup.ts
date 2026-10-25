@@ -6,7 +6,6 @@ import { findOnEveryChange, forgetTestFileAnswers } from "./speed-features.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
 import { leaveKeptAppWithPage } from "./page.ts";
 import { registry } from "./registry.ts";
-import { ssrLayer } from "./server-layers.ts";
 // With the speed feature `fastCrypto`, PBKDF2 of the page's `crypto.subtle` is
 // a stand-in that costs microseconds, for the app and the tests alike: see
 // fast-crypto.ts. Here, as the setup file is in a test run of Vitest only.
@@ -60,12 +59,6 @@ afterAll(async () => {
     forgetTestFileAnswers();
   }
 });
-
-// The ssr layer, which the entry does not wait for: with a dev server, the
-// first time it loads compiles Next's server, which takes longer than a test
-// may. In a setup file it does not count towards a test's timeout. A layer
-// that fails to load fails the test file here.
-await ssrLayer();
 
 // Without arguments: a hook gets the test's context, which is no options.
 afterEach(() => cleanup());

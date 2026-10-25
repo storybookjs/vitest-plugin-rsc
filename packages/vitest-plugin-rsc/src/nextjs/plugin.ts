@@ -176,6 +176,8 @@ const ownFile = (name: string) =>
 // the only file of the layers that imports Vitest: a host without Vitest
 // never loads it.
 const setupFile = ownFile("setup");
+// The setup file after the project's own, which waits for the server layers.
+const layersSetupFile = ownFile("setup-layers");
 // What a test imports `renderServer()` from, and the file that is.
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
@@ -1131,7 +1133,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
 
         // Before the project's own setup files: one that imports a module of
-        // Next's server needs the server's platform to be there.
+        // Next's server needs the server's platform to be there. And one
+        // after them, which waits for the server layers that load meanwhile.
         const test = ((
           config as {
             test?: {
@@ -1141,7 +1144,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             };
           }
         ).test ??= {});
-        test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
+        test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat(), layersSetupFile];
         // A page of the project's own wins.
         (test.browser ??= {}).testerHtmlPath ??= testerHtml;
         // Without the source maps of the dependencies in what the page

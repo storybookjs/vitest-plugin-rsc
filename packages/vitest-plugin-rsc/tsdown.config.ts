@@ -115,6 +115,7 @@ export default defineConfig([
       "src/nextjs/plugin.ts",
       "src/nextjs/adapter.ts",
       "src/nextjs/setup.ts",
+      "src/nextjs/setup-layers.ts",
       "src/nextjs/rsc.ts",
       "src/nextjs/ssr.ts",
       "src/nextjs/client.tsx",
