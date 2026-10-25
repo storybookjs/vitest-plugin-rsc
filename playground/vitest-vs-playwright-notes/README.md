@@ -45,11 +45,11 @@ Playwright on the same 3000 tests, each spec of `tests/playwright/` six times, a
 | Playwright, 3000 tests             |            4 |                    5 |                       6 |            7 |
 | ---------------------------------- | -----------: | -------------------: | ----------------------: | -----------: |
 | one `next start`, data per test    | 372.6, 1 run | 318.9 ± 19.4, 2 runs | **296.6 ± 2.6**, 3 runs | 296.9, 1 run |
-| a server and a database per worker | 350.5, 1 run |         318.8, 1 run |    308.3 ± 13.6, 2 runs |              |
+| a server and a database per worker | 350.5, 1 run |         318.8, 1 run |    311.6 ± 11.3, 3 runs |              |
 
-Every run passed all 3000, on 25 October 2026, at a 1-minute load of 13 to 23, most of it the run itself. 6 workers is the fastest for both setups.
+Every run passed all 3000, on 25 October 2026, at a 1-minute load of 13 to 23, most of it the run itself; 20 to 23 during the 6-worker runs of a server per worker. 6 workers is the fastest for both setups, as for Vitest, and at 6 the two setups are equal within their spread.
 
-Each at its fastest on an M1 Pro, the same 3000 tests at its best worker count: **Vitest 21.6 s, with 6 workers on Bun and Chromium; Playwright 296.6 s, with 6 workers against one `next start`: 13.7× as long.** Vitest's run is fast mode with dom-locators, on a build that still emptied the tables before each test. With 1 worker Vitest takes 71.4 s; Playwright with 1 worker isn't measured on 3000 tests, and six times its 500 tests would be about 20.6 minutes.
+Each at its fastest on an M1 Pro, the same 3000 tests at its best worker count: **Vitest 21.6 ± 0.0 s, with 6 workers on Bun and Chromium; Playwright 296.6 ± 2.6 s, with 6 workers against one `next start`: 13.7× as long.** Vitest's run is fast mode with dom-locators, on a build that still emptied the tables before each test. With 1 worker Vitest takes 71.4 s; Playwright with 1 worker isn't measured on 3000 tests: six times its 500 tests, a projection, is about 20.5 minutes.
 
 The workflow `.github/workflows/vitest-vs-playwright.yml` runs both and writes what each step took to the summary of the run.
 
