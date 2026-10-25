@@ -126,7 +126,9 @@ Vite also compiles every pre-bundled dependency again for a module runner, in ev
 
 ## The Node Host
 
-Without Browser Mode, in a project of Vitest with `environment: "happy-dom"` or `"jsdom"`, the page runs in a worker of Node.js, with that DOM, and the plugin is its host (`src/node-host.ts`, chosen in `configureVitest` of `src/index.ts` as `virtual:vitest-plugin-rsc/page-host`). No module of the page tells the two hosts apart: what a DOM of Node.js lacks, the host gives it.
+Without Browser Mode, in a project of Vitest with `environment: "happy-dom"` or `"jsdom"`, the page runs in a worker of Node.js, with that DOM, and the plugin is its host (`src/node-host.ts`, as `virtual:vitest-plugin-rsc/page-host` of `src/index.ts`). No module of the page tells the two hosts apart: what a DOM of Node.js lacks, the host gives it.
+
+The choice is the server's, in the `config` hooks that make it, of both plugins (`src/page-in-node.ts`): a dev server of Vitest, which has Vitest's plugin `vitest:config` in its config, with a project's `test` that has the DOM. Not a build, nor `storybook dev` of the same `vite.config.ts`, nor its `process.env.VITEST`, which a process that Vitest starts has too. Vitest 5 resolves an inline project that changes no option of Vite with the server of the config that declares it, without that config's `config` hooks, so a root whose projects have a page in Node.js sets `test.sharedViteServer: false`, and `configureVitest` fails for a project whose server was made for a page in a browser all the same.
 
 It runs as a test of jsdom does: one process for the test and the app, the worker, and Vite's dev server in Vitest's process, which answers the worker's modules over Vitest's own RPC. In the worker, three environments of that server, each with a module graph of its own: the test file and the rsc layer (`client`) on Vitest's own runner, as any test's modules, with `vi.mock()`; the ssr layer (`next_ssr`) and the browser layer (`react_client`) on runners of the plugin's, which the page loads again for a page load (`src/utils.ts`).
 

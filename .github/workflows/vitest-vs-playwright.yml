@@ -3,10 +3,13 @@ name: Vitest vs Playwright
 # The same tests of two apps, each in Vitest with `renderServer()` and in
 # Playwright on Postgres in Docker, with 1 worker: Vitest in development
 # against `next dev`, Vitest in production against `next build` and
-# `next start`. playground/vitest-vs-playwright is a todo app with 25 tests,
+# `next start`. The notes app's column in the Node host on Bun with
+# happy-dom runs with 4 workers too. playground/vitest-vs-playwright is a
+# todo app with 25 tests,
 # playground/vitest-vs-playwright-notes a notes app with accounts and 500
 # tests: see their README.md. Each job writes what its steps took to the
-# summary of the run, and every test with its time to its log.
+# summary of the run, and every test with its time to its log; the job
+# `summary` puts the runs of every job in one table, by app.
 #
 # A pull request runs it when it changes what the numbers or the tests
 # depend on: the two apps and the vite-cache.ts they import, dom-locators,
@@ -48,7 +51,7 @@ defaults:
 
 jobs:
   vitest:
-    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}${{ matrix.node && ', on Node.js' || '' }}${{ matrix.dom && format(', {0}', matrix.dom) || '' }}
+    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}${{ matrix.node && ', on Node.js' || '' }}${{ matrix.dom && format(', Node host, {0}', matrix.dom) || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,10 +67,16 @@ jobs:
         # 2 to 3 s sooner than `pnpm exec vitest` on Node.js; the tests then
         # take the same time. See the playgrounds' README.md. `node` runs it on
         # Node.js instead, in production only: the same tests, to compare.
-        # `dom` runs them without a browser, in a worker with the DOM of
-        # happy-dom or jsdom (`VITEST_DOM`): happy-dom on Bun and on Node.js,
-        # jsdom on Node.js only, as Vitest's environment of jsdom does not
-        # start on Bun.
+        # `dom` runs them without a browser, in the Node host: a worker with
+        # the DOM of happy-dom or jsdom (`VITEST_DOM`), happy-dom on Bun and
+        # on Node.js, jsdom on Node.js only, as Vitest's environment of jsdom
+        # does not start on Bun. In production and fast mode only: the
+        # columns to hold against Chromium's in fast mode, each run 20 to
+        # 40 s on a runner. `workers` runs the production run once for each
+        # number of workers, in order, the first with Vite's dependencies to
+        # optimize. `count` is the count of tests a run has to end with:
+        # happy-dom skips the tests of its known gaps, `knownGaps` in the
+        # app's vitest.config.ts.
         include:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
@@ -75,13 +84,21 @@ jobs:
           - { app: vitest-vs-playwright-notes, tests: dom-locators, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast, node: true }
-          - { app: vitest-vs-playwright-notes, tests: dom-locators, mode: fast, dom: happy-dom }
+          - {
+              app: vitest-vs-playwright-notes,
+              tests: dom-locators,
+              mode: fast,
+              dom: happy-dom,
+              workers: "1 4",
+              count: "496 passed | 4 skipped (500)",
+            }
           - {
               app: vitest-vs-playwright-notes,
               tests: dom-locators,
               mode: fast,
               node: true,
               dom: happy-dom,
+              count: "496 passed | 4 skipped (500)",
             }
           - {
               app: vitest-vs-playwright-notes,
@@ -89,6 +106,7 @@ jobs:
               mode: fast,
               node: true,
               dom: jsdom,
+              count: "500 passed (500)",
             }
     defaults:
       run:
@@ -96,6 +114,9 @@ jobs:
     env:
       VITEST_PLUGIN_RSC_MODE: ${{ matrix.mode || 'fidelity' }}
       VITEST_DOM: ${{ matrix.dom }}
+      # The first cells of the job's rows in the table of the job `summary`:
+      # the app, the runner, the tests, the page's host and its DOM.
+      COLUMN: "${{ matrix.app }} | Vitest on ${{ matrix.node && 'Node.js' || 'Bun' }} | ${{ matrix.tests }} | ${{ matrix.dom && 'Node host' || 'Chromium' }} | ${{ matrix.dom || 'Chromium' }}"
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -117,24 +138,40 @@ jobs:
         if: ${{ matrix.app == 'vitest-vs-playwright-notes' && matrix.tests == 'vitest' }}
         run: bun --bun vitest run --configLoader native --maxWorkers 1 tests/zz-checks/
       - name: Run the tests, Next and React in production
+        env:
+          COUNT: ${{ matrix.count }}
         run: |
-          start=$(date +%s.%N)
-          ${{ matrix.node && 'pnpm exec vitest run' || 'bun --bun vitest run --configLoader native' }} --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
-          end=$(date +%s.%N)
-          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
-          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
-          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest on ${{ matrix.node && 'Node.js' || 'Bun' }}, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}${{ matrix.dom && format(', {0}', matrix.dom) || '' }}"
+            echo "### Vitest on ${{ matrix.node && 'Node.js' || 'Bun' }}, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}${{ matrix.dom && format(', in the Node host with {0}', matrix.dom) || ', in Chromium' }}"
             echo
-            echo "| Step | Seconds |"
-            echo "| --- | ---: |"
-            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
-            printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
+            echo "| Step | Workers | Seconds |"
+            echo "| --- | ---: | ---: |"
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "VITEST_SECONDS_${{ matrix.mode == 'fast' && 'FAST' || 'FIDELITY' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
+          for workers in ${{ matrix.workers || '1' }}; do
+            start=$(date +%s.%N)
+            ${{ matrix.node && 'pnpm exec vitest run' || 'bun --bun vitest run --configLoader native' }} --maxWorkers "$workers" "tests/${{ matrix.tests }}/" | tee vitest.log
+            end=$(date +%s.%N)
+            log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+            tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+            count=$(grep -oP 'Tests\s+\K.*\(\d+\)' <<< "$log")
+            duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
+            wall=$(echo "$end - $start" | bc)
+            {
+              printf "| %s tests, all included | %s | %.1f |\n" "$tests" "$workers" "$wall"
+              printf "| Of which Vitest's own Duration | %s | %.1f |\n" "$workers" "$duration"
+            } >> "$GITHUB_STEP_SUMMARY"
+            printf "| %s | production | %s | %s | %s | %.1f | %.1f |\n" "$COLUMN" "$VITEST_PLUGIN_RSC_MODE" \
+              "$workers" "${count// |/,}" "$wall" "$duration" >> "$RUNNER_TEMP/columns.md"
+            if [[ -n "$COUNT" && "$count" != "$COUNT" ]]; then
+              echo "::error::Vitest counted $count, where the column has $COUNT"
+              exit 1
+            fi
+            if [[ "$workers" == 1 ]]; then
+              echo "VITEST_SECONDS_${{ matrix.mode == 'fast' && 'FAST' || 'FIDELITY' }}_PRODUCTION=$duration" >> "$GITHUB_ENV"
+            fi
+          done
       - name: Run the tests, Next and React in development
-        if: ${{ !matrix.node }}
+        if: ${{ !matrix.node && !matrix.dom }}
         env:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
@@ -143,21 +180,24 @@ jobs:
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          count=$(grep -oP 'Tests\s+\K.*\(\d+\)' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
+            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}, in Chromium"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
+          printf "| %s | development | %s | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "$VITEST_PLUGIN_RSC_MODE" "${count// |/,}" \
+            "$(echo "$end - $start" | bc)" "$duration" >> "$RUNNER_TEMP/columns.md"
           echo "VITEST_SECONDS_${{ matrix.mode == 'fast' && 'FAST' || 'FIDELITY' }}_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
       # The job of fast mode runs the tests in fidelity mode too, on the
       # same runner: the ratio of the two is what fast mode gains, which the
       # times of two runners, a minute apart and of other machines, hide.
       - name: Run the tests in fidelity mode, Next and React in production
-        if: matrix.mode == 'fast' && !matrix.node
+        if: matrix.mode == 'fast' && !matrix.node && !matrix.dom
         env:
           VITEST_PLUGIN_RSC_MODE: fidelity
         run: |
@@ -166,18 +206,21 @@ jobs:
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          count=$(grep -oP 'Tests\s+\K.*\(\d+\)' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest on Bun, production, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
+            echo "### Vitest on Bun, production, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, in Chromium, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
+          printf "| %s | production | fidelity | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "${count// |/,}" \
+            "$(echo "$end - $start" | bc)" "$duration" >> "$RUNNER_TEMP/columns.md"
           echo "VITEST_SECONDS_FIDELITY_PRODUCTION=$duration" >> "$GITHUB_ENV"
       - name: Run the tests in fidelity mode, Next and React in development
-        if: matrix.mode == 'fast' && !matrix.node
+        if: matrix.mode == 'fast' && !matrix.node && !matrix.dom
         env:
           VITEST_PLUGIN_RSC_MODE: fidelity
           VITEST_PLUGIN_RSC_BUILD: development
@@ -187,18 +230,21 @@ jobs:
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          count=$(grep -oP 'Tests\s+\K.*\(\d+\)' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
+            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, in Chromium, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
+          printf "| %s | development | fidelity | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "${count// |/,}" \
+            "$(echo "$end - $start" | bc)" "$duration" >> "$RUNNER_TEMP/columns.md"
           echo "VITEST_SECONDS_FIDELITY_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
       - name: Compare fidelity mode with fast mode
-        if: matrix.mode == 'fast' && !matrix.node
+        if: matrix.mode == 'fast' && !matrix.node && !matrix.dom
         run: |
           {
             echo "### Vitest on Bun, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode and fast mode on one runner"
@@ -212,6 +258,12 @@ jobs:
                 "$(echo "${!fidelity} / ${!fast}" | bc -l)"
             done
           } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: columns-vitest-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/columns.md
+          if-no-files-found: ignore
 
   # Where the time of fast mode goes: a CPU profile of the page for every
   # test file, summed up by package in the summary of the run, a trace of
@@ -359,6 +411,9 @@ jobs:
             printf "| %s tests, 1 worker, \`next dev\` included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             echo "| Of which Playwright's own time | $duration |"
           } >> "$GITHUB_STEP_SUMMARY"
+          printf "| %s | Playwright | playwright | Chromium | Chromium | development | | 1 | %s passed | %.1f | %.0f |\n" \
+            "${{ matrix.app }}" "$tests" "$(echo "$end - $start" | bc)" \
+            "$(awk '/m$/ { print $0 * 60; next } { print $0 + 0 }' <<< "$duration")" >> "$RUNNER_TEMP/columns.md"
       - name: Build the app with next build
         run: |
           start=$(date +%s.%N)
@@ -381,3 +436,48 @@ jobs:
             printf "| %s tests, 1 worker, \`next start\` included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             echo "| Of which Playwright's own time | $duration |"
           } >> "$GITHUB_STEP_SUMMARY"
+          printf "| %s | Playwright | playwright | Chromium | Chromium | production | | 1 | %s passed | %.1f | %.0f |\n" \
+            "${{ matrix.app }}" "$tests" "$(echo "$end - $start" | bc)" \
+            "$(awk '/m$/ { print $0 * 60; next } { print $0 + 0 }' <<< "$duration")" >> "$RUNNER_TEMP/columns.md"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: columns-playwright-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/columns.md
+          if-no-files-found: ignore
+
+  # Every run of the jobs vitest and playwright in one table per app, from
+  # the rows they write to their artifacts `columns-*`: production first,
+  # then by workers, the fastest first. The host is where the page runs,
+  # Chromium or the Node host, a worker of Vitest; the DOM is Chromium's,
+  # happy-dom or jsdom. The seconds all included are the command's: they
+  # include the startup of Vitest or Playwright and `next dev` or
+  # `next start`, not `next build`, and Vite's optimization of the
+  # dependencies in the first run of a job only. Playwright prints its own
+  # time in tenths of a minute past 60 s.
+  summary:
+    name: Every run in one table
+    needs: [vitest, playwright]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: columns-*
+          path: columns
+      - name: Put the rows in one table per app
+        run: |
+          for app in vitest-vs-playwright-notes vitest-vs-playwright; do
+            {
+              echo "### Every run, $app"
+              echo
+              echo "| Test runner | Tests | Host | DOM | Next and React | Mode | Workers | Tests counted | Seconds, all included | Of which Vitest's or Playwright's own |"
+              echo "| --- | --- | --- | --- | --- | --- | ---: | --- | ---: | ---: |"
+              { grep -h "^| $app |" columns/*/columns.md || true; } \
+                | sed "s/^| $app //" \
+                | sort -t "|" -k 6,6r -k 8,8n -k 10,10n
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "A run with 4 workers starts with the dependencies that its job's run with 1 optimized." \
+            >> "$GITHUB_STEP_SUMMARY"

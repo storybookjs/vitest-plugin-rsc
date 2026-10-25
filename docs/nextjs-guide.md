@@ -814,13 +814,40 @@ Then run `pnpm install --config.optimistic-repeat-install=false` once, so that p
 
 ## Without Browser Mode
 
-A Vitest project without Browser Mode, with `environment: "happy-dom"` or `"jsdom"`, runs the page in a worker of Node.js, and the plugin is its host there. Your server code then runs on Node.js itself, as with `next start`:
+A Vitest project without Browser Mode, with `environment: "happy-dom"` or `"jsdom"`, runs the page in a worker of Node.js, and the plugin is its host there. Only Vitest's test run does: `vite build` and `storybook dev` of the same `vite.config.ts` have the page in a browser. Your server code then runs on Node.js itself, as with `next start`:
 
 - **Node's own modules**, not the browser's stand-ins of [Node.js in the browser](nodejs-in-the-browser.md): nothing throws because a browser can't do it. `node:crypto` has its ciphers and signatures, `node:zlib` its streams and Brotli, and `child_process`, `net` and `http` are there.
 - **Your packages' builds for Node.js**: the server code resolves a package with the `node` condition, as Next does, where a browser has `browser`. A package like `jose` or `ws` is its Node.js build.
 - **Node's own `AsyncLocalStorage`**: `cookies()`, `headers()` and the scope of a `"use cache"` function follow your code everywhere, also into a callback or a package, without the limits of [The Scope Of A Cached Function](internals/next-routes.md#the-scope-of-a-cached-function).
 - **A database over TCP**: a driver like `pg` reaches a real server, or one your setup file starts: Node's own `net` is there for any driver, and `pg` is the one this repository tests. The notes demo's TCP project runs the app's own `pg` module against PGlite served over TCP by [`@electric-sql/pglite-socket`](https://www.npmjs.com/package/@electric-sql/pglite-socket), in `vitest.setup.tcp.ts`.
 - **Native addons**, like `sharp`, `bcrypt` or `better-sqlite3`: list the package in `optimizeDeps.exclude` of the project, so that Node.js loads it itself rather than Vite bundling it.
+
+Next to a project in Browser Mode, with the plugins in the root config, such a project gets a Vite server of its own: the plugin sets `test.sharedViteServer: false` there, as each project's server is made for where its page runs. Vitest 5 would otherwise resolve a project that differs in `environment` only with the root's server.
+
+```ts
+export default defineConfig({
+  plugins: [vitestPluginRSC(), vitestPluginNext()],
+  test: {
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "browser",
+          browser: {
+            enabled: true,
+            provider: playwright(),
+            instances: [{ browser: "chromium" }],
+          },
+        },
+      },
+      {
+        extends: true,
+        test: { name: "node", environment: "happy-dom" },
+      },
+    ],
+  },
+});
+```
 
 What still differs from `next start`: the test, your server and the page share one process, with its globals, `process.env` and a test's fake timers; a request to your app is a call, not a request over a socket, so code that calls your app's own URL with `http` rather than `fetch` reaches Vite's dev server, not your app; MSW's `setupServer()` sees the page's `fetch`, and with happy-dom a `fetch` of your server code too, but not with jsdom, where it goes to the network; and the [disk](#the-disk-without-browser-mode) is your machine's.
 
