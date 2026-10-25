@@ -9,7 +9,6 @@ const serverAbort = vi.hoisted(() => ({
 vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
   default: {
     serverWebApis: Object.assign(Object.create(globalThis), serverAbort),
-    fromPage: (init: unknown) => init,
   },
 }));
 vi.mock("virtual:vitest-plugin-rsc/next-env", () => ({

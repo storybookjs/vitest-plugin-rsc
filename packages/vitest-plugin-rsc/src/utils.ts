@@ -38,6 +38,9 @@ import {
 (globalThis as { __vitest_plugin_rsc_vite_client__?: unknown }).__vitest_plugin_rsc_vite_client__ =
   pageClient;
 
+// Where a module imports Vite's client from.
+const viteClientUrl = "/@vite/client";
+
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";
 const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
@@ -229,7 +232,7 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 // every module, also for a module it already has, which is hundreds of
 // requests for one page. They are answered here, for as long as the server
 // says that its modules are the ones that were fetched: see `versionOf()`
-// in index.ts.
+// in module-versions.ts.
 type FetchedModules = { version: number; results: Map<string, Promise<InvokeResult>> };
 
 const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
@@ -266,7 +269,7 @@ export function forgetHeardVersions(): void {
   asking = new Map();
 }
 
-pageHost.listen({
+pageHost.listen?.({
   heard(event, data) {
     if (event !== modulesChangedEvent) return;
     const { environment, version } = (data ?? {}) as Partial<ModulesChanged>;
@@ -411,7 +414,9 @@ async function invokeForPageLoad(
 // each once the one before it has run: a round trip to the server for every
 // module of a page, in a row. The server says what a module imports (see
 // `describeModule()` in index.ts), so those are asked for right away, all at
-// once, and theirs when they arrive.
+// once, and theirs when they arrive. In a worker of Node.js only for what the
+// dev server answers there (vitest-modules.ts): Vitest's RPC says nothing of
+// a module's imports, and answers in a fraction of a millisecond.
 function fetchOnce(
   environment: string,
   payload: InvokePayload,
@@ -513,6 +518,9 @@ const pageLoadEvaluator: ModuleEvaluator = {
     Object.seal(context[ssrModuleExportsKey]);
   },
   async runExternalModule(file) {
+    // Vite's client, which Vitest's RPC leaves to the runner: the page's own
+    // instance, as the dev server serves it to a runner (vite-client.ts).
+    if (file === viteClientUrl) return pageClient;
     if (!isHostModule(file)) return import(/* @vite-ignore */ file);
     // What the page serves for a module of its own has that module as its
     // default export: see host-module.ts. A static build has it in the
@@ -638,5 +646,8 @@ function toBrowserCoverageFileUrl(file: string) {
 }
 
 function invokeDevServer(environment: string, payload: InvokePayload) {
-  return pageHost.request(invokeEvent, { environment, payload }) as Promise<InvokeResult>;
+  return (
+    pageHost.modules?.invoke(environment, payload) ??
+    (pageHost.request(invokeEvent, { environment, payload }) as Promise<InvokeResult>)
+  );
 }
