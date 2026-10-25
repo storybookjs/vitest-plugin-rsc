@@ -1,4 +1,5 @@
 import { expect, test, vi } from "vitest";
+import { timersKey } from "./timers.ts";
 import { answerEvent, invokeEvent, versionEvent } from "./websocket-bridge.ts";
 
 // The page's runners of a dev server's environment, without a browser: a
@@ -94,6 +95,8 @@ test("gives a module of every page load an import.meta of its own, which says wh
     ),
   );
   expect(first!.meta).not.toBe(second!.meta);
+  // The timers of its own page, which stop once that page is left.
+  expect(first!.meta[timersKey]).not.toBe(second!.meta[timersKey]);
   for (const { meta } of [first!, second!]) {
     expect(meta).toMatchObject({
       url: "file:///dir/meta.js",

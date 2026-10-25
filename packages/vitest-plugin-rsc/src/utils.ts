@@ -124,12 +124,9 @@ function getRunner(environment: string): ModuleRunner {
   return runner;
 }
 
-// What `import.meta` of a module says of its file: its path, its directory
-// and its URL. The same for every runner of the environment, so it is worked
-// out once per file. Vite's runner works it out again for every module of
-// every page load: a third of what a page load spent evaluating the
-// browser layer's modules, in normalizing paths and parsing URLs. Each
-// module still gets an `import.meta` of its own.
+// What `import.meta` of a module says of its file, once per file of an
+// environment: Vite's runner would normalize the path and parse the URL for
+// every module of every page load. Each module gets a copy of its own.
 const importMetas = new Map<string, ModuleRunnerImportMeta>();
 
 function importMetaOf(environment: string, file: string): ModuleRunnerImportMeta {
