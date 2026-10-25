@@ -66,7 +66,7 @@ Every event is the page's own, so `isTrusted` is `false`, where Playwright's are
 
 ## In a DOM of Node.js
 
-The package runs in happy-dom and in jsdom too, as Vitest's `environment`: the package's suite holds its locators there to ivya, the engine of Vitest's locators, in the same DOM, and its waits and actions to their tests. Such a DOM lays nothing out and draws nothing, and the package answers so:
+The package runs in happy-dom and in jsdom too, as Vitest's `environment`: the package's suite holds its locators there to ivya, the engine of Vitest's locators, in the same DOM, its actions to Playwright's events in Chromium, step by step, recorded by the browser's fidelity test, and its waits to their tests. What the DOM itself does otherwise is the DOM's: the click of a label on its control, happy-dom's `data` of an `InputEvent`. Such a DOM lays nothing out and draws nothing, and the package answers so:
 
 - An element is visible by its style alone: no `display: none` on it or above it, and no `visibility: hidden`; a style without a visibility, happy-dom's, is visible.
 - A click lands on the element itself, at 0, 0, as there is no box to hit; `wheel` scrolls nothing.

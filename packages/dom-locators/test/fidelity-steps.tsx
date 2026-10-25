@@ -282,8 +282,9 @@ export function compareLogs(
 ): { differences: string[]; sameOrder: boolean } {
   const missing = theirs.filter((entry) => !our.includes(entry)).map((entry) => `- ${entry}`);
   const extra = our.filter((entry) => !theirs.includes(entry)).map((entry) => `+ ${entry}`);
+  const differences = [...new Set([...missing, ...extra])];
   const ordered = (entries: string[], other: string[]) =>
     entries.filter((entry) => other.includes(entry) && !unordered(entry));
   const sameOrder = JSON.stringify(ordered(theirs, our)) === JSON.stringify(ordered(our, theirs));
-  return { differences: [...missing, ...extra], sameOrder };
+  return { differences, sameOrder };
 }
