@@ -85,11 +85,18 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
   input: ProjectAnnotations<ServerTypes & InferTypes<Addons>> & { addons?: Addons },
 ): ServerPreview<InferTypes<Addons>> {
   if (input.beforeAll) throw beforeAllInServerPreview();
+  // `definePreview()` makes its preview the project's, whose `beforeAll`
+  // Storybook's Vitest addon runs before the stories of a file. The project's
+  // stays preview.tsx, which the addon set before a story file imports this
+  // one: otherwise a file of server stories alone runs without its
+  // `beforeAll`, which Storybook itself runs.
+  const project = globalThis.globalProjectAnnotations;
   const preview = definePreview({
     ...input,
     addons: [argTypes, annotations, ...(input.addons ?? [])],
     experimental_storyInput: serverStoryInput,
   });
+  globalThis.globalProjectAnnotations = project;
   return markServerPreview(preview) as never;
 }
 
