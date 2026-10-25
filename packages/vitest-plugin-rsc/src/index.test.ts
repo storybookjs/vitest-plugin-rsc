@@ -18,6 +18,30 @@ describe("the page's host", () => {
   });
 });
 
+describe("the server's resolution", () => {
+  type Resolve = { conditions: string[]; mainFields?: string[] };
+  const resolveOf = (test: object) => {
+    const config = getHookHandler(getPlugin("rsc:run-in-browser").config) as unknown as (
+      config: object,
+    ) => { environments: { client: { resolve: Resolve } } };
+    return config({ test }).environments.client.resolve;
+  };
+
+  test("has a browser's conditions with the page in a browser", () => {
+    expect(resolveOf({ browser: { enabled: true }, environment: "happy-dom" })).toEqual({
+      conditions: ["browser", "react-server"],
+    });
+  });
+
+  // Node's are those of `vitestPluginNext()`, which gives the server Node's
+  // own modules: see nextjs/plugin.test.ts.
+  test("has a browser's conditions with the page in a worker of Node.js too", () => {
+    expect(resolveOf({ environment: "jsdom" })).toEqual({
+      conditions: ["browser", "react-server"],
+    });
+  });
+});
+
 describe("react_client optimizer", () => {
   test("scans the browser test files and shares their excludes", async () => {
     const configureOptimizer = getHookHandler(

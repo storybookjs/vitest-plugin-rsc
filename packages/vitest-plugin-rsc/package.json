@@ -34,6 +34,10 @@
     },
     "./async-hooks": {
       "types": "./dist/async-hooks.d.ts",
+      "node": {
+        "vitest-plugin-rsc-source": "./src/async-hooks-node.ts",
+        "default": "./dist/async-hooks-node.js"
+      },
       "vitest-plugin-rsc-source": "./src/async-hooks.ts",
       "default": "./dist/async-hooks.js"
     },

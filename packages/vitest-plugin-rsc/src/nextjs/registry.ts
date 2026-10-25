@@ -172,6 +172,11 @@ export type NextRegistry = {
   /** The directory of the build on the server's disk, of this generation: see cache.ts. */
   buildDir(): string;
   /**
+   * The directory of the server's own files, which the page's host has:
+   * `""` in a browser, a temporary directory in Node.js (page-host.ts).
+   */
+  serverDir(): string;
+  /**
    * Next's build's verdict on a route of the app, by its page name and its
    * pathname, in the rsc layer: nothing for a route it renders at every
    * request.

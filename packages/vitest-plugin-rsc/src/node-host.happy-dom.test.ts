@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import os from "node:os";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 // The host of a page in a worker of Node.js with happy-dom: the page's fetch
@@ -39,7 +40,7 @@ settings.fetch.interceptor = {
 };
 
 const asked: Request[] = [];
-const handsOver = nodeHost("http://127.0.0.1:1").interceptRequests(async (request) => {
+const handsOver = nodeHost("http://127.0.0.1:1", os.tmpdir()).interceptRequests(async (request) => {
   asked.push(request);
   if (request.url.includes("/network") || request.url.includes("/mocked")) return undefined;
   // An answer that fails as its request is aborted, as the app's does.
