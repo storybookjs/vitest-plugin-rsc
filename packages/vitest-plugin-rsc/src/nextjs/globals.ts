@@ -176,8 +176,16 @@ scope.global.process ??= scope.process;
 scope.Buffer ??= Buffer;
 
 // Node's `Buffer#indexOf` takes any Uint8Array, and Next's stream code relies
-// on it. The polyfill only takes a Buffer.
-for (const method of ["indexOf", "lastIndexOf"] as const) {
+// on it. The polyfill only takes a Buffer. Node's own, which the server layers
+// have in a worker of Node.js (node-builtins.ts), is left as it is.
+const takesUint8Array = (() => {
+  try {
+    return Buffer.from([0, 1]).indexOf(new Uint8Array([1])) === 1;
+  } catch {
+    return false;
+  }
+})();
+for (const method of takesUint8Array ? [] : (["indexOf", "lastIndexOf"] as const)) {
   const original = Buffer.prototype[method] as (...args: unknown[]) => number;
   Buffer.prototype[method] = function (this: Buffer, value: unknown, ...rest: unknown[]) {
     if (value instanceof Uint8Array && !Buffer.isBuffer(value)) {
@@ -188,8 +196,9 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
 }
 // base64url, which Node.js has since 15 and the polyfill does not: Prisma's
 // client reads its query plans with it. It is base64 with `-` and `_`, and
-// without padding. An encoding's name is any case, as in Node.js.
-{
+// without padding. An encoding's name is any case, as in Node.js. Node's own
+// `Buffer` has it.
+if (!Buffer.isEncoding("base64url")) {
   const isBase64url = (encoding: unknown) =>
     typeof encoding === "string" && encoding.toLowerCase() === "base64url";
   const base64 = (text: string) => text.replaceAll("-", "+").replaceAll("_", "/");

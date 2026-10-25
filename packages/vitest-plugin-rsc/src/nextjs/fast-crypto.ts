@@ -125,7 +125,7 @@ const moduleOfSpecifier = new Map(
 /**
  * The name of the stand-in module for an import of a server layer, if it has
  * one: a package that hashes passwords, or `node:crypto`, whose module is the
- * plugin's own with the stand-ins in it, `nodeCryptoFile`.
+ * layer's own with the stand-ins in it, `nodeCrypto`.
  */
 export function fastCryptoModuleOf(source: string): string | undefined {
   if (source === "crypto" || source === "node:crypto") return "node-crypto";
@@ -133,14 +133,15 @@ export function fastCryptoModuleOf(source: string): string | undefined {
 }
 
 /**
- * The code of a stand-in module by its name: for `node-crypto`, the plugin's
- * `node:crypto`, the file `nodeCryptoFile`, with its `pbkdf2`, `scrypt` and
- * `argon2` the stand-ins.
+ * The code of a stand-in module by its name: for `node-crypto`, the layer's
+ * `node:crypto`, `nodeCrypto`, with its `pbkdf2`, `scrypt` and `argon2` the
+ * stand-ins. That is the file of the package's module in a browser, and
+ * Node's own in a worker of Node.js (node-builtins.ts).
  */
-export function fastCryptoModule(name: string, nodeCryptoFile: string): string | undefined {
+export function fastCryptoModule(name: string, nodeCrypto: string): string | undefined {
   const from = JSON.stringify(fastCryptoFile());
   if (name === "node-crypto") {
-    const own = JSON.stringify(nodeCryptoFile);
+    const own = JSON.stringify(nodeCrypto);
     const names = ["pbkdf2", "pbkdf2Sync", "scrypt", "scryptSync", "argon2", "argon2Sync"];
     return (
       `import own from ${own};\n` +

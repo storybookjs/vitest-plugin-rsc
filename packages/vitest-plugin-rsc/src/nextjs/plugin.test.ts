@@ -37,6 +37,12 @@ const nextDir = path.dirname(installed.resolve("next/package.json"));
 
 type OptimizeDeps = { include: string[] };
 type Config = { environments: Record<string, { optimizeDeps: OptimizeDeps }> };
+type OptimizerPlugins = {
+  environments: Record<
+    string,
+    { optimizeDeps: { rolldownOptions: { plugins: { name?: string }[] } } }
+  >;
+};
 
 // The config loads the project, and Next's config with it: once for the file.
 async function optimizeDepsOf(options?: VitestPluginNextOptions) {
@@ -925,6 +931,69 @@ test("gives the server layers the package's module of Node.js, after Next's alia
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("gives the server layers Node's own modules for a page in a worker of Node.js", async () => {
+  const plugins = vitestPluginNext({ mode: "fast" });
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  const { environments } = await (plugin.config as ConfigHook<OptimizerPlugins>)(
+    { root, test: { environment: "happy-dom" } },
+    serve,
+  );
+  // A pre-bundle of CommonJS imports Node's module for a `require()` of one.
+  const requireToImport = (environment: string) =>
+    environments[environment]!.optimizeDeps.rolldownOptions.plugins.some(
+      (plugin) => plugin.name === "builtin:esm-external-require",
+    );
+  expect(requireToImport("client")).toBe(true);
+  expect(requireToImport("next_ssr")).toBe(true);
+  expect(requireToImport("react_client")).toBe(false);
+  const resolverOf = (layer: string) => {
+    const resolver = plugins.find(
+      ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
+    )!;
+    const resolveId = resolver.resolveId as (
+      this: object,
+      source: string,
+      importer: string | undefined,
+      options: object,
+    ) => Promise<unknown>;
+    const context = { environment: { mode: "dev" }, resolve: async (id: string) => ({ id }) };
+    return {
+      resolve: (source: string, importer?: string) => resolveId.call(context, source, importer, {}),
+      load: resolver.load as (this: object, id: string) => string | undefined,
+    };
+  };
+  const page = path.join(root, "app/page.tsx");
+  const ssr = resolverOf("ssr");
+  // An external, which the runner imports, by its `node:` name.
+  expect(await ssr.resolve("os", page)).toEqual({ id: "node:os", external: true });
+  expect(await ssr.resolve("node:net", page)).toEqual({ id: "node:net", external: true });
+  expect(await resolverOf("rsc").resolve("fs/promises", page)).toEqual({
+    id: "node:fs/promises",
+    external: true,
+  });
+  // Also for a dependency whose `browser` field says it uses nothing for it:
+  // Next's server on Node.js reads no `browser` field.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "browser-field-"));
+  try {
+    const pkg = path.join(dir, "node_modules", "some-db");
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ browser: { fs: false } }));
+    expect(await ssr.resolve("fs", path.join(pkg, "index.js"))).toEqual({
+      id: "node:fs",
+      external: true,
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  // The browser layer is a browser's, as in Next.
+  expect(await resolverOf("browser").resolve("node:buffer", page)).toEqual({
+    id: "next/dist/compiled/buffer/index.js",
+  });
+  // `fastCrypto` puts its stand-ins over Node's own `node:crypto`.
+  const fastCrypto = await ssr.resolve("node:crypto", page);
+  expect(ssr.load.call({}, fastCrypto as string)).toContain('export * from "node:crypto";');
 });
 
 test("gives the rsc layer the ssr layer's contexts for Next's shared-runtime modules, as Next's build for Node.js does", async () => {
