@@ -324,18 +324,25 @@ export function versionOfModules(environment: string): Promise<number> {
 
 // The modules that were fetched, when the server still has that version of
 // its modules.
-function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
-  const fetched = versionOfModules(environment).then(
-    (version): FetchedModules =>
+// In place at once: a runner that asks for a module meanwhile waits for the
+// answer. The question goes out at once too, next to the one before.
+function askForModules(
+  environment: string,
+  before?: Promise<FetchedModules>,
+): Promise<FetchedModules> {
+  const known = before?.catch(() => undefined);
+  const fetched = Promise.all([known, versionOfModules(environment)]).then(
+    ([known, version]): FetchedModules =>
       known && known.version === version ? known : { version, results: new Map() },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and
   // the next page load asks: a runner of the server layer that got others
   // would ask the server itself from then on.
-  fetched.catch(() => {
+  fetched.catch(async () => {
+    const modules = await known;
     if (fetchedModulesOf.get(environment) !== fetched) return;
-    if (known) fetchedModulesOf.set(environment, Promise.resolve(known));
+    if (modules) fetchedModulesOf.set(environment, Promise.resolve(modules));
     else fetchedModulesOf.delete(environment);
   });
   return fetched;
@@ -380,10 +387,7 @@ export function checkFetchedModules(): Promise<void> {
   const fetched = new Map(
     Array.from(fetchedModulesOf, ([environment, modules]) => [
       environment,
-      modules
-        .catch(() => undefined)
-        .then((known) => askForModules(environment, known))
-        .then(({ version }) => version),
+      askForModules(environment, modules).then(({ version }) => version),
     ]),
   );
   const environments = [...new Set([...answeredEnvironments, ...fetched.keys()])].sort();

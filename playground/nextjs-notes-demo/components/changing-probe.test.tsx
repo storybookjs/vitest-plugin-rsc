@@ -1,4 +1,6 @@
-import { afterAll, expect, test } from "vitest";
+import { afterAll, expect, inject, test } from "vitest";
+import type { Mode } from "vitest-plugin-rsc/nextjs/plugin";
+import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { fileChanged } from "../../test-helpers/file-changed.ts";
 
@@ -12,6 +14,13 @@ import { fileChanged } from "../../test-helpers/file-changed.ts";
 // file's own imports have the file as it was until Vitest runs the file
 // again.
 
+declare module "vitest" {
+  interface ProvidedContext {
+    // The mode of the project: see vitest.config.ts.
+    mode: Mode;
+  }
+}
+
 const file = "components/changing-label.ts";
 const changeLabel = (label: string) =>
   fileChanged(file, `export const label = ${JSON.stringify(label)};`);
@@ -22,17 +31,25 @@ afterAll(() => fileChanged(file));
 // was, and the page would hydrate that with the module of now.
 const open = () => renderServer({ url: "/changing-probe", ssr: false });
 
+const shows = (label: string) => `Client Component: ${label}`;
+
 // Loads the page until it shows `label`. In fidelity mode the first page
 // does: a page load asks the dev server. In fast mode the page takes the
 // server's news of the change, which can come after the request that made
 // it; a kept app that stayed after it would show the label before for good.
-const openUntilLabel = (label: string) =>
-  expect
+async function openUntilLabel(label: string) {
+  if (inject("mode") === "fidelity") {
+    await open();
+    await expect.element(page.getByText(shows(label))).toBeVisible();
+    return;
+  }
+  await expect
     .poll(async () => {
       await open();
       return document.body.textContent;
     })
-    .toContain(`Client Component: ${label}`);
+    .toContain(shows(label));
+}
 
 test("a page after a change has the modules as they are now", async () => {
   await open();

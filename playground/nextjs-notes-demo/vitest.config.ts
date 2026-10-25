@@ -79,6 +79,8 @@ const browserProject = (name: string, mode: Mode) =>
     ],
     test: {
       name,
+      // For components/changing-probe.test.tsx.
+      provide: { mode },
       include: ["**/*.test.{ts,tsx}"],
       // e2e/ runs Storybook: see vitest.storybook.config.ts.
       exclude: ["e2e/**", "node_modules"],

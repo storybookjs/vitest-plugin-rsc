@@ -282,11 +282,13 @@ export async function loadPage(
     if (!speedFeature("cacheDevServer")) forgetHeardVersions();
     // A page that is not one of the kept app starts an app of its own, and so
     // does one when there is none, like after a first page whose app did not
-    // start, or when the dev server has changed modules of the browser layer
-    // since the app started: what that app added to the `<head>` goes first.
-    // The app would run the modules it has next to the new ones, like a
-    // second React.
-    const changed = inKeptApp && kept && kept.modules !== (await versionOfModules("react_client"));
+    // start, or one that the test opens when the dev server has changed
+    // modules of the browser layer since the app started: what that app
+    // added to the `<head>` goes first. The app would run the modules it has
+    // next to the new ones, like a second React. A page that the app loads
+    // itself, by its Flight payload, stays in it until then.
+    const changed =
+      opening && inKeptApp && kept && kept.modules !== (await versionOfModules("react_client"));
     page.signal.throwIfAborted();
     if (!inKeptApp || !kept || changed) leaveKeptApp();
 
@@ -389,12 +391,14 @@ async function openPage(
     // reports the error that takes the node's place as the page hydrates.
     if (!opening?.opened.node?.layouts) opening?.nodeOnPage?.replaced();
   }
-  // The version of the modules that the app starts with, or an older one:
-  // see `kept`. Its runner takes the modules of a check after it. Before the
-  // document is in: from then until the page is open, a link or a form of it
-  // has no page to navigate in.
-  const modules = page.inKeptApp ? await versionOfModules("react_client") : 0;
-  await checkFetchedModules();
+  // A page that starts an app: the version of the modules that the app starts
+  // with, or an older one, see `kept`, and its runner takes the modules of a
+  // check after it. Before the document is in: from then until the page is
+  // open, a link or a form of it has no page to navigate in. A page of the
+  // kept app checks nothing: its runner would take other modules.
+  const startsApp = !(page.inKeptApp && kept);
+  const modules = startsApp && page.inKeptApp ? await versionOfModules("react_client") : 0;
+  if (startsApp) await checkFetchedModules();
   superseded();
   await loadDocument(html, response.url, container, after, page.inKeptApp);
   superseded();
@@ -532,9 +536,10 @@ async function sendPageLoad(
   sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
-  // With the request, not before it: a question for the versions of the
-  // modules goes along with it, one for every environment at once, and what
-  // the page and the server fetch for it wait for the answer.
+  // With the request, not before it: in fidelity mode, a question for the
+  // versions of the modules goes along with it, one for every environment at
+  // once, and what the page and the server fetch for it wait for the answer.
+  // With `cacheDevServer` the versions are the ones the page heard of.
   checkFetchedModules().catch(() => {});
   signal.throwIfAborted();
   // Not the browser's Request, which drops headers of the test's, like

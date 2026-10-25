@@ -25,8 +25,9 @@ export type SpeedOptions = {
    * Experimental. The pages of a test file render in one app: the first
    * page starts it, and every `renderServer({ url })` after it renders its
    * page in it, from the page's Flight payload, without a page load. The
-   * first page after a change of a module of the browser layer starts a new
-   * app, with the modules as they are now.
+   * first `renderServer({ url })` after the page heard of a change of a
+   * module of the browser layer starts a new app, with the modules as they
+   * are now.
    *
    * Gives up: a fresh page per test. Each page gets a tree, a router and
    * caches of the router of its own, so no state of a component carries
@@ -114,7 +115,8 @@ export type SpeedOptions = {
   /**
    * Experimental. A page load does not ask the dev server for the versions
    * of its modules: the page has the server's news of every change of them,
-   * and asks once as a test file starts. In a test run of Vitest only: the
+   * and asks once as a test file starts, and as it loads a file with
+   * `"use client"` again. In a test run of Vitest only: the
    * page of a dev server of another host, like `storybook dev`, asks at
    * every page load.
    *

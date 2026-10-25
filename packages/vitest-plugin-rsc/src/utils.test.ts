@@ -127,6 +127,17 @@ test("asks for the versions of the modules once, and then hears of a change from
   expect(versionsAsked).toEqual(["client", "client"]);
 });
 
+test("asks once for an environment, however many ask meanwhile", async () => {
+  forgetHeardVersions();
+  versionsAsked.length = 0;
+  await Promise.all([
+    versionOfModules("client"),
+    versionOfModules("client"),
+    checkFetchedModules(),
+  ]);
+  expect(versionsAsked.sort()).toEqual(["client", "react_client"]);
+});
+
 test("asks again once its socket has closed, which may have missed a change", async () => {
   await checkFetchedModules();
   versionsAsked.length = 0;
