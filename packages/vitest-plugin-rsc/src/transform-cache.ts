@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { DevEnvironment, ViteDevServer } from "vite";
+import type { DevEnvironment } from "vite";
 import type { TestProject } from "vitest/node";
 import { invalidatedAt } from "./module-versions.ts";
 
@@ -36,7 +36,9 @@ type CachedFetch = (
   options?: FetchOptions,
 ) => Promise<CachedFetchResult>;
 
-const fetchOf = new WeakMap<ViteDevServer, CachedFetch>();
+// By the environment: the server that `configureServer` gets is another
+// object than the project's `vite`, of the same environments.
+const fetchOf = new WeakMap<DevEnvironment, CachedFetch>();
 
 /**
  * Answers the runners of a page in a browser from Vitest's transform cache,
@@ -44,29 +46,29 @@ const fetchOf = new WeakMap<ViteDevServer, CachedFetch>();
  * `invokeEnvironment()`. Nothing where the project has the cache off.
  */
 export async function answerFromTransformCache(project: TestProject): Promise<void> {
-  if (!project.config.fsModuleCache || fetchOf.has(project.vite)) return;
+  const environments = Object.values(project.vite.environments);
+  if (!project.config.fsModuleCache || environments.every((env) => fetchOf.has(env))) return;
   // Of the Vitest that runs the project, by the path of its build: the
   // plugin does not import Vitest, an optional peer dependency, but for
   // the setup files (optional-vitest.test.ts).
   const vitestNode = pathToFileURL(path.join(project.vitest.distPath, "node.js")).href;
   const { createMethodsRPC } = (await import(vitestNode)) as typeof import("vitest/node");
   const { fetch } = createMethodsRPC(project);
-  fetchOf.set(project.vite, fetch as CachedFetch);
+  for (const environment of environments) fetchOf.set(environment, fetch as CachedFetch);
 }
 
 /**
- * What the environment of `server` answers to an invoke of a runner of the
- * page: a `fetchModule` from Vitest's transform cache, and what Vitest has
- * not, everything else and an error from Vite. The answer is Vite's in shape:
- * the module's code and not the place of its file, which the page cannot
- * read in a browser.
+ * What `environment` answers to an invoke of a runner of the page: a
+ * `fetchModule` from Vitest's transform cache, and what Vitest has not,
+ * everything else and an error from Vite. The answer is Vite's in shape: the
+ * module's code and not the place of its file, which the page cannot read in
+ * a browser.
  */
 export async function invokeEnvironment(
-  server: ViteDevServer,
   environment: DevEnvironment,
   payload: InvokePayload,
 ): Promise<InvokeResult> {
-  const fetch = fetchOf.get(server);
+  const fetch = fetchOf.get(environment);
   const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
   if (!fetch || name !== "fetchModule") return environment.hot.handleInvoke(payload);
   const [url, importer, options] = data as [string, string | undefined, FetchOptions?];

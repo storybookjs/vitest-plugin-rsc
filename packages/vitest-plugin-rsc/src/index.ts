@@ -161,10 +161,7 @@ export function vitestPluginRSC(): Plugin[] {
           const name = invoke.environment ?? "react_client";
           const environment = server.environments[name];
           return environment && name !== "client"
-            ? describeModule(
-                environment,
-                await invokeEnvironment(server, environment, invoke.payload),
-              )
+            ? describeModule(environment, await invokeEnvironment(environment, invoke.payload))
             : { error: { message: `No environment "${name}" to run in the page` } };
         });
         answerPageWith(server, versionEvent, ({ environment }: { environment?: string }) =>
