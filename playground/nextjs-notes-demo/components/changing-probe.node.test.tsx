@@ -1,4 +1,4 @@
-import { afterAll, expect, inject, test } from "vitest";
+import { afterAll, beforeEach, expect, inject, test, vi } from "vitest";
 import { within } from "@testing-library/dom";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { fileChanged } from "../../test-helpers/file-changed.ts";
@@ -15,6 +15,12 @@ declare module "vitest" {
     cacheDevServer: boolean;
   }
 }
+
+// The date of the setup file is a fixed one, which a page without HTML does
+// not open with in Node.js: it never hydrates (to be traced).
+beforeEach(() => {
+  vi.useRealTimers();
+});
 
 const file = "components/changing-label.ts";
 const changeLabel = (label: string) =>
