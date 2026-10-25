@@ -26,7 +26,6 @@ const PAGES = 20;
 const WARMUP = 5;
 
 const isNodeHost = typeof globalThis.process?.getBuiltinModule === "function";
-const isJsdom = navigator.userAgent.includes("jsdom");
 
 // How many functions a call of `addEventListener` passes through before it
 // reaches the counting one below: each one that wraps the method after it,
@@ -270,43 +269,16 @@ function expectNoGrowth(of: (sample: Sample) => string[]) {
   ).toBeLessThanOrEqual(counts[0]!);
 }
 
-// A check of what a page leaves of a kind. Where a leak of it is known, the
-// check is expected to fail until the leak is fixed, and a second one checks
-// that nothing else of the kind grows.
-function leavesNo(
-  name: string,
-  of: (sample: Sample) => string[],
-  known?: { where: boolean; is: (name: string) => boolean },
-) {
-  if (!known?.where) {
-    test(name, () => expectNoGrowth(of));
-    return;
-  }
-  test.fails(name, () => expectNoGrowth(of));
-  test(`${name}, but for what leaks already`, () => {
-    expectNoGrowth((it) => of(it).filter((leaked) => !known.is(leaked)));
-  });
+// A check of what a page leaves of a kind.
+function leavesNo(name: string, of: (sample: Sample) => string[]) {
+  test(name, () => expectNoGrowth(of));
 }
 
-// jsdom's selector engine, `@asamuzakjp/dom-selector`, adds 9 capture
-// listeners to `window` for each document it matches in, one of each page,
-// and jsdom never calls its `destroy()` (SB-2419).
-leavesNo("leaves no listener on window", (it) => it.listeners.window, {
-  where: isJsdom,
-  is: (listener) => /^\w+ \(capture\): bound handle(Focus|Keyboard|Mouse)Event$/.test(listener),
-});
+leavesNo("leaves no listener on window", (it) => it.listeners.window);
 
 leavesNo("leaves no listener on document", (it) => it.listeners.document);
 
-// In a Node.js worker a recorder of leftovers.ts stays on `window`'s
-// `addEventListener`, one for each page: the method is an accessor of
-// Vitest's on the global there, which the recorder puts back with
-// `Object.defineProperty()`, and its getter still returns the recorder
-// (SB-2419). The recorder has let go of what it recorded.
-leavesNo("leaves no wrapper of addEventListener on window", (it) => it.wrappers.window, {
-  where: isNodeHost,
-  is: (frame) => /^at record \(.*leftovers[.-]/.test(frame),
-});
+leavesNo("leaves no wrapper of addEventListener on window", (it) => it.wrappers.window);
 
 leavesNo("leaves no wrapper of addEventListener on document", (it) => it.wrappers.document);
 
