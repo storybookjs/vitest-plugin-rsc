@@ -1,4 +1,4 @@
-import type { Agent, IncomingMessage } from "node:http";
+import type { Agent, ClientRequest, IncomingMessage } from "node:http";
 import type { PageHost, PageNews } from "./page-host.ts";
 import { pageNewsPath, pageRequestPath, toldHeader } from "./page-protocol.ts";
 
@@ -18,12 +18,35 @@ const clearTimeout = globalThis.clearTimeout;
 // How long an answer waits for the news before it, which the stream brings
 // within a turn of the event loop of both processes.
 const newsTimeout = 10_000;
+// How often a request that the listener reset unread goes again, see
+// `unreadOn()`: after a pause that doubles, at a random point in it, so that
+// the workers that a full queue reset at once do not come back at once.
+const resends = 6;
+const pause = (attempt: number) => 10 * 2 ** attempt * (1 + Math.random());
+
+// Whether the listener reset the connection of `request` before it could read
+// the request: a new connection beyond its queue of them, which macOS keeps at
+// 128 (`kern.ipc.somaxconn`) for every worker together, or a connection kept
+// alive that the listener closed as the request went out. Such a request can
+// go again: the listener never saw it.
+function unreadOn(request: ClientRequest): (error: NodeJS.ErrnoException) => boolean {
+  let connected = false;
+  let answered = false;
+  request.on("socket", (socket) => {
+    if (socket.connecting) socket.once("connect", () => (connected = true));
+    else connected = true;
+  });
+  request.on("response", () => (answered = true));
+  return (error) =>
+    error.code === "ECONNRESET" && !answered && (!connected || request.reusedSocket);
+}
 
 /** The channel to the listener at `origin`. */
 export function channelTo(origin: string): Pick<PageHost, "request" | "listen"> {
   // A page asks for hundreds of modules at once: over a few connections, each
-  // kept for the next request.
-  const agent: Agent = new http.Agent({ keepAlive: true });
+  // kept for the next request. As many at once as the listener's queue of new
+  // connections takes from a few workers.
+  const agent: Agent = new http.Agent({ keepAlive: true, maxSockets: 16 });
   const news = listenForNews(`${origin}${pageNewsPath}`);
   return {
     request: async (event, data) => {
@@ -68,6 +91,44 @@ function listenForNews(url: string): News {
   const open = () => {
     if (opened) return opened;
     const stream: Promise<void> = new Promise<void>((resolve, reject) => {
+      const connect = (attempt: number) => {
+        const request = http.get(url, { agent: false }, (response: IncomingMessage) => {
+          if (response.statusCode !== 200) {
+            response.resume();
+            gone(
+              new Error(`vitest-plugin-rsc: the dev server tells no news: ${response.statusCode}`),
+            );
+            return;
+          }
+          let rest = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk: string) => {
+            if (opened !== stream) return;
+            const lines = (rest + chunk).split("\n");
+            rest = lines.pop()!;
+            for (const line of lines) {
+              const piece = JSON.parse(line) as { told: number; event?: string; data?: unknown };
+              told = piece.told;
+              if (piece.event === undefined) resolve();
+              else for (const listener of listeners) listener.heard(piece.event, piece.data);
+            }
+            release();
+          });
+          response.on("close", () =>
+            gone(new Error("vitest-plugin-rsc: the news of the dev server closed")),
+          );
+        });
+        const unread = unreadOn(request);
+        request.on("error", (error) => {
+          if (attempt < resends && unread(error)) {
+            setTimeout(() => connect(attempt + 1), pause(attempt));
+          } else {
+            gone(error);
+          }
+        });
+        // Keeps no process running.
+        request.on("socket", (socket) => socket.unref());
+      };
       // Only the current stream's: one that went sets none of the next.
       const gone = (error: Error) => {
         if (opened !== stream) return;
@@ -78,35 +139,7 @@ function listenForNews(url: string): News {
         for (const wait of waiting.splice(0)) wait.resolve();
         reject(error);
       };
-      const request = http.get(url, { agent: false }, (response: IncomingMessage) => {
-        if (response.statusCode !== 200) {
-          response.resume();
-          gone(
-            new Error(`vitest-plugin-rsc: the dev server tells no news: ${response.statusCode}`),
-          );
-          return;
-        }
-        let rest = "";
-        response.setEncoding("utf8");
-        response.on("data", (chunk: string) => {
-          if (opened !== stream) return;
-          const lines = (rest + chunk).split("\n");
-          rest = lines.pop()!;
-          for (const line of lines) {
-            const piece = JSON.parse(line) as { told: number; event?: string; data?: unknown };
-            told = piece.told;
-            if (piece.event === undefined) resolve();
-            else for (const listener of listeners) listener.heard(piece.event, piece.data);
-          }
-          release();
-        });
-        response.on("close", () =>
-          gone(new Error("vitest-plugin-rsc: the news of the dev server closed")),
-        );
-      });
-      request.on("error", gone);
-      // Keeps no process running.
-      request.on("socket", (socket) => socket.unref());
+      connect(0);
     });
     opened = stream;
     return stream;
@@ -144,7 +177,7 @@ function listenForNews(url: string): News {
 }
 
 // The listener answers every request: no timeout of the page's own.
-function post(agent: Agent, url: string, body: string, news: News): Promise<unknown> {
+function post(agent: Agent, url: string, body: string, news: News, attempt = 0): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const request = http.request(
       url,
@@ -176,7 +209,14 @@ function post(agent: Agent, url: string, body: string, news: News): Promise<unkn
         });
       },
     );
-    request.on("error", reject);
+    const unread = unreadOn(request);
+    request.on("error", (error) => {
+      if (attempt < resends && unread(error)) {
+        setTimeout(() => resolve(post(agent, url, body, news, attempt + 1)), pause(attempt));
+      } else {
+        reject(error);
+      }
+    });
     request.end(body);
   });
 }
