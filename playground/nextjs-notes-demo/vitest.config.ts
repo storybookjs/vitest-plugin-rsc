@@ -4,7 +4,12 @@ import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext, type Mode, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
+import {
+  vitestPluginNext,
+  type Mode,
+  type NextBuild,
+  type SpeedOptions,
+} from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 import { fileChangeService } from "../test-helpers/file-change-service.ts";
 import { setup as buildStorybookFramework } from "../test-helpers/storybook-framework.ts";
@@ -39,6 +44,11 @@ buildStorybookFramework();
 // oxlint-disable-next-line no-process-env
 process.env.STORYBOOK_DISABLE_TELEMETRY ??= "1";
 
+// Next's production code with `VITEST_PLUGIN_RSC_BUILD=production`, which CI
+// runs the suite with too.
+// oxlint-disable-next-line no-process-env
+const build = (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild;
+
 // A provider of its own for each project.
 const browserMode = () => ({
   enabled: true,
@@ -49,8 +59,14 @@ const browserMode = () => ({
 
 // The tests of the app, which open its routes: in fidelity mode, as CI runs
 // them, and in fast mode (`mode` of `vitestPluginNext()`), which they pass in
-// too.
-const browserProject = (name: string, mode: Mode) =>
+// too. `speed` turns speed features on or off over the mode, and `include`
+// runs some of the tests only.
+const browserProject = (
+  name: string,
+  mode: Mode,
+  speed: SpeedOptions = {},
+  include = ["**/*.test.{ts,tsx}"],
+) =>
   defineProject({
     root,
     // MSW's worker lives in the repo-root public/ (package.json#msw). Vitest 5
@@ -67,21 +83,15 @@ const browserProject = (name: string, mode: Mode) =>
     optimizeDeps: { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
     plugins: [
       vitestPluginRSC(),
-      // Next's production code with `VITEST_PLUGIN_RSC_BUILD=production`,
-      // which CI runs the suite with too.
-      // oxlint-disable-next-line no-process-env
-      vitestPluginNext({
-        build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
-        mode,
-      }),
-      // For components/changing-probe.test.tsx.
+      vitestPluginNext({ build, mode, ...speed }),
+      // For components/changing-probe.test.tsx and test/speed-features.test.tsx.
       fileChangeService(),
     ],
     test: {
       name,
-      // For components/changing-probe.test.tsx.
-      provide: { mode },
-      include: ["**/*.test.{ts,tsx}"],
+      // For components/changing-probe.test.tsx and test/speed-features.test.tsx.
+      provide: { mode, build },
+      include,
       // e2e/ runs Storybook: see vitest.storybook.config.ts.
       exclude: ["e2e/**", "node_modules"],
       browser: { ...browserMode(), viewport: { width: 390, height: 844 } },
@@ -100,9 +110,27 @@ const browserProject = (name: string, mode: Mode) =>
     },
   });
 
+// Every speed feature of fast mode.
+const speedFeatures: (keyof SpeedOptions)[] = [
+  "watchDom",
+  "cacheDevServer",
+  "keepApp",
+  "flightLoads",
+  "skipPrefetch",
+  "fastCrypto",
+  "immediates",
+];
+
 export const nextjsNotesProjects = [
   browserProject("nextjs-notes-demo-browser", "fidelity"),
   browserProject("nextjs-notes-demo-fast", "fast"),
+  // Fast mode without one of its speed features, for the tests of what each
+  // gives up: see test/speed-features.test.tsx.
+  ...speedFeatures.map((feature) =>
+    browserProject(`nextjs-notes-demo-fast-without-${feature}`, "fast", { [feature]: false }, [
+      "test/speed-features.test.tsx",
+    ]),
+  ),
   // Every story of the app, as a test of Storybook's Vitest addon, which
   // makes a story file a test file: a server story renders in a page of the
   // app, a client story in the browser layer, each with the preview its file

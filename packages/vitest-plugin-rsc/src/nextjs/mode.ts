@@ -33,11 +33,17 @@ export type SpeedOptions = {
    * caches of the router of its own, so no state of a component carries
    * over from one test to the next. What does is the state of the modules
    * of the app, of a package and of Next and React, as in a single-page app
-   * that never reloads. The server renders no HTML (`ssr: false`), also not
-   * of a page that the app loads itself from one of these, like after a
-   * `<form>` without a Server Action: a test that asserts on it passes
-   * `ssr: true`, and gets a page load of its own. In development the page
-   * has no dev overlay.
+   * that never reloads, and so is what they took of the window as they
+   * loaded: Next reports the error of a page with the `reportError` it
+   * found then, which a spy of a later test does not see. The server
+   * renders no HTML (`ssr: false`), also not of a page that the app loads
+   * itself from one of these, like after a `<form>` without a Server
+   * Action, so no preload of the HTML or its `Link` header, and no status
+   * of the HTML's render: a page that is not found or fails to render is a
+   * 200, and without `flightLoads`, one that redirects opens as itself, and
+   * Next's router redirects it after `renderServer()`. A test that asserts
+   * on them passes `ssr: true`, and gets a page load of its own. In
+   * development the page has no dev overlay.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */
@@ -50,9 +56,7 @@ export type SpeedOptions = {
    * `keepApp` it changes nothing.
    *
    * Gives up: the `response` of `renderServer()` is the one of Flight,
-   * `text/x-component`, not the document's. The head has no
-   * `<meta name="next-size-adjust">` of `next/font`, and no preload of a
-   * font that no page before it preloaded. A route handler on the way, like
+   * `text/x-component`, not the document's. A route handler on the way, like
    * one that redirects to the page, sees `RSC: 1` in its request. A page
    * that the test leaves while it loads stops rendering on the server, where
    * the render of a document would go on: a test of a render that outlives
@@ -77,18 +81,20 @@ export type SpeedOptions = {
    * `<Form>`, nor for a `router.prefetch()` of the app.
    *
    * Gives up: a test sees no prefetch: no request of one, and no route
-   * that renders from what one got.
+   * that renders from what one got. Next prefetches in production only, so
+   * in development it gives up nothing.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */
   skipPrefetch?: boolean;
   /**
-   * Experimental. The server runs the steps of a render, which React
-   * separates with `setTimeout(work, 0)`, as immediates, unless the test has
-   * faked the timers.
+   * Experimental. The server's code runs a timeout of 0 as an immediate,
+   * like those that React separates the steps of a render with, unless the
+   * test has faked the timers.
    *
    * Gives up: the delay a browser adds to a timeout, at least 4 ms for one
-   * that a timeout started, five deep.
+   * that a timeout started, five deep: also for a timeout of 0 of the app's
+   * own server code.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */
