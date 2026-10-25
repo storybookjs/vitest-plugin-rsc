@@ -34,3 +34,13 @@ test("runs an immediate of the server with the stores of Node's AsyncLocalStorag
   await new Promise((resolve) => setTimeout(resolve, 5));
   expect(ran).not.toHaveBeenCalled();
 });
+
+test("runs an immediate of the server while the test's timers are fake", async () => {
+  const host = nodeHost("http://127.0.0.1:1/");
+  vi.useFakeTimers();
+  try {
+    await new Promise<void>((resolve) => host.serverImmediate(resolve));
+  } finally {
+    vi.useRealTimers();
+  }
+});

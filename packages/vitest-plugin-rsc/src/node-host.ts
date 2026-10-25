@@ -14,8 +14,11 @@ import type { PageHost, WebApis } from "./page-host.ts";
 // app's layer.
 const http = process.getBuiltinModule("node:http");
 const fs = process.getBuiltinModule("node:fs");
-const timers = process.getBuiltinModule("node:timers");
 const os = process.getBuiltinModule("node:os");
+// As the host loads, before a test fakes them: a test's fake timers replace
+// the functions of `node:timers` too, not only the globals.
+const { setImmediate: nodeSetImmediate, clearImmediate: nodeClearImmediate } =
+  process.getBuiltinModule("node:timers");
 const path = process.getBuiltinModule("node:path");
 
 // What worker-web-apis.ts kept of Node's own, as Vitest loads it first in the
@@ -145,8 +148,8 @@ export function nodeHost(url: string): PageHost {
     },
     // Node's own, not the global, which the DOM or a test's fake timers have.
     serverImmediate(callback) {
-      const immediate = timers.setImmediate(callback);
-      return () => timers.clearImmediate(immediate);
+      const immediate = nodeSetImmediate(callback);
+      return () => nodeClearImmediate(immediate);
     },
   };
 }
