@@ -33,10 +33,11 @@ describe("the server's resolution", () => {
     });
   });
 
-  test("has Node's conditions and fields with the page in a worker of Node.js", () => {
+  // Node's are those of `vitestPluginNext()`, which gives the server Node's
+  // own modules: see nextjs/plugin.test.ts.
+  test("has a browser's conditions with the page in a worker of Node.js too", () => {
     expect(resolveOf({ environment: "jsdom" })).toEqual({
-      conditions: ["node", "react-server"],
-      mainFields: ["module", "jsnext:main", "jsnext"],
+      conditions: ["browser", "react-server"],
     });
   });
 });

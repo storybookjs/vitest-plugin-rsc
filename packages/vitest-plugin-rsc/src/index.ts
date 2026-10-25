@@ -4,13 +4,7 @@ import { isBuiltin } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  defaultServerMainFields,
-  normalizePath,
-  type DevEnvironment,
-  type Plugin,
-  type ViteDevServer,
-} from "vite";
+import { normalizePath, type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
@@ -185,13 +179,6 @@ export function vitestPluginRSC(): Plugin[] {
         });
       },
       config(config) {
-        // The server, the `client` environment of the rsc layer, resolves as
-        // the server's platform does: in a browser with a browser's
-        // conditions, and in a worker of Node.js with Node's, as Vitest
-        // resolves a project of happy-dom or jsdom, and `next start` its
-        // server. So a package with a build for each, like `jose` or `ws`,
-        // is its build for Node.js there.
-        const inNode = hostsPageInNode((config as { test?: TestOptions }).test);
         return {
           resolve: {
             alias: {
@@ -205,14 +192,13 @@ export function vitestPluginRSC(): Plugin[] {
               dev: {
                 preTransformRequests: false,
               },
-              resolve: inNode
-                ? {
-                    conditions: withConfiguredSourceConditions(config, ["node", "react-server"]),
-                    mainFields: [...defaultServerMainFields],
-                  }
-                : {
-                    conditions: withConfiguredSourceConditions(config, ["browser", "react-server"]),
-                  },
+              // A browser's conditions, also in a worker of Node.js, where the
+              // pre-bundles of this environment have Vite's empty module for
+              // a module of Node.js. `vitestPluginNext()`, which gives the
+              // server Node's own modules there, gives it Node's conditions.
+              resolve: {
+                conditions: withConfiguredSourceConditions(config, ["browser", "react-server"]),
+              },
               optimizeDeps: {
                 include: [
                   "react",

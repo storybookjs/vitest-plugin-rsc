@@ -1348,6 +1348,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ),
             ];
           }
+          // In a worker of Node.js, where the server layers import Node's own
+          // modules, the rsc layer resolves as Next's server on Node.js does,
+          // with the `node` condition in place of the browser's that
+          // ../index.ts gives it, and Vite's fields of a package for a
+          // server: a package with a build for each, like `jose` or `ws`, is
+          // its build for Node.js. In place, as above.
+          if (layer === "rsc" && nodeModules === "native" && config.resolve?.conditions) {
+            config.resolve.conditions = config.resolve.conditions.map((condition) =>
+              condition === "browser" ? "node" : condition,
+            );
+            config.resolve.mainFields = [...defaultServerMainFields];
+          }
           // The plugin of ../index.ts has Vite make `process.env` an empty
           // object in the layers, for a dev server.
           if (command === "build") return { keepProcessEnv: true };

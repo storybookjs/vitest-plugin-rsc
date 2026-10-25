@@ -956,6 +956,16 @@ test("gives the server layers Node's own modules for a page in a worker of Node.
     conditions: ["module", "node", "development|production"],
     mainFields: ["module", "jsnext:main", "jsnext"],
   });
+  // Also for the rsc layer, whose conditions ../index.ts gives a browser's.
+  const rscEnvironment = { resolve: { conditions: ["browser", "react-server"] } };
+  const { handler } = plugin.configEnvironment as {
+    handler: (name: string, config: object, env: { command: string }) => unknown;
+  };
+  handler("client", rscEnvironment, { command: "serve" });
+  expect(rscEnvironment.resolve).toEqual({
+    conditions: ["node", "react-server"],
+    mainFields: ["module", "jsnext:main", "jsnext"],
+  });
   const resolverOf = (layer: string) => {
     const resolver = plugins.find(
       ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
