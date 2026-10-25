@@ -19,7 +19,7 @@ The 500 tests, Next and React in production, on an M1 Pro with 10 cores, the wal
 | Runner and setup                                                     |    1 worker |           2 |          4 | Playwright's default, 5 |
 | -------------------------------------------------------------------- | ----------: | ----------: | ---------: | ----------------------: |
 | Playwright, one `next start`, each test on its own data              | 206.3 ± 3.5 | 107.4 ± 0.6 | 62.5 ± 2.3 |              56.2 ± 3.2 |
-| Playwright, a `next start` and a database per worker, reset per test |     on #297 |             |            |                         |
+| Playwright, a `next start` and a database per worker, reset per test | 205.1 ± 0.9 | 107.7 ± 0.4 | 62.2 ± 0.7 |              53.9 ± 0.1 |
 | Vitest, fast mode, user-event                                        |             |           – |            |                       – |
 | Vitest, fast mode, dom-locators                                      |             |           – |            |                       – |
 
