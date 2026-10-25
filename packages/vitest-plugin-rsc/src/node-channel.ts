@@ -55,7 +55,10 @@ type News = {
 // a version of the modules, is older than what it heard.
 function listenForNews(url: string): News {
   const listeners = new Set<PageNews>();
-  const missed = () => listeners.forEach((listener) => listener.missed());
+  const missed = () => {
+    process.stderr.write(`[news-debug] missed\n`);
+    listeners.forEach((listener) => listener.missed());
+  };
   let told = 0;
   let waiting: { told: number; resolve: () => void }[] = [];
   let opened: Promise<void> | undefined;
@@ -95,6 +98,7 @@ function listenForNews(url: string): News {
           for (const line of lines) {
             const piece = JSON.parse(line) as { told: number; event?: string; data?: unknown };
             told = piece.told;
+            process.stderr.write(`[news-debug] line ${line}\n`);
             if (piece.event === undefined) resolve();
             else for (const listener of listeners) listener.heard(piece.event, piece.data);
           }
@@ -117,6 +121,9 @@ function listenForNews(url: string): News {
     },
     open,
     after: (count) => {
+      process.stderr.write(
+        `[news-debug] answer told=${count} heard=${told} opened=${Boolean(opened)}\n`,
+      );
       if (!opened) return Promise.resolve();
       if (count < told) missed();
       if (count <= told) return Promise.resolve();
