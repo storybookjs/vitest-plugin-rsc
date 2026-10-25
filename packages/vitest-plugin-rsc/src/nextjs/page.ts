@@ -1,8 +1,15 @@
 // The page of the app that is open in this document, from the request of
 // its document until it is left: a page load makes it part by part, and
 // leaving it takes those back, the last part first, one page at a time.
+import { routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
+import {
+  checkFetchedModules,
+  createEnvironmentRunner,
+  environmentModule,
+  forgetHeardVersions,
+  versionOfModules,
+} from "../utils.ts";
 import {
   leftTheApp,
   setOpenPage,
@@ -19,7 +26,7 @@ import {
   type HistoryEntry,
 } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
-import { oncePerTestFile, speedFeature } from "./speed-features.ts";
+import { speedFeature } from "./speed-features.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 import type { PageStore } from "./page-store.ts";
@@ -163,9 +170,10 @@ type Client = typeof import("./client.tsx");
 // own: see `renderAgain()` in client.tsx. A page that the app loads itself
 // from one of them, like after a `<form>` without JavaScript, renders in it
 // too. It is left with the first page that does not, like one of
-// `renderServer({ url, ssr: true })`, or as the test file ends: see
-// `leaveKeptApp()`.
-let kept: { client: Client; leave(): void } | undefined;
+// `renderServer({ url, ssr: true })`, with the first page after a change of
+// the modules of the browser layer, or as the test file ends: see
+// `leaveKeptApp()`. `modules` is the version of those it started with.
+let kept: { client: Client; modules: number; leave(): void } | undefined;
 
 /**
  * Leaves the kept app, if any: its root, its module graph, what its modules
@@ -276,10 +284,24 @@ export async function loadPage(
   const loading = (async () => {
     await leaving;
     page.signal.throwIfAborted();
+    // Without the speed feature `cacheDevServer`, a page load asks the dev
+    // server for the versions of its modules, as a browser asks for a page:
+    // a change that reached the server through another connection, like a
+    // request of the test, is ordered before it. With it, the page has the
+    // server's news of a change, which may come after such a request. See
+    // `sendPageLoad()`.
+    if (!speedFeature("cacheDevServer")) forgetHeardVersions();
     // A page that is not one of the kept app starts an app of its own, and so
     // does one when there is none, like after a first page whose app did not
-    // start: what that app added to the `<head>` goes first.
-    if (!inKeptApp || !kept) leaveKeptApp();
+    // start, or one that the test opens when the dev server has changed
+    // modules of the browser layer since the app started: what that app
+    // added to the `<head>` goes first. The app would run the modules it has
+    // next to the new ones, like a second React. A page that the app loads
+    // itself, by its Flight payload, stays in it until then.
+    const changed =
+      opening && inKeptApp && kept && kept.modules !== (await versionOfModules("react_client"));
+    page.signal.throwIfAborted();
+    if (!inKeptApp || !kept || changed) leaveKeptApp();
 
     // Once the node that was in it is gone.
     if (opening?.container?.hasChildNodes()) {
@@ -380,6 +402,15 @@ async function openPage(
     // reports the error that takes the node's place as the page hydrates.
     if (!opening?.opened.node?.layouts) opening?.nodeOnPage?.replaced();
   }
+  // A page that starts an app: the version of the modules that the app starts
+  // with, or an older one, see `kept`, and its runner takes the modules of a
+  // check after it. Before the document is in: from then until the page is
+  // open, a link or a form of it has no page to navigate in. A page of the
+  // kept app checks nothing: its runner would take other modules.
+  const startsApp = !(page.inKeptApp && kept);
+  const modules = startsApp && page.inKeptApp ? await versionOfModules("react_client") : 0;
+  if (startsApp) await checkFetchedModules();
+  superseded();
   await loadDocument(html, response.url, container, after, page.inKeptApp);
   superseded();
   const { inKeptApp } = page;
@@ -452,6 +483,7 @@ async function openPage(
       leaveKeptApp();
       kept = {
         client,
+        modules,
         leave() {
           keepProperties(document);
           try {
@@ -507,10 +539,6 @@ async function startInKeptApp(page: Page, client: Client, payload?: Uint8Array):
   }
 }
 
-// Whether the dev server still has the modules that were fetched: before
-// every page load, with the speed feature `cacheDevServer` once per test file.
-const moduleChecks = new Map<string, Promise<void>>();
-
 // The request of a page load, with the modules of the server and of the
 // browser layer as the dev server has them now.
 async function sendPageLoad(
@@ -519,7 +547,11 @@ async function sendPageLoad(
   sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
-  await oncePerTestFile(moduleChecks, "", checkFetchedModules);
+  // With the request, not before it: in fidelity mode, a question for the
+  // versions of the modules goes along with it, one for every environment at
+  // once, and what the page and the server fetch for it wait for the answer.
+  // With `cacheDevServer` the versions are the ones the page heard of.
+  checkFetchedModules().catch(() => {});
   signal.throwIfAborted();
   // Not the browser's Request, which drops headers of the test's, like
   // `referer` and `origin`.
@@ -634,14 +666,23 @@ function redirectedResponse(response: Response, body: BodyInit | null): Response
   });
 }
 
-// Where the page of a Flight payload redirects to: the first error in it that
-// is a `redirect()`, which Next's router follows wherever it is in the tree
-// (its RedirectBoundary). React sends an error as a row of its own,
+// The errors of a Flight payload, the first `redirect()` of which is where the
+// page goes, wherever it is in the tree, as Next's router follows it (its
+// RedirectBoundary). React sends an error as a row of its own,
 // `<id>:E{"digest":...}`, on a line of its own, and Next reads the digest
 // (`redirectURL()` of client.tsx). Text of the page in a row of text, which
 // is not escaped, can look like a row too: its digest has to be a redirect.
 const errorRows = /(?:^|\n)[0-9a-f]+:E(\{.*)/g;
-function redirectOf(payload: Uint8Array, client: Client): string | undefined {
+/**
+ * Where the page of a Flight payload redirects to, if it does: see
+ * `followFlight()`. A path of the app's has the app's `basePath` before it,
+ * which `redirect()` takes without it, as Next's server puts it in the
+ * `Location` of the 307 of a document.
+ */
+export function redirectOf(
+  payload: Uint8Array,
+  client: Pick<Client, "redirectURL">,
+): string | undefined {
   for (const [, row] of new TextDecoder().decode(payload).matchAll(errorRows)) {
     let digest: unknown;
     try {
@@ -650,7 +691,7 @@ function redirectOf(payload: Uint8Array, client: Client): string | undefined {
       continue;
     }
     const url = typeof digest === "string" ? client.redirectURL(digest) : undefined;
-    if (url !== undefined) return url;
+    if (url !== undefined) return url.startsWith("/") ? routing.basePath + url : url;
   }
   return undefined;
 }

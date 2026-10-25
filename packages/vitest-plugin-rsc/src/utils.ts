@@ -8,6 +8,7 @@ import {
   ssrImportMetaKey,
   ssrModuleExportsKey,
   type ModuleEvaluator,
+  type ModuleRunnerImportMeta,
   type ModuleRunnerTransport,
 } from "vite/module-runner";
 import hostModules from "virtual:vitest-plugin-rsc/host-modules";
@@ -25,8 +26,10 @@ import { runnerTimers, timersKey } from "./timers.ts";
 import {
   changedEvent,
   invokeEvent,
+  modulesChangedEvent,
   versionEvent,
   type ChangedQuestion,
+  type ModulesChanged,
   type PageAnswer,
 } from "./page-protocol.ts";
 
@@ -88,6 +91,25 @@ function getRunner(environment: string): ModuleRunner {
   return runner;
 }
 
+// What `import.meta` of a module says of its file, once per file of an
+// environment: Vite's runner would normalize the path and parse the URL for
+// every module of every page load. Each module gets a copy of its own.
+const importMetas = new Map<string, ModuleRunnerImportMeta>();
+
+function importMetaOf(environment: string, file: string): ModuleRunnerImportMeta {
+  const key = `${environment}\n${file}`;
+  let meta = importMetas.get(key);
+  if (!meta) {
+    const layer = builtLayers?.[environment];
+    meta = createDefaultImportMeta(file);
+    // A module of a build has the URL of the file it would be, from which it
+    // names the files of the build, like its CSS.
+    if (layer) meta.url = builtUrl(layer, file);
+    importMetas.set(key, meta);
+  }
+  return meta;
+}
+
 // A runner of an environment. A module of the page is the page's own, and a
 // static build has the modules of the environment in a file of its own.
 function createRunner(
@@ -112,14 +134,8 @@ function createRunner(
           hostModule(payload) ?? (layer ? built.invoke(layer, payload) : invoke(payload)),
       },
       hmr: false,
-      createImportMeta: (file) =>
-        Object.assign(createDefaultImportMeta(file), {
-          // A module of a build has the URL of the file it would be, from
-          // which it names the files of the build, like its CSS.
-          ...(layer && { url: builtUrl(layer, file) }),
-          // The timers its code calls: see timers.ts.
-          [timersKey]: timers,
-        }),
+      // The timers its code calls: see timers.ts.
+      createImportMeta: (file) => ({ ...importMetaOf(environment, file), [timersKey]: timers }),
     },
     droppingImportsOnceClosed(isClosed),
   );
@@ -222,28 +238,93 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
   return fetchedModulesOf.get(environment) ?? askForModules(environment);
 }
 
+// The versions of the modules of the environments as the page last heard of
+// them from the dev server, which tells the page of every change of them,
+// before any answer it makes after it: see `onInvalidation()` in
+// module-versions.ts. The host of the page brings both in the order the server
+// sent them (`listen()` in page-host.ts), so the one that arrives last is the
+// latest.
+//
+// The page reads a version here once it has asked for it, in `asked`, and
+// asks again after `forgetHeardVersions()`: at a page load, as a test file
+// starts, and when its host may have missed a change, like when its socket
+// closed. A change
+// that reaches the server through another connection than the page's, like
+// Vitest's own or a request of HTTP, is ordered by such a question: its
+// answer comes after every change the server made before it. Within a page,
+// the page sees it once the server's news of it has arrived. See
+// docs/internals/architecture.md.
+const heardVersions = new Map<string, number>();
+let asked = new Set<string>();
+// The questions on their way since then: one for every environment.
+let asking = new Map<string, Promise<number>>();
+
+/** Has the page ask the dev server for the versions of its modules again: see `heardVersions`. */
+export function forgetHeardVersions(): void {
+  // A question that is on its way counts for the versions of before.
+  asked = new Set();
+  asking = new Map();
+}
+
+pageHost.listen({
+  heard(event, data) {
+    if (event !== modulesChangedEvent) return;
+    const { environment, version } = (data ?? {}) as Partial<ModulesChanged>;
+    if (typeof environment !== "string" || typeof version !== "number") return;
+    heardVersions.set(environment, version);
+  },
+  missed: forgetHeardVersions,
+});
+
 /**
  * The version of the modules of `environment` that the dev server has: when
  * Vite last invalidated one of them, see `versionOf()` in module-versions.ts.
+ * The one the page heard of, or else the server's answer.
  */
 export function versionOfModules(environment: string): Promise<number> {
-  return pageHost.request(versionEvent, { environment }) as Promise<number>;
+  // The modules of a build do not change.
+  if (builtLayers?.[environment]) return Promise.resolve(0);
+  const heard = heardVersions.get(environment);
+  if (heard !== undefined && asked.has(environment)) return Promise.resolve(heard);
+  const known = asking.get(environment);
+  if (known) return known;
+  const askedNow = asked;
+  const askingNow = asking;
+  const answer = pageHost.request(versionEvent, { environment }) as Promise<number>;
+  // Before news of a change after it, which the host brings after the
+  // answer, or says it `missed()`: see `listen()` in page-host.ts.
+  const version = answer.then((version) => {
+    heardVersions.set(environment, version);
+    askedNow.add(environment);
+    return version;
+  });
+  askingNow.set(environment, version);
+  const settled = () => askingNow.get(environment) === version && askingNow.delete(environment);
+  version.then(settled, settled);
+  return version;
 }
 
 // The modules that were fetched, when the server still has that version of
 // its modules.
-function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
-  const fetched = versionOfModules(environment).then(
-    (version): FetchedModules =>
+// In place at once: a runner that asks for a module meanwhile waits for the
+// answer. The question goes out at once too, next to the one before.
+function askForModules(
+  environment: string,
+  before?: Promise<FetchedModules>,
+): Promise<FetchedModules> {
+  const known = before?.catch(() => undefined);
+  const fetched = Promise.all([known, versionOfModules(environment)]).then(
+    ([known, version]): FetchedModules =>
       known && known.version === version ? known : { version, results: new Map() },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and
   // the next page load asks: a runner of the server layer that got others
   // would ask the server itself from then on.
-  fetched.catch(() => {
+  fetched.catch(async () => {
+    const modules = await known;
     if (fetchedModulesOf.get(environment) !== fetched) return;
-    if (known) fetchedModulesOf.set(environment, Promise.resolve(known));
+    if (modules) fetchedModulesOf.set(environment, Promise.resolve(modules));
     else fetchedModulesOf.delete(environment);
   });
   return fetched;
@@ -257,52 +338,44 @@ function askForModules(environment: string, known?: FetchedModules): Promise<Fet
  * server, and whose modules do not change.
  */
 export const answeredEnvironments = builtLayers ? [] : ["client", "react_client"];
-// The versions of the modules of those, and of the runners' environments, as
-// the page last checked them: see `checkedVersions()`.
-let checked: Promise<string> | undefined;
 
 /**
- * Asks the server whether the modules that were fetched are still its modules,
- * for the runners of `createEnvironmentRunner()`, and for the answers about
- * its modules that the page keeps: see `checkedVersions()`. Before a page
- * load: a file can change while the tests run.
+ * The versions of the modules of `answeredEnvironments`, as one string: what
+ * the page keeps of an answer about them, like the stylesheets of a route,
+ * holds for as long as this stays. A change of a file invalidates its
+ * modules, on a server with a watcher of its own and on one whose host's
+ * watcher does it, a project's under Vitest.
+ */
+export function versionsOfAnswers(): Promise<string> {
+  return versionsOf(answeredEnvironments.map((environment) => [environment, undefined]));
+}
+
+function versionsOf(environments: [string, Promise<number> | undefined][]): Promise<string> {
+  return Promise.all(
+    environments.map(
+      async ([environment, version]) =>
+        `${environment}:${await (version ?? versionOfModules(environment))}`,
+    ),
+  ).then((all) => all.join(" "));
+}
+
+/**
+ * Checks whether the modules that were fetched are still the server's
+ * modules, for the runners of `createEnvironmentRunner()`, and starts the
+ * runners after it with new ones if not. Before a page load: a file can
+ * change while the tests run.
  */
 export function checkFetchedModules(): Promise<void> {
   const fetched = new Map(
     Array.from(fetchedModulesOf, ([environment, modules]) => [
       environment,
-      modules
-        .catch(() => undefined)
-        .then((known) => askForModules(environment, known))
-        .then(({ version }) => version),
+      askForModules(environment, modules).then(({ version }) => version),
     ]),
   );
   const environments = [...new Set([...answeredEnvironments, ...fetched.keys()])].sort();
-  const versions = Promise.all(
-    environments.map(
-      async (environment) =>
-        `${environment}:${await (fetched.get(environment) ?? versionOfModules(environment))}`,
-    ),
-  ).then((all) => all.join(" "));
-  checked = versions;
-  // A check that failed is no version: the next asks again.
-  versions.catch(() => {
-    if (checked === versions) checked = undefined;
-  });
-  return versions.then(() => {});
-}
-
-/**
- * The versions of the dev server's modules as the page last checked them,
- * before its latest page load (`checkFetchedModules()`), or now when it has
- * not: what the page keeps of an answer about them, like the stylesheets of a
- * route, holds for as long as this stays. A change of a file invalidates its
- * modules, on a server with a watcher of its own and on one whose host's
- * watcher does it, a project's under Vitest.
- */
-export function checkedVersions(): Promise<string> {
-  if (!checked) void checkFetchedModules().catch(() => {});
-  return checked!;
+  return versionsOf(
+    environments.map((environment) => [environment, fetched.get(environment)]),
+  ).then(() => {});
 }
 
 type FetchModulePayload = { data: { name: string; data: [string?, string?, FetchOptions?] } };
