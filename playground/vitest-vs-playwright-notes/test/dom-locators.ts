@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import { page, type Locator } from "dom-locators";
 
-// The helpers of tests/dom-locators/: test/vitest.ts, by test/write-dom-locators-tests.ts.
+// The helpers of tests/dom-locators/: test/vitest.ts, by test/write-columns.ts.
 
 export { signedIn } from "./sign-in.ts";
 

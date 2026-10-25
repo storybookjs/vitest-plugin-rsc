@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 import { toDomLocators, toDomLocatorsHelpers } from "#test/dom-locators-column.ts";
 
-// The dom-locators column as test/write-dom-locators-tests.ts writes it now:
+// The dom-locators column as test/write-columns.ts writes it now:
 // a change of tests/vitest/ or test/vitest.ts that it hasn't been written
 // again for fails here, before the column measures an older app than the
-// others. Run `node test/write-dom-locators-tests.ts`.
+// others. Run `pnpm write-columns`.
 
 const text = import.meta.glob<string>(
   [
