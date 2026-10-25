@@ -112,12 +112,13 @@ export function findOnEveryChange(locator: object): void {
 // a class that a click sets. With `watchDom` every look after the first
 // waits for the next change of the DOM instead, or `findInterval` for what
 // changes without one, like the value or the focus of an input. Not of an
-// element, which the matcher reads again as it is: that one keeps Vitest's
-// interval.
+// element, which the matcher reads again as it is, and not while the test's
+// timers are fake, which Vitest advances by the interval between the looks:
+// those keep Vitest's interval.
 const onEveryChangeAfterMatch = Symbol.for("vitest-plugin-rsc:match-on-every-change");
 
 /** With `watchDom`, has `expect.element()` of a locator look again on the next change of the DOM. */
-export function matchOnEveryChange(expect: { element?: unknown }): void {
+export function matchOnEveryChange(expect: { element?: unknown }, fakeTimers: () => boolean): void {
   if (!speedFeature("watchDom")) return;
   const vitests = expect.element as
     | ((this: unknown, target: unknown, options?: { interval?: number }) => unknown)
@@ -129,7 +130,9 @@ export function matchOnEveryChange(expect: { element?: unknown }): void {
       target !== null &&
       !(target instanceof Element) &&
       typeof (target as { findElement?: unknown }).findElement === "function";
-    if (!locator || options?.interval !== undefined) return vitests!.call(this, target, options);
+    if (!locator || options?.interval !== undefined || fakeTimers()) {
+      return vitests!.call(this, target, options);
+    }
     return vitests!.call(this, looksAfterChange(target), { ...options, interval: 0 });
   }
   expect.element = Object.assign(element, { [onEveryChangeAfterMatch]: true });

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { page, server } from "vitest/browser";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
@@ -81,4 +81,4 @@ beforeEach(async () => {
 // The speed feature `watchDom` looks for an element, and matches it again, on
 // every change of the DOM: see speed-features.ts.
 findOnEveryChange(page.getByText(""));
-matchOnEveryChange(expect);
+matchOnEveryChange(expect, () => vi.isFakeTimers());
