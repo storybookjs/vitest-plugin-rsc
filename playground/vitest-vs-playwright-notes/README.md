@@ -7,7 +7,7 @@ A notes app in the style of the notes demo, Next.js on Postgres with Drizzle: ac
 - In the plugin's fast mode, `VITEST_PLUGIN_RSC_MODE=fast` (`mode` of `vitestPluginNext()`), the same Vitest tests render each page in the app of the test file from its Flight payload, without HTML of the server, and prefetch no link: a quick feedback loop, like an agent's. Both modes see a change of the page as it happens (`watchDom`). CI runs `tests/vitest-user-event/` in fast mode too, and then in fidelity mode, the default, on the same runner, for the ratio of the two.
 - `tests/playwright/*.spec.ts`: Playwright against `next start` after `next build`, or against `next dev` with `PLAYWRIGHT_SERVER=dev`, on Postgres in Docker, in RAM.
 
-Each Playwright test is the Vitest test of the same name in the file of the same name, step for step: `page.goto(url)` for `renderServer({ url })`, `toBeVisible()` for `toBeInTheDocument()`. Both seed and read the database with `test/db.ts`, on the app's own `db`, and empty it before each test. Both sign a user in the same way, with a session in the database and its cookie: `document.cookie` in Vitest, `context.addCookies()` in Playwright. Both wait for the page to hydrate before they use it: `renderServer()` does, and so does `page.goto()` of `tests/playwright/test.ts`, with Next's test mode (`__NEXT_TEST_MODE`). Both run with 1 worker: the Playwright tests share one database.
+Each Playwright test is the Vitest test of the same name in the file of the same name, step for step: `page.goto(url)` for `renderServer({ url })`, `toBeVisible()` for `toBeInTheDocument()`. Both seed and read the database with `test/db.ts`, on the app's own `db`, and empty it before each test. Both sign a user in the same way, with a session in the database and its cookie: `document.cookie` in Vitest, `context.addCookies()` in Playwright. Both wait for the page to hydrate before they use it: `renderServer()` does, and so does `page.goto()` of `tests/playwright/test.ts`, with Next's test mode (`__NEXT_TEST_MODE`). Both run with 1 worker: the Playwright tests share one database. With `PLAYWRIGHT_ISOLATION=worker`, each Playwright worker runs its own `next start` of the one `next build`, on a port and a database of its own (`tests/playwright/worker-server.ts`), still emptied before each test, and the tests run in parallel, on any number of workers: production only, as each `next dev` would write the one `.next`.
 
 The workflow `.github/workflows/vitest-vs-playwright.yml` runs both and writes what each step took to the summary of the run.
 
@@ -34,4 +34,5 @@ export __NEXT_TEST_MODE=1
 PLAYWRIGHT_SERVER=dev pnpm exec playwright test
 pnpm build
 pnpm exec playwright test
+PLAYWRIGHT_ISOLATION=worker pnpm exec playwright test --workers 4
 ```

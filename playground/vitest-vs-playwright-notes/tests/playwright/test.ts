@@ -1,11 +1,13 @@
-import { expect, test as base } from "@playwright/test";
+import { expect, test as playwright } from "@playwright/test";
 import { ada, createSession, createUser, resetDb } from "#test/db.ts";
 import type { User } from "#lib/schema.ts";
 import { sessionCookies } from "#lib/session-cookie.ts";
+import { perWorker, serverPerWorker } from "./worker-server.ts";
 
 // Playwright's `test` with the helpers of test/vitest.ts, and the database
 // emptied before each test, as vitest.setup.ts does for the Vitest tests.
-export const test = base.extend<{
+// With PLAYWRIGHT_ISOLATION=worker, the worker's own server and database.
+export const test = (perWorker ? serverPerWorker : playwright).extend<{
   emptyDb: void;
   signedIn: (person?: typeof ada) => Promise<User>;
   expectTitles: (titles: string[]) => Promise<void>;
