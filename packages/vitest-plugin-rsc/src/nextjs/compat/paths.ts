@@ -47,6 +47,10 @@ export const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/client/components/hooks-server-context",
     // ssr/node-server.ts, ssr/handler.ts and server/headers.ts
     "next/dist/server/web/utils",
+    // ssr/render-errors.ts
+    "next/dist/client/components/http-access-fallback/http-access-fallback",
+    "next/dist/client/components/redirect",
+    "next/dist/client/components/redirect-error",
   ],
   browser: [
     // browser/client.ts
@@ -60,10 +64,6 @@ export const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/client/components/segment-cache/bfcache",
     "next/dist/client/components/segment-cache/cache",
     "next/dist/shared/lib/head-manager-context.shared-runtime",
-    // browser/client.ts, for a page of a kept app that loads by its Flight
-    // payload: `redirectURL()` of client.tsx
-    "next/dist/client/components/redirect",
-    "next/dist/client/components/redirect-error",
   ],
 };
 

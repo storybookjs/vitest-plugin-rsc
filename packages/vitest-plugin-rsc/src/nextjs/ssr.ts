@@ -26,6 +26,13 @@ import {
   RSC_HEADER,
 } from "./compat/ssr/handler.ts";
 import {
+  getAccessFallbackHTTPStatus,
+  getRedirectStatusCodeFromError,
+  getURLFromRedirectError,
+  isHTTPAccessFallbackError,
+  isRedirectError,
+} from "./compat/ssr/render-errors.ts";
+import {
   countBailouts,
   handleRequest as handleWith,
   isPrerenderBailout,
@@ -295,6 +302,30 @@ async function untilDone(work: () => Iterable<Promise<unknown>>, deadline: numbe
     clearTimeout(timeout);
   }
   return done;
+}
+
+/** How the server answers the document of a page whose render failed: see `shellErrorAnswer()`. */
+export type ShellErrorAnswer = { status: number; location?: string };
+
+/**
+ * How Next's server answers the document of a page when an error fails the
+ * render of its HTML before any of it is out, by the digest of the error, as
+ * Next's renderer does in the `catch` of `renderToStream()` (app-render.js):
+ * the status of a `notFound()`, `forbidden()` or `unauthorized()`, the 307 or
+ * 308 of a `redirect()` and where it goes, without the app's `basePath`, and
+ * 500 for any other error. For a page that the server renders no HTML of: see
+ * `renderFailureOf()` in page.ts.
+ */
+export function shellErrorAnswer(digest: string): ShellErrorAnswer {
+  const error = Object.assign(new Error(), { digest });
+  if (isHTTPAccessFallbackError(error)) return { status: getAccessFallbackHTTPStatus(error) };
+  if (isRedirectError(error)) {
+    return {
+      status: getRedirectStatusCodeFromError(error),
+      location: getURLFromRedirectError(error),
+    };
+  }
+  return { status: 500 };
 }
 
 /**
