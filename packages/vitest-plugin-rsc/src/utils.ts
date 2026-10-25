@@ -281,15 +281,18 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // the page sees it once the server's news of it has arrived. That needs the
 // news and the answers on one connection, in order: a host of the page that
 // asks another way, like over HTTP, has to subscribe to the news on its own
-// connection, or else the page asks for the versions before every request,
+// connection, or else the page asks for the versions with every request,
 // as before the news. See docs/internals/architecture.md.
 const heardVersions = new Map<string, number>();
 let asked = new Set<string>();
+// The questions on their way since then: one for every environment.
+let asking = new Map<string, Promise<number>>();
 
 /** Has the page ask the dev server for the versions of its modules again: see `heardVersions`. */
 export function forgetHeardVersions(): void {
   // A question that is on its way counts for the versions of before.
   asked = new Set();
+  asking = new Map();
 }
 
 /**
@@ -302,14 +305,21 @@ export function versionOfModules(environment: string): Promise<number> {
   if (builtLayers?.[environment]) return Promise.resolve(0);
   const heard = heardVersions.get(environment);
   if (heard !== undefined && asked.has(environment)) return Promise.resolve(heard);
+  const known = asking.get(environment);
+  if (known) return known;
   const askedNow = asked;
+  const askingNow = asking;
   const answer = requestOverWebSocket(versionEvent, { environment }) as Promise<number>;
   // Before the next message of the socket, so before a change after it.
-  return answer.then((version) => {
+  const version = answer.then((version) => {
     heardVersions.set(environment, version);
     askedNow.add(environment);
     return version;
   });
+  askingNow.set(environment, version);
+  const settled = () => askingNow.get(environment) === version && askingNow.delete(environment);
+  version.then(settled, settled);
+  return version;
 }
 
 // The modules that were fetched, when the server still has that version of

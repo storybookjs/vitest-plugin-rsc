@@ -112,10 +112,16 @@ export type SpeedOptions = {
    */
   watchDom?: boolean;
   /**
-   * @deprecated Without an effect. The page keeps what the dev server
-   * answers about the stylesheets and the modules of a test for as long as
-   * the modules stay, in both modes: the dev server tells the page of every
-   * change of them, so there is nothing to ask once per test file instead.
+   * Experimental. A page load does not ask the dev server for the versions
+   * of its modules: the page has the server's news of every change of them.
+   *
+   * Gives up: a change that reaches the dev server through another
+   * connection than the page's, like a request of the test that changes a
+   * file, is seen once the server's news of it has arrived, which may be
+   * after the next page load. A change of a file that the tests are watched
+   * for runs the test file again.
+   *
+   * Default: `true` in fast mode, `false` in fidelity mode.
    */
   cacheDevServer?: boolean;
   /**

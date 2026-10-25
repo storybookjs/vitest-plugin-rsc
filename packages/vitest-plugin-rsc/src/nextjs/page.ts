@@ -273,15 +273,13 @@ export async function loadPage(
   const loading = (async () => {
     await leaving;
     page.signal.throwIfAborted();
-    // A page load asks the dev server for the versions of its modules, as a
-    // browser asks for a page: a change that reached the server through
-    // another connection, like a request of the test, is ordered before
-    // it. Within the page, the page reads what the server told it since:
-    // the request of the page load too. One question for every environment,
-    // all at once.
-    forgetHeardVersions();
-    await checkFetchedModules();
-    page.signal.throwIfAborted();
+    // Without the speed feature `cacheDevServer`, a page load asks the dev
+    // server for the versions of its modules, as a browser asks for a page:
+    // a change that reached the server through another connection, like a
+    // request of the test, is ordered before it. With it, the page has the
+    // server's news of a change, which may come after such a request. See
+    // `sendPageLoad()`.
+    if (!speedFeature("cacheDevServer")) forgetHeardVersions();
     // A page that is not one of the kept app starts an app of its own, and so
     // does one when there is none, like after a first page whose app did not
     // start, or when the dev server has changed modules of the browser layer
@@ -413,7 +411,7 @@ async function openPage(
   // The version of the modules that it starts with, or an older one: see
   // `kept`. Its runner takes the modules of a check after it.
   const modules = inKeptApp ? await versionOfModules("react_client") : 0;
-  if (inKeptApp) await checkFetchedModules();
+  await checkFetchedModules();
   superseded();
   const runner = createEnvironmentRunner("react_client");
   deferForApp(() => void runner.close());
@@ -532,7 +530,10 @@ async function sendPageLoad(
   sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
-  await checkFetchedModules();
+  // With the request, not before it: a question for the versions of the
+  // modules goes along with it, one for every environment at once, and what
+  // the page and the server fetch for it wait for the answer.
+  checkFetchedModules().catch(() => {});
   signal.throwIfAborted();
   // Not the browser's Request, which drops headers of the test's, like
   // `referer` and `origin`.
