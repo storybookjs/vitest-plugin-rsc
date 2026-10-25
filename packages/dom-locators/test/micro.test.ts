@@ -3,8 +3,7 @@
 // A runner's speed is its own, and so is the share of a CDP round trip in
 // Vitest's, so the test holds the package's to no more than Vitest's, and
 // prints both: the numbers are the benchmark's, `bench/` of the notes app.
-// The budgets of the README, a link by its name in 60 µs and a click in
-// 100 µs, are for a developer's machine.
+// The README has the numbers of a developer's machine.
 
 import { expect, test } from "vitest";
 import { page as vitestPage } from "vitest/browser";
