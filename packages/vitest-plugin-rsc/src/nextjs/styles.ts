@@ -28,6 +28,7 @@ import {
   componentPagePath,
   cssDirectory,
   cssVersionPattern,
+  filesChangedEvent,
   stylesheetsChangedEvent,
   stylesheetsEvent,
   type BuiltFiles,
@@ -688,13 +689,18 @@ export function createStyles(options: StylesOptions): Styles {
             : stylesheetsOf(vite, question.files.map(fileOf), question.entry, question.inline),
         );
         // A load that failed may not after a change. One that did is
-        // reloaded when Vite invalidates its module.
+        // reloaded when Vite invalidates its module. The page asks again for
+        // the stylesheets of a route that it kept: see `filesChangedEvent`.
         vite.watcher.on("all", () => {
           for (const [key, loaded] of loads) {
             void loaded.module.then((node) => {
               if (!node && loads.get(key) === loaded) loads.delete(key);
             });
           }
+          vite.environments[environments.rsc]!.hot.send({
+            type: "custom",
+            event: filesChangedEvent,
+          });
         });
         vite.middlewares.use(async (request, response, next) => {
           let served: boolean;

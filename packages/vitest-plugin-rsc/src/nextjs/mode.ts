@@ -106,7 +106,9 @@ export type SpeedOptions = {
   watchDom?: boolean;
   /**
    * Experimental. What the dev server answers about the stylesheets and the
-   * modules of a test file is asked once per test file, not for every page.
+   * modules of a test file is asked once per test file, not for every page,
+   * and the stylesheets of a route once, until the dev server says that a
+   * file changed, which in a run without a watcher it never does.
    *
    * Gives up: an answer that changes while a test file runs, which nothing
    * does: a change of a file runs the test file again.

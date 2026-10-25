@@ -1,18 +1,24 @@
+// Types `import.meta.hot` below, as Vite gives it a module, without the rest
+// of `vite/client`.
+/// <reference types="vite/types/importMeta.d.ts" />
 import type { SpeedFeature } from "./mode.ts";
 import { registry } from "./registry.ts";
+import { filesChangedEvent } from "./styles-shared.ts";
 
 // The speed features in the page: whether one is on, and what `cacheDevServer`
 // and `watchDom` do there. Which are on, the mode of `vitestPluginNext()` and
 // the options of the features decide: see `SpeedOptions` in mode.ts.
 //
-// What the dev server answers about the files of a test, like the
-// stylesheets of a route or whether a module changed, does not change while
-// a test file runs: a change of a file runs the file again. So with
-// `cacheDevServer` an answer is kept until the test file ends, where it is
-// asked for again for every page and every test otherwise. The caches are
-// the registry's, as the layers that ask are module graphs of their own.
+// What the dev server answers about the files of a test, like whether a
+// module changed, does not change while a test file runs: a change of a file
+// runs the file again. So with `cacheDevServer` an answer is kept until the
+// test file ends, where it is asked for again for every page and every test
+// otherwise. One that the dev server says the change of, the stylesheets of a
+// route, is kept until it does, for the test files after it too. The caches
+// are the registry's, as the layers that ask are module graphs of their own.
 
-const caches = () => (registry.testFileCaches ??= new Set());
+const testFileCaches = () => (registry.testFileCaches ??= new Set());
+const fileChangeCaches = () => (registry.fileChangeCaches ??= new Set());
 
 /** Whether a speed feature is on in the page. */
 export function speedFeature(feature: SpeedFeature): boolean {
@@ -29,8 +35,31 @@ export function oncePerTestFile<T>(
   key: string,
   ask: () => Promise<T>,
 ): Promise<T> {
+  return keptIn(testFileCaches(), cache, key, ask);
+}
+
+/**
+ * What `ask` answers for `key`: with `cacheDevServer` the answer of the first
+ * time since the dev server last said that a file changed
+ * (`filesChangedEvent`), else a new one. For an answer that only a change of
+ * a file changes. An answer that fails is asked for again.
+ */
+export function untilFilesChange<T>(
+  cache: Map<string, Promise<T>>,
+  key: string,
+  ask: () => Promise<T>,
+): Promise<T> {
+  return keptIn(fileChangeCaches(), cache, key, ask);
+}
+
+function keptIn<T>(
+  caches: Set<Map<string, Promise<unknown>>>,
+  cache: Map<string, Promise<T>>,
+  key: string,
+  ask: () => Promise<T>,
+): Promise<T> {
   if (!speedFeature("cacheDevServer")) return ask();
-  caches().add(cache as Map<string, Promise<unknown>>);
+  caches.add(cache as Map<string, Promise<unknown>>);
   let answer = cache.get(key);
   if (!answer) {
     answer = ask();
@@ -42,8 +71,14 @@ export function oncePerTestFile<T>(
 
 /** Forgets the answers of `oncePerTestFile()`, as a test file ends. */
 export function forgetTestFileAnswers(): void {
-  for (const cache of caches()) cache.clear();
+  for (const cache of testFileCaches()) cache.clear();
 }
+
+/** Forgets the answers of `untilFilesChange()`, as the dev server says that a file changed. */
+export function forgetFileChangeAnswers(): void {
+  for (const cache of fileChangeCaches()) cache.clear();
+}
+import.meta.hot?.on(filesChangedEvent, forgetFileChangeAnswers);
 
 // Vitest's `expect.element()` looks for an element that is not there yet
 // again after 0, 20, 50, 100, 100 and then every 500 ms. A Server Action or a

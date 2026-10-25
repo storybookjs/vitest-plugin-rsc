@@ -12,7 +12,7 @@ import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { NoFallbackError } from "./compat/rsc/handlers.ts";
 import { preloadPage } from "./document.ts";
-import { oncePerTestFile } from "./speed-features.ts";
+import { untilFilesChange } from "./speed-features.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { askDevServer } from "../utils.ts";
 // By the package, so that it stays a module of its own with its "use client"
@@ -186,11 +186,12 @@ if (directory) {
     });
   };
 } else {
-  // Every request of a page asks: with the speed feature `cacheDevServer` once
-  // per test file.
+  // Every request of a page asks: with the speed feature `cacheDevServer` once,
+  // until the dev server says that a file changed, which in a run without a
+  // watcher it never does.
   const stylesheets = new Map<string, Promise<Stylesheets>>();
   registry.loadStylesheets = (entry, inline, files) =>
-    oncePerTestFile(stylesheets, JSON.stringify([entry, inline, files]), () =>
+    untilFilesChange(stylesheets, JSON.stringify([entry, inline, files]), () =>
       askDevServer<Stylesheets>(stylesheetsEvent, {
         entry,
         inline,
