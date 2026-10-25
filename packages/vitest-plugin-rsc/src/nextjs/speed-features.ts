@@ -49,13 +49,58 @@ export function forgetTestFileAnswers(): void {
 // again after 0, 20, 50, 100, 100 and then every 500 ms. A Server Action or a
 // navigation here takes 15 to 30 ms, so the test noticed most of them tens of
 // milliseconds late: about a fifth of the time of a suite. With `watchDom` it
-// looks again on every change of the DOM, and every few milliseconds besides.
+// looks again on the next change: see `nextChange()`.
 const findInterval = 5;
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
+
+// What a page changes without a mutation of the DOM: the value of a field and
+// whether it is checked, the focus, a stylesheet or an image that loaded, and
+// a transition or an animation that ended, which `toBeVisible()` reads. In the
+// capture phase, as some do not bubble.
+const changeEvents = [
+  "input",
+  "change",
+  "focusin",
+  "focusout",
+  "load",
+  "error",
+  "transitionend",
+  "animationend",
+];
+const observed: MutationObserverInit = {
+  subtree: true,
+  childList: true,
+  attributes: true,
+  characterData: true,
+};
+
+/**
+ * Resolves on the next change of the document from now on: a mutation of the
+ * DOM, one of `changeEvents`, or `findInterval` for what changes without
+ * either, like a value that a script sets.
+ */
+function nextChange(): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      for (const type of changeEvents) document.removeEventListener(type, done, true);
+      resolve();
+    };
+    const observer = new MutationObserver(done);
+    observer.observe(document, observed);
+    for (const type of changeEvents) document.addEventListener(type, done, true);
+    const timer = setTimeout(done, findInterval);
+  });
+}
+
 // On the function, as the module may be evaluated again, like the setup
 // file that calls this for every test file.
 const onEveryChange = Symbol.for("vitest-plugin-rsc:find-on-every-change");
 
-/** With `watchDom`, has `locator` (a Locator of `vitest/browser`) look on every change of the DOM. */
+/** With `watchDom`, has `locator` (a Locator of `vitest/browser`) look on every change of the document. */
 export function findOnEveryChange(locator: object): void {
   if (!speedFeature("watchDom")) return;
   let proto: { findElement?: unknown } | null = Object.getPrototypeOf(locator);
@@ -68,9 +113,6 @@ export function findOnEveryChange(locator: object): void {
   type Locator = { elements(): Element[]; findElement: typeof find };
   type FindOptions = { strict?: boolean; timeout?: number };
   const vitests = proto.findElement as (this: Locator, options?: FindOptions) => Promise<Element>;
-  // A test's own timers may be fake.
-  const setTimeout = globalThis.setTimeout;
-  const clearTimeout = globalThis.clearTimeout;
   // Without a timeout of the caller's, Vitest's own: until just before the
   // test times out, so a test fails with the locator in its error.
   type Runner = { runner?: { _deadline?: { derive(): number } } };
@@ -87,22 +129,43 @@ export function findOnEveryChange(locator: object): void {
       if (elements.length > 1 || performance.now() - start >= timeout) {
         return vitests.call(this, { ...options, timeout: 0 });
       }
-      await new Promise<void>((resolve) => {
-        const done = () => {
-          observer.disconnect();
-          clearTimeout(timer);
-          resolve();
-        };
-        const observer = new MutationObserver(done);
-        const timer = setTimeout(done, findInterval);
-        observer.observe(document, {
-          subtree: true,
-          childList: true,
-          attributes: true,
-          characterData: true,
-        });
-      });
+      await nextChange();
     }
   }
   proto.findElement = Object.assign(find, { [onEveryChange]: true });
+}
+
+// `expect.poll()` calls its function again `expect.poll.interval` after the
+// matcher failed, and so does `expect.element()`, which polls the element a
+// locator finds: for a text that a Server Action changes, a class that a
+// click sets. With `watchDom` every call after the first waits for the next
+// change of the document since the call before instead. Not while the test's
+// timers are fake, which Vitest advances by the interval between the calls,
+// nor with an interval of the caller's: those keep Vitest's.
+const pollsOnEveryChange = Symbol.for("vitest-plugin-rsc:poll-on-every-change");
+
+type Poll = (this: unknown, fn: (...args: unknown[]) => unknown, options?: object) => unknown;
+
+/** With `watchDom`, has `expect.poll()`, and so `expect.element()`, look again on the next change of the document. */
+export function pollOnEveryChange(expect: { poll?: unknown }, fakeTimers: () => boolean): void {
+  if (!speedFeature("watchDom")) return;
+  const vitests = expect.poll as Poll | undefined;
+  if (typeof vitests !== "function" || pollsOnEveryChange in vitests) return;
+  function poll(this: unknown, fn: (...args: unknown[]) => unknown, options?: object) {
+    if ((options as { interval?: number })?.interval !== undefined || fakeTimers()) {
+      return vitests!.call(this, fn, options);
+    }
+    let changed: Promise<void> | undefined;
+    // `this` is the assertion, whose flags `expect.element()` reads.
+    async function polled(this: unknown, ...args: unknown[]) {
+      if (changed) await changed;
+      try {
+        return await fn.apply(this, args);
+      } finally {
+        changed = nextChange();
+      }
+    }
+    return vitests!.call(this, polled, { ...options, interval: 0 });
+  }
+  expect.poll = Object.assign(poll, { [pollsOnEveryChange]: true });
 }
