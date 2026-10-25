@@ -752,7 +752,7 @@ test("takes no other build", () => {
   );
 });
 
-test("turns every speed feature off in fidelity mode, the default, and on in fast mode", () => {
+test("turns every speed feature but `watchDom` off in fidelity mode, the default, and on in fast mode", () => {
   const fast = {
     keepApp: true,
     flightLoads: true,
@@ -762,7 +762,10 @@ test("turns every speed feature off in fidelity mode, the default, and on in fas
     cacheDevServer: true,
     fastCrypto: true,
   };
-  const fidelity = Object.fromEntries(Object.keys(fast).map((feature) => [feature, false]));
+  const fidelity = {
+    ...Object.fromEntries(Object.keys(fast).map((feature) => [feature, false])),
+    watchDom: true,
+  };
   expect(resolveSpeedFeatures({}, {})).toEqual(fidelity);
   expect(resolveSpeedFeatures({ mode: "fidelity" }, {})).toEqual(fidelity);
   expect(resolveSpeedFeatures({ mode: "fast" }, {})).toEqual(fast);
@@ -775,10 +778,18 @@ test("has the option of a speed feature override the mode, in either direction",
     ...fast,
     fastCrypto: false,
   });
-  expect(resolveSpeedFeatures({ watchDom: true }, {})).toEqual({ ...fidelity, watchDom: true });
-  expect(resolveSpeedFeatures({ mode: "fidelity", keepApp: false, watchDom: true }, {})).toEqual({
+  expect(resolveSpeedFeatures({ skipPrefetch: true }, {})).toEqual({
     ...fidelity,
-    watchDom: true,
+    skipPrefetch: true,
+  });
+  expect(
+    resolveSpeedFeatures({ mode: "fidelity", keepApp: false, skipPrefetch: true }, {}),
+  ).toEqual({ ...fidelity, skipPrefetch: true });
+  // `watchDom`, on in both modes, turns off in either.
+  expect(resolveSpeedFeatures({ watchDom: false }, {})).toEqual({ ...fidelity, watchDom: false });
+  expect(resolveSpeedFeatures({ mode: "fast", watchDom: false }, {})).toEqual({
+    ...fast,
+    watchDom: false,
   });
   expect(resolveSpeedFeatures({ mode: "fast", keepApp: undefined }, {})).toEqual(fast);
 });
