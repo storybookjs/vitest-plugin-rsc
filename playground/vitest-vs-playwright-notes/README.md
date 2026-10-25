@@ -16,14 +16,16 @@ Every column runs the same 500 tests with the same assertions. Playwright parall
 
 The 500 tests, Next and React in production, on an M1 Pro with 10 cores, the wall of a run in seconds:
 
-| Runner and setup                                                     |    1 worker |           2 |          4 | 5, Playwright's default |
-| -------------------------------------------------------------------- | ----------: | ----------: | ---------: | ----------------------: |
-| Playwright, one `next start`, each test on its own data              | 206.3 ± 3.5 | 107.4 ± 0.6 | 62.5 ± 2.3 |              56.2 ± 3.2 |
-| Playwright, a `next start` and a database per worker, reset per test | 205.1 ± 0.9 | 107.7 ± 0.4 | 62.2 ± 0.7 |              53.9 ± 0.1 |
-| Vitest, fast mode, dom-locators                                      |             |             |            |                         |
-| Vitest, fast mode, user-event                                        |             |             |            |                         |
+| Runner and setup                                                     |     1 worker |            2 |           4 | 5, Playwright's default |
+| -------------------------------------------------------------------- | -----------: | -----------: | ----------: | ----------------------: |
+| Playwright, one `next start`, each test on its own data              |  206.3 ± 3.5 |  107.4 ± 0.6 |  62.5 ± 2.3 |              56.2 ± 3.2 |
+| Playwright, a `next start` and a database per worker, reset per test |  205.1 ± 0.9 |  107.7 ± 0.4 |  62.2 ± 0.7 |              53.9 ± 0.1 |
+| Vitest, fast mode, dom-locators                                      | 14.21 ± 0.16 |        10.05 |        7.76 |                    7.28 |
+| Vitest, fast mode, user-event                                        | 14.73 ± 0.47 | 11.11 ± 0.08 | 8.34 ± 0.14 |                 pending |
 
 Playwright: the mean of 5 runs after a warmup, 3 at 5 workers, in one session on 25 October 2026 that interleaved both setups (#298 at b0ac2d35, #297 at 33abb13d) with the column before them; `next start` after `next build`, Postgres 17 in Docker on tmpfs. Every run passed all 500. The 1-minute load was 3.7 to 6.5 during the runs with 1 worker and 4.2 to 18.1 with 4 and 5. The two setups are within 1% of each other with 1, 2 and 4 workers; with 5, a server per worker is 2.3 s faster, and the process tree takes 5.3 GB against 4.4 GB, up to 0.9 GB more at 4 and 5 workers. The column before them, 1 worker with the tables emptied before each test, took 205.7 ± 1.9 s in the same session: a test costs the same with data of its own. With more workers each test slows, as they share one machine: by 16 to 26% with 4 workers, the short tests the most, and by 29 to 42% with 5, so 4 workers run the suite 3.3× as fast as 1, and 5 workers 3.7×.
+
+Vitest, until a run of these rows on this branch, which is pending: today's runs on other builds of #251, where each test still emptied its tables first, 0.15 s of a run with 1 worker. dom-locators: with 1 worker, the mean of 3 runs on #251 with dom-locators and the host in Node.js merged in (3619ffdb), at a load of 3.6 to 4.4; with 2, 4 and 5 workers, the median of 3 runs of one sweep on 97e0203d, at a load of 12 to 18, most of it the workers themselves. With 4 workers, the quieter session of the 1-worker runs took 6.85 ± 0.16 s. user-event: with 1 worker, the mean of 5 runs on #251 with #284 (76aeedb9); with 2 and 4 workers, the mean of 3 runs on 320a5ea3, through a wrapper that added about 0.5 s to each run.
 
 A run costs a part that doesn't grow with the suite and a part per test. In Vitest, the first is 2 to 5 s: Vitest, Vite, the browser and the setup files take about 2.2 s with a warm cache, and the pair of runs of 500 and 3000 tests with happy-dom on 1 worker puts all that doesn't grow at 4.7 s. A test takes about 21 ms on 1 worker: 20.2 ms by that pair. In Playwright, the first is 3 to 5 s, the server's start, `globalSetup` and the wait for the slowest worker: 4.9 s with 1 worker and 3.3 s with 4 and 5 in the runs above. A test takes about 400 ms on 1 worker: 180 ms a short test, 496 ms a flow.
 
