@@ -112,6 +112,8 @@ export type SpeedOptions = {
   /**
    * Experimental. What the dev server answers about the stylesheets and the
    * modules of a test file is asked once per test file, not for every page.
+   * In a test run of Vitest only, whose test files end: a dev server of
+   * another host, like `storybook dev`, asks every time.
    *
    * Gives up: an answer that changes while a test file runs, which nothing
    * does: a change of a file runs the test file again.
