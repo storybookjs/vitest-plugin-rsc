@@ -58,7 +58,6 @@ import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { optimizerCacheKey } from "./optimizer-cache-key.ts";
 import { createCommonJsPlugin } from "./commonjs.ts";
-import { useClientFiles } from "./use-client-files.ts";
 import { esmRequirePlugin } from "./esm-require.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
@@ -179,9 +178,6 @@ const ownFile = (name: string) =>
 // Vitest: a host without Vitest never loads it. One for Browser Mode, and one
 // for a worker of Node.js, which `configureVitest` puts in its place.
 const setupFile = ownFile("setup-browser");
-// The module of the browser layer that starts the app (page.ts), a `.tsx`
-// file in `src`.
-const clientEntry = ownFile("client").replace(/\.ts$/, ".tsx");
 const nodeSetupFile = ownFile("setup-node");
 // What a test imports `renderServer()` from, and the file that is.
 const testingLibrary = {
@@ -963,12 +959,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           fastCrypto: chosen.fastCrypto && testRun,
           cacheDevServer: chosen.cacheDevServer && testRun,
         };
-        const root = path.resolve(config.root ?? process.cwd());
-        // What the page's layers compile ahead of the first page, read while
-        // the project loads: see `dev.warmup` below.
-        // Only a speed-up: a file it cannot read is compiled when asked for.
-        const appClientFiles = testRun ? useClientFiles(root).catch(() => []) : Promise.resolve([]);
-        project = await loadNextProject(root, undefined, { build, static: isBuild });
+        project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
+          build,
+          static: isBuild,
+        });
         serverCode.configure(project.root);
         env = project.env;
         // A static build runs without Vitest, so it has no test files: every
@@ -1244,19 +1238,14 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               // for its modules one after the other as it finds their
               // imports. Vite compiles a file of `dev.warmup`, and what it
               // imports, as its server starts to listen, which under Vitest
-              // is as the browser launches (and for a page in a worker of
-              // Node.js, the plugin does: ../warmup.ts): by the time the page
-              // asks, they are compiled. With the app's files with
-              // `"use client"`, which the first page renders here. Not the
-              // rsc layer: it is the `client` environment, which also serves
-              // Vitest's own pages, and with no cache of pre-bundled
-              // dependencies yet Vite holds those back until no module of
-              // the environment is being compiled. A mock does not reach
-              // this layer, which runs in a module runner of the plugin.
-              dev: {
-                moduleRunnerTransform: true,
-                ...(testRun && { warmup: [ownFile("ssr"), ...(await appClientFiles)] }),
-              },
+              // is as the browser launches: by the time the page asks, they
+              // are compiled. Not the rsc layer: it is the `client`
+              // environment, which also serves Vitest's own pages, and with
+              // no cache of pre-bundled dependencies yet Vite holds those
+              // back until no module of the environment is being compiled.
+              // A mock does not reach this layer, which runs in a module
+              // runner of the plugin.
+              dev: { moduleRunnerTransform: true, ...(testRun && { warmup: [ownFile("ssr")] }) },
               optimizeDeps: {
                 ...optimizeDeps("ssr"),
                 // Its entries: see `vitest-plugin-rsc:next-scan`.
@@ -1265,9 +1254,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             },
             [environmentOf.browser]: {
               ...builtLayer("browser"),
-              // The same for the browser layer: the page's entry of it,
-              // with Next's router, and the app's files with `"use client"`.
-              ...(testRun && { dev: { warmup: [clientEntry, ...(await appClientFiles)] } }),
               optimizeDeps: optimizeDeps("browser"),
             },
           },

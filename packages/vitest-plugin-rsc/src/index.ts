@@ -12,7 +12,6 @@ import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
 import { answerFromTransformCache, invokeEnvironment } from "./transform-cache.ts";
-import { warmPageEnvironments } from "./warmup.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 import {
   answerPage,
@@ -294,7 +293,6 @@ async function startWorkerPage(project: VitestProject): Promise<void> {
     ...(settings.navigation as object | undefined),
   };
   await optimizersSettled(project.vite);
-  warmPageEnvironments(project.vite);
 }
 
 // A worker of Node.js imports a pre-bundled dependency by the version that
