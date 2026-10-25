@@ -1,5 +1,6 @@
 import "./globals.ts";
 import pageHost from "virtual:vitest-plugin-rsc/page-host";
+import { runtimeRequestInit } from "../runtime-request-init.ts";
 import { speedFeature } from "./speed-features.ts";
 import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
@@ -189,7 +190,7 @@ export function unlessAborted<T>(
   });
 }
 
-type Sending = {
+export type Sending<Passed = never> = {
   /**
    * The store of the page, as it was when the request started: what it sends
    * besides its own headers, and where the cookies of its responses go. None
@@ -214,7 +215,7 @@ type Sending = {
    */
   navigation?: "test" | "app";
   /** Who answers a request that the server has nothing for: see `HandleOptions.unrouted`. */
-  network?: () => Promise<Response>;
+  network?: () => Promise<Response | NoInfer<Passed>>;
   /** What the request opens, not after a redirect: see `HandleOptions.opened`. */
   opened?: Opened;
 };
@@ -223,10 +224,10 @@ type Sending = {
 // browser it does what a browser does for a same-origin request: send the
 // cookies, store the ones that come back, here with the store of the page.
 // For either it follows redirects.
-export async function sendRequest(
+export async function sendRequest<Passed extends undefined = never>(
   request: Request,
-  { from, credentials = true, navigation, network, opened }: Sending,
-): Promise<Response> {
+  { from, credentials = true, navigation, network, opened }: Sending<Passed>,
+): Promise<Response | NoInfer<Passed>> {
   let url = new URL(request.url);
   let method = request.method;
   // The request's own headers, until a redirect changes what it sends.
@@ -264,7 +265,7 @@ export async function sendRequest(
     if (!response) {
       // After a redirect it is another request than the one that was passed in.
       return redirected
-        ? nativeFetch(url, { method, headers: sent, body, signal: request.signal })
+        ? networkAfterRedirect(url, method, sent, body, request.signal)
         : network!();
     }
     if (credentials) from?.receive(response.headers.getSetCookie());
@@ -309,7 +310,7 @@ export async function sendRequest(
         // drops them on such a redirect. A `cookie` header the browser's
         // `fetch` drops itself.
         sent.delete("authorization");
-        return nativeFetch(url, { method, headers: sent, body, signal: request.signal });
+        return networkAfterRedirect(url, method, sent, body, request.signal);
       }
       if (own) {
         own.receive(response.headers.getSetCookie());
@@ -326,20 +327,42 @@ export async function sendRequest(
   }
 }
 
+// A request that a redirect of the app sends to the network, with the signal
+// of the request it follows, which may be the page's: in a DOM of Node.js the
+// DOM's, which the network's `fetch` does not take.
+function networkAfterRedirect(
+  url: URL,
+  method: string,
+  headers: Headers,
+  body: Uint8Array<ArrayBuffer> | null,
+  signal: AbortSignal,
+): Promise<Response> {
+  return nativeFetch(
+    url,
+    runtimeRequestInit({ method, headers, body, signal }, pageHost.serverWebApis),
+  );
+}
+
 // What client code gets of a response of the app. A browser never shows a
 // script the `Set-Cookie` headers of a response, a forbidden response header:
 // they are the store's. `handleRequest()` keeps them, for the test.
 function withoutSetCookie(response: Response): Response {
   // Also a response of the network, which is the browser's already.
   if (!response.headers.has("set-cookie")) return response;
-  const headers = new Headers(response.headers);
-  headers.delete("set-cookie");
+  // As a list: the page's `Response` may be the DOM's, like happy-dom's, which
+  // reads no `Headers` of another realm.
+  const headers = [...response.headers].filter(([name]) => name !== "set-cookie");
   const { status, statusText, url, redirected } = response;
   return Object.defineProperties(new Response(response.body, { status, statusText, headers }), {
     url: { value: url },
     redirected: { value: redirected },
   });
 }
+
+// What a request that is not the app's goes to: a `fetch`, or, where the DOM
+// hands the page's requests over (`interceptRequests()` of page-host.ts), one
+// that answers none, and the DOM sends it.
+type Network<Passed> = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response | Passed>;
 
 // A `fetch` that sends a same-origin request to the app when it is the app's,
 // and everything else to `network`. The browser's sends the headers and the
@@ -350,14 +373,17 @@ function withoutSetCookie(response: Response): Response {
 // browser's `fetch`, `pageFetch()`, reads it too, to tell Next's own
 // requests, and the server's makes it after its check of the URL. Reading
 // the URL and the headers again would build both a second time.
-type SameOriginFetch = (
+type SameOriginFetch<Passed> = (
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   sent: AppRequest | undefined,
-) => Promise<Response>;
+) => Promise<Response | Passed>;
 
 const appFetch =
-  (store: (() => PageStore) | undefined, network: () => typeof fetch): SameOriginFetch =>
+  <Passed extends undefined>(
+    store: (() => PageStore) | undefined,
+    network: () => Network<NoInfer<Passed>>,
+  ): SameOriginFetch<Passed> =>
   async (input, init, sent) => {
     const server = !store;
     // A server has no store.
@@ -391,15 +417,13 @@ const appFetch =
     // The request, for the network: a body can be read once.
     const spare = input instanceof Request && input.body ? input.clone() : input;
     // The server's Request keeps a `cookie` header, which a browser's drops.
-    const request = server
-      ? new registry.Request(input, init)
-      : new Request(input, pageHost.fromPage(init));
-    const response = await sendRequest(request, {
+    const request = server ? new registry.Request(input, init) : new Request(input, init);
+    const response = await sendRequest<Passed>(request, {
       from,
       credentials,
       network: sent.marked ? undefined : () => network()(spare, init),
     });
-    return from ? withoutSetCookie(response) : response;
+    return from && response ? withoutSetCookie(response) : response;
   };
 
 // What a request of a page that was left gets: nothing, ever. One promise
@@ -432,11 +456,11 @@ const noPrefetch = () => new Response(null, { status: 204 });
 // there, would report that as an error while the next page runs: "Failed to
 // fetch RSC payload". Nobody reads the body of a response that comes after
 // that, so it stops.
-async function heardBy(
+async function heardBy<Passed extends undefined>(
   sender: AbortSignal,
-  response: Promise<Response>,
+  response: Promise<Response | Passed>,
   action: boolean,
-): Promise<Response> {
+): Promise<Response | Passed> {
   if (failsAsPageLeft(action)) return failsAsLeft(sender, response);
   const answered = await response.catch(() => undefined);
   if (!sender.aborted) return response;
@@ -447,14 +471,17 @@ async function heardBy(
 // For a router that outlives its page: the request fails at once as the page
 // is left, while the page still says that it is being left. What answers
 // after that is not read.
-function failsAsLeft(sender: AbortSignal, response: Promise<Response>): Promise<Response> {
+function failsAsLeft<Passed extends undefined>(
+  sender: AbortSignal,
+  response: Promise<Response | Passed>,
+): Promise<Response | Passed> {
   const left = new Promise<never>((_, reject) =>
     sender.addEventListener("abort", () => reject(pageLeft()), { once: true }),
   );
   left.catch(() => {});
   void response.then(
     (answered) => {
-      if (sender.aborted) void answered.body?.cancel().catch(() => {});
+      if (sender.aborted) void answered?.body?.cancel().catch(() => {});
     },
     () => {},
   );
@@ -465,9 +492,10 @@ function failsAsLeft(sender: AbortSignal, response: Promise<Response>): Promise<
  * The browser's `fetch` while a browser context of the app is open: what
  * Next's client router and Client Components call. `store()` is the store of
  * the context, and `network()` the `fetch` the document had before it, which
- * gets every request that is not the app's. Without a context, `network()`
- * gets every request: code that took this `fetch` in a context has the
- * document's own after it.
+ * gets every request that is not the app's, or, where the DOM hands over the
+ * page's requests, one that answers none, for the DOM to send. Without a
+ * context, `network()` gets every request: code that took this `fetch` in a
+ * context has the document's own after it.
  *
  * Next marks the requests it sends for a page, with an `rsc` or a
  * `next-action` header. They belong to the page that is open as they are
@@ -475,11 +503,11 @@ function failsAsLeft(sender: AbortSignal, response: Promise<Response>): Promise<
  * page was left, and it sends nothing more. A test asks with
  * `handleRequest()`.
  */
-export function pageFetch(
+export function pageFetch<Passed extends undefined = never>(
   store: () => PageStore | undefined,
-  network: () => typeof fetch,
-): typeof fetch {
-  const browserFetch = appFetch(() => store()!, network);
+  network: () => Network<NoInfer<Passed>>,
+): Network<Passed> {
+  const browserFetch = appFetch<Passed>(() => store()!, network);
   return async (input, init) => {
     if (!store()) return network()(input, init);
     const sent = sameOriginRequest(input, init);
@@ -495,7 +523,7 @@ export function pageFetch(
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy
 // too. Its redirects are followed, as the `fetch` of a server follows them.
-const serverFetch = appFetch(undefined, () => networkFetch);
+const serverFetch = appFetch<never>(undefined, () => networkFetch);
 registry.fetch = async (input, init) => {
   // A server has no page to resolve a path against: Node's `fetch` rejects it.
   if (!(input instanceof Request) && !URL.canParse(String(input))) {

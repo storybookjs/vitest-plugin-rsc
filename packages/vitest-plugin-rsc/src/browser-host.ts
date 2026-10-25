@@ -43,8 +43,9 @@ const browserHost: PageHost = {
   navigation: (window as { navigation?: EventTarget }).navigation,
   loadsStylesheets: true,
   serverWebApis: globalThis,
-  // One realm: the page's are the server's.
-  fromPage: (init) => init,
+  // The page's `fetch` is the one to replace: no browser hands over what a
+  // page sends.
+  interceptRequests: () => false,
 };
 export default browserHost;
 

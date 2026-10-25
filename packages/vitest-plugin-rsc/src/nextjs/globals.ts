@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import env from "virtual:vitest-plugin-rsc/next-env";
 import pageHost from "virtual:vitest-plugin-rsc/page-host";
+import { runtimeRequestInit } from "../runtime-request-init.ts";
 import {
   asyncFunctionHooks,
   enterAmbientScope,
@@ -33,7 +34,9 @@ class ServerRequest extends NativeRequest {
   #headers: Headers;
 
   constructor(input: RequestInfo | URL, init?: RequestInit) {
-    init = pageHost.fromPage(init);
+    // A body or a signal of the DOM's, like a form or the signal of a page
+    // load that a test gives a request of the server's.
+    init = runtimeRequestInit(init, pageHost.serverWebApis);
     // A browser wants `duplex` for a streamed body. Server runtimes, which
     // Next's code is written for, do not.
     // Node's `Request` also takes a Node.js stream for a body, and Next's

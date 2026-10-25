@@ -34,15 +34,20 @@ export type PageHost = {
   /**
    * The web APIs of the server's layers, whose requests and responses keep
    * the headers that a browser's drop (nextjs/globals.ts): the page's own in
-   * a browser, and in Node.js its own, which a DOM there replaces.
+   * a browser, and in Node.js the runtime's own, which a DOM there replaces
+   * on the global the page and the server share.
    */
   readonly serverWebApis: WebApis;
   /**
-   * What a request of `serverWebApis` takes of the `init` of the page's: in
-   * a DOM of Node.js the page's body, like a `FormData` of a form, and its
-   * signal are the DOM's, which Node's `Request` does not take.
+   * Has `answer` answer the page's requests from now on, where the DOM hands
+   * them over itself, as happy-dom's interceptor does for its `fetch`,
+   * `XMLHttpRequest` and the resources it loads: with a response, of the
+   * page's web APIs or the server's, which the host gives the DOM as one of
+   * its own, or with none, and the DOM sends the request itself. False where
+   * it does not, and the page's `fetch` is the one to replace
+   * (browser-context.ts).
    */
-  fromPage(init: RequestInit | undefined): RequestInit | undefined;
+  interceptRequests(answer: (request: Request) => Promise<Response | undefined>): boolean;
 };
 
 /** What the page hears of the dev server unasked: see `listen()`. */

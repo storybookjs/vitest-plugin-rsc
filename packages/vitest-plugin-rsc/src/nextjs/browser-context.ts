@@ -116,8 +116,19 @@ const storageBindings = (["localStorage", "sessionStorage"] as const).map((name)
   return binding;
 });
 
+// Where the DOM hands over the page's requests itself, like happy-dom, it
+// hands them to the context's `fetch`, and the document's own `fetch` stays,
+// as do its `XMLHttpRequest` and the resources it loads, which go through the
+// same hands. A request that is not the app's it sends itself.
+const handedOver = pageHost.interceptRequests(
+  pageFetch<undefined>(
+    () => opened?.store,
+    () => async () => undefined,
+  ),
+);
+
 const bindings: Binding[] = [
-  fetchBinding,
+  ...(handedOver ? [] : [fetchBinding]),
   cookieBinding,
   // The Cookie Store API is a view of the browser's own jar, so the page has
   // none, as in a browser without it. Code that uses it checks for it first,
