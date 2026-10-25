@@ -16,6 +16,7 @@ import {
   insertText,
   isContentEditable,
   isTextControl,
+  setSelection,
 } from "./form-controls.ts";
 import {
   holdDown,
@@ -376,9 +377,10 @@ function moveCaret(
       to = element instanceof HTMLTextAreaElement && lineEnd >= 0 ? lineEnd : value.length;
     }
   }
-  if (!extend) element.setSelectionRange(to, to);
+  if (!extend) setSelection(element, to, to);
   else
-    element.setSelectionRange(
+    setSelection(
+      element,
       Math.min(anchor, to),
       Math.max(anchor, to),
       to < anchor ? "backward" : "forward",
@@ -403,5 +405,5 @@ export function pressSequentially(element: HTMLElement, text: string): void {
 export function focusForPress(element: HTMLElement): void {
   if (activeElement() === element) return;
   focus(element);
-  if (isTextControl(element) && element.selectionStart !== null) element.setSelectionRange(0, 0);
+  if (isTextControl(element)) setSelection(element, 0, 0);
 }

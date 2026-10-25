@@ -38,6 +38,28 @@ export function isContentEditable(element: Element): boolean {
   return !!editable && editable.getAttribute("contenteditable")?.toLowerCase() !== "false";
 }
 
+/**
+ * Selects `start` to `end` of a text control, unless that is its selection
+ * already: a DOM of Node.js fires `select` for any `setSelectionRange()`,
+ * where Chrome fires none for a caret.
+ */
+export function setSelection(
+  element: TextControl,
+  start: number,
+  end: number,
+  direction?: "forward" | "backward",
+): void {
+  if (element.selectionStart === null) return;
+  if (
+    element.selectionStart === start &&
+    element.selectionEnd === end &&
+    (direction === undefined || element.selectionDirection === direction)
+  ) {
+    return;
+  }
+  element.setSelectionRange(start, end, direction);
+}
+
 /** Whether a control takes text, which a key edits. */
 export function isTextControl(element: Element): element is TextControl {
   return (
@@ -92,7 +114,7 @@ export function editText(
   editing(element);
   setValue(element, value);
   const caret = from + inserted.length;
-  if (element.selectionStart !== null) element.setSelectionRange(caret, caret);
+  setSelection(element, caret, caret);
   element.dispatchEvent(inputEvent(inputType, data === null ? null : inserted, false));
 }
 
@@ -135,7 +157,8 @@ export function fill(element: Element, text: string): void {
     if (Number.isNaN(Number(text))) throw new Error("Cannot type text into input[type=number]");
   }
   focus(element);
-  element.select();
+  // Of nothing, a DOM of Node.js fires `select`, and Chrome none.
+  if (element.value) element.select();
   // All of the text is selected, where the control may not say so.
   const all: [number, number] = [0, element.value.length];
   if (text) {
@@ -167,6 +190,11 @@ export function insertText(element: TextControl, inputType: string, text: string
   editText(element, inputType, text, (_value, start, end) => [start, end]);
 }
 
+/** An option's `label`, as the HTML standard has it, which happy-dom's leaves at the attribute: the attribute, else the text. */
+function labelOf(option: HTMLOptionElement): string {
+  return option.getAttribute("label") ?? option.text;
+}
+
 /** A value of `selectOptions()`: an option's value or label, or the option. */
 export type SelectValue = string | Element;
 
@@ -182,7 +210,7 @@ export function selectOptions(element: Element, values: SelectValue[]): (() => v
   for (const value of values) {
     const option = options.find((option) =>
       typeof value === "string"
-        ? option.value === value || option.label === value
+        ? option.value === value || labelOf(option) === value
         : option === value,
     );
     if (!option || option.disabled) return undefined;
