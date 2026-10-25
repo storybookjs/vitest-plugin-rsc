@@ -4,6 +4,7 @@ import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
+import { mapOfRelatedLookup } from "./related-lookup.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
@@ -58,14 +59,16 @@ const encryptionKey = JSON.stringify("dml0ZXN0LXBsdWdpbi1yc2MtZW5jcnlwdGlvbi1rZX
 export function vitestPluginRSC(): Plugin[] {
   return [
     pageViteClientPlugin(),
-    ...referencingTestFilesLast(
-      vitePluginRscMinimal({
-        environment: {
-          browser: "react_client",
-          rsc: "client",
-        },
-        defineEncryptionKey: encryptionKey,
-      }),
+    ...mapOfRelatedLookup(
+      referencingTestFilesLast(
+        vitePluginRscMinimal({
+          environment: {
+            browser: "react_client",
+            rsc: "client",
+          },
+          defineEncryptionKey: encryptionKey,
+        }),
+      ),
     ),
     // `vite build`, and what a dev server has instead: see static-build.ts.
     staticBuild({

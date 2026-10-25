@@ -73,6 +73,23 @@ test("has the entry of a page import the module of each segment once, not at eve
   expect(code).not.toContain("instrumentModuleGetter(() => import(");
 });
 
+test("pageOf: the page of a URL, through the redirects and rewrites of next.config", async () => {
+  const { pageOf } = await loadNextProject(root);
+  const at = (url: string, proxy = true) => pageOf(new URL(url, "http://localhost"), { proxy });
+
+  expect(await at("/notes/1")).toBe("/notes/[id]/page");
+  expect(await at("/api/notes/1")).toBe("/api/notes/[id]/route");
+  // The redirect without the trailing slash.
+  expect(await at("/notes/1/")).toBe("/notes/[id]/page");
+  // A redirect to `/docs/start`, which a rewrite takes to `/docs/getting-started`.
+  expect(await at("/guide/start")).toBe("/docs/[slug]/page");
+  // Without the server in front of the app, the routes alone.
+  expect(await at("/guide/start", false)).toBeUndefined();
+  // A rewrite to another origin, and a URL of no route.
+  expect(await at("/elsewhere/a")).toBeUndefined();
+  expect(await at("/no/such/page")).toBeUndefined();
+});
+
 // An app of its own, next to the demo so that it finds the same Next.
 function appWith(files: string[], config: object = {}): string {
   const dir = fs.mkdtempSync(path.join(root, ".app-"));

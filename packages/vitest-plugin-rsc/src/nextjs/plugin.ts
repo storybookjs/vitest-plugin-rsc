@@ -61,6 +61,7 @@ import { createCommonJsPlugin } from "./commonjs.ts";
 import { esmRequirePlugin } from "./esm-require.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
+import { routeLookupPlugin } from "./route-lookup.ts";
 import { pageTimersDefine, pageTimersPlugin } from "./page-timers.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
@@ -1537,6 +1538,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       isHostPackage: serverCode.isHostPackage,
       clientReferenceOf,
     }),
+    // The routes a test opens, for `vitest --changed` and `vitest related`.
+    routeLookupPlugin({ getProject, specifier: testingLibrary.specifier }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     pageTimersPlugin(environmentOf.browser, serverCode.isHostFile),
     ...styles.plugins,

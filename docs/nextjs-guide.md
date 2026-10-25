@@ -875,4 +875,8 @@ Vitest is made for Node.js, not Bun, so keep a run on Node.js in CI.
 
 In watch mode, saving any file of your app reruns every test file that opens a route, plus any test file that imports the saved file.
 
-Why every route test? A test that calls `renderServer({ url })` doesn't import the route's files, so Vitest can't tell which routes it covers. For the same reason, `vitest --changed` and `vitest related` only find tests by their imports. When in doubt, run the route tests or the whole suite. More in [Watch mode](internals/next-routes.md#watch-mode).
+Why every route test? A test that calls `renderServer({ url })` doesn't import the route's files, so Vitest can't tell which routes it covers.
+
+`vitest --changed` and `vitest related` are more precise: they find a test by the routes it opens. The plugin reads the `url` you pass to `renderServer()` and `handleRequest()`, finds its route, and counts the route's files as imports of the test: its page, layouts and boundaries, the proxy, and everything those import, Server Actions and Client Components included. A string URL gets the route Next serves it with, after the redirects and rewrites of `next.config`. A template literal like `` `/notes/${id}` `` gets every route it can match: `/notes/new` and `/notes/[id]`. A URL the plugin can't read, like a variable, counts as every route.
+
+What these don't see: where your proxy sends a URL, a rule of `next.config` that depends on a header or a cookie of the test, and where the test goes after it opens the page, like a link it follows or the redirect of a Server Action. When in doubt, run the route tests or the whole suite. More in [Watch mode](internals/next-routes.md#watch-mode).
