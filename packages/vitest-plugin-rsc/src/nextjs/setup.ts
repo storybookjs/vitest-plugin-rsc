@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
-import { forgetTestFileAnswers, pollOnEveryChange } from "./speed-features.ts";
+import { forgetHeardVersions } from "../utils.ts";
+import { pollOnEveryChange } from "./speed-features.ts";
 import { keepHostDocument } from "./host-document.ts";
 import { leaveKeptAppWithPage, noRouter } from "./page.ts";
 import { registry } from "./registry.ts";
@@ -26,10 +27,13 @@ export async function setUpTestFiles(setupFiles: readonly string[]): Promise<voi
   // Vitest evaluates a setup file again before every test file, also one whose
   // tests are all skipped. So the files with `"use client"` are evaluated again
   // for the next file, as Vitest evaluates them, and the CSS of a test file
-  // goes once the next file starts. So do the answers of the dev server of the
-  // file before, also when an `afterAll` of its own failed before the one below.
+  // goes once the next file starts. And the page asks the dev server for the
+  // versions of its modules once more, also when an `afterAll` of the file
+  // before failed before the one below: Vitest runs a file again after a
+  // change on a connection of its own, which the answer orders before the
+  // file's first page. See `heardVersions` in utils.ts.
   forgetClientFiles();
-  forgetTestFileAnswers();
+  forgetHeardVersions();
 
   // The node of a test has the stylesheets of the files that render it: the
   // setup files, in the order of the config, and the test file, which Vitest
@@ -64,8 +68,6 @@ export async function setUpTestFiles(setupFiles: readonly string[]): Promise<voi
       await leaveKeptAppWithPage("the end of the test file");
     } finally {
       keptDocument?.();
-      // The next file asks the dev server again: see speed-features.ts.
-      forgetTestFileAnswers();
     }
   });
 

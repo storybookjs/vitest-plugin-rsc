@@ -24,7 +24,10 @@ export type SpeedOptions = {
   /**
    * Experimental. The pages of a test file render in one app: the first
    * page starts it, and every `renderServer({ url })` after it renders its
-   * page in it, from the page's Flight payload, without a page load.
+   * page in it, from the page's Flight payload, without a page load. The
+   * first `renderServer({ url })` after the page heard of a change of a
+   * module of the browser layer starts a new app, with the modules as they
+   * are now.
    *
    * Gives up: a fresh page per test. Each page gets a tree, a router and
    * caches of the router of its own, so no state of a component carries
@@ -110,23 +113,18 @@ export type SpeedOptions = {
    */
   watchDom?: boolean;
   /**
-   * Experimental. Whether the modules that the page fetched changed is
-   * asked once per test file, not before every page load, and every request
-   * takes the versions of that check for the stylesheets of its route, where
-   * it asks the dev server otherwise. The stylesheets of the host's files,
-   * like what a test file imports, are asked once per test file, not for
-   * every test.
+   * Experimental. A page load does not ask the dev server for the versions
+   * of its modules: the page has the server's news of every change of them,
+   * and asks once as a test file starts, and as it loads a file with
+   * `"use client"` again. In a test run of Vitest only: the
+   * page of a dev server of another host, like `storybook dev`, asks at
+   * every page load.
    *
-   * In a test run of Vitest only, whose test files end: a dev server of
-   * another host, like `storybook dev`, asks every time.
-   *
-   * Gives up: a change of a file while a test file runs shows at the next
-   * test file, not the next page load, and every test links the stylesheets
-   * of the host's files as they were at the start of the test file. Only a
-   * suite whose tests change files sees it: in watch mode, a change of a
-   * file runs the test file again. On #251 after #268, it took about 7 ms
-   * per test off the notes benchmark in fidelity mode: the dev server's
-   * answers in navigations and Server Actions.
+   * Gives up: a change that reaches the dev server through another
+   * connection than the page's, like a request of the test that changes a
+   * file, is seen once the server's news of it has arrived, which may be
+   * after the next page load. A change of a file that the tests are watched
+   * for runs the test file again.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */
