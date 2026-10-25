@@ -24,7 +24,9 @@ export type SpeedOptions = {
   /**
    * Experimental. The pages of a test file render in one app: the first
    * page starts it, and every `renderServer({ url })` after it renders its
-   * page in it, from the page's Flight payload, without a page load.
+   * page in it, from the page's Flight payload, without a page load. The
+   * first page after a change of a module of the browser layer starts a new
+   * app, with the modules as they are now.
    *
    * Gives up: a fresh page per test. Each page gets a tree, a router and
    * caches of the router of its own, so no state of a component carries

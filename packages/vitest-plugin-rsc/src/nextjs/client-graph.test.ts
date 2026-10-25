@@ -43,6 +43,8 @@ const tab = vi.hoisted(() => ({
   loads: true,
   /** What the answer of the stylesheets of files waits for: the dev server's, or the build's. */
   stylesheetsAnswered: undefined as Promise<void> | undefined,
+  /** The version of the dev server's modules, as the page heard of it: an edit moves it. */
+  version: 0,
 }));
 
 // A build's stylesheets, by the path of a file of the host from the root.
@@ -74,13 +76,10 @@ type FakeModule = {
   exports?: Promise<object>;
 };
 
-let versions = 0;
 vi.mock("../utils.ts", () => ({
   checkFetchedModules: async () => {},
   forgetHeardVersions: () => {},
-  // Another version for every question: the tests change the stylesheets of
-  // the tab as they go.
-  versionsOfAnswers: async () => String(++versions),
+  versionsOfAnswers: async () => `client:${tab.version}`,
   takeChangedModules: async () => {
     const { changed, answered } = tab;
     tab.changed = [];
@@ -203,6 +202,7 @@ beforeEach(() => {
   tab.failing = new Set();
   tab.loads = true;
   tab.stylesheetsAnswered = undefined;
+  tab.version = 0;
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
   vi.stubGlobal("document", {
@@ -404,11 +404,29 @@ test("links the stylesheets of the files that the host uses, until they are unli
   expect(links()).toEqual([]);
   // As they are now: an edit gave the CSS another version.
   tab.stylesheets.set("/host/badge.tsx", ["/_next/static/css/badge-2.css"]);
+  tab.version++;
   await linkStylesheetsOf(["/host/badge.tsx"]);
   expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
   // Vitest's setup file, for the next test file.
   forgetClientFiles();
   expect(links()).toEqual([]);
+});
+
+test("keeps the answer of the stylesheets of files of the host while the versions of the modules stay", async () => {
+  const { linkStylesheetsOf, unlinkStylesheets } = await graph();
+  await linkStylesheetsOf(["/host/badge.tsx"]);
+  unlinkStylesheets();
+
+  // The page does not ask again: the dev server would answer as before.
+  tab.stylesheets.set("/host/badge.tsx", ["/_next/static/css/badge-2.css"]);
+  await linkStylesheetsOf(["/host/badge.tsx"]);
+  expect(links()).toEqual(["/_next/static/css/badge.css"]);
+  unlinkStylesheets();
+
+  // It asks once the server has told it of a change.
+  tab.version++;
+  await linkStylesheetsOf(["/host/badge.tsx"]);
+  expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
 });
 
 // After a change of its CSS, a stylesheet of a file of the host moves to the
@@ -429,6 +447,7 @@ test("moves a stylesheet to the version of now, with one link of it", async () =
   for (const link of head) expect(link.attributes).toContain("data-vitest-plugin-rsc-graph");
 
   tab.stylesheets.set("/host/badge.tsx", [version("c")]);
+  tab.version++;
   await linkStylesheetsOf(["/host/badge.tsx"]);
   expect(links()).toEqual([version("c")]);
   unlinkStylesheets();
