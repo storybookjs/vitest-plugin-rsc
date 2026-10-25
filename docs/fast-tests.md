@@ -97,6 +97,7 @@ What the table says:
 - **`cacheDevServer` is next.** A request of the page asks the dev server about the stylesheets and modules of its route: with the answers kept, a Server Action costs 1.3 ms less, a navigation 0.7, a page load 0.5. On draft #268, a page asks for the stylesheets of a route once per run in both modes, which takes 2.9 ms per test off fidelity mode with `watchDom` (23.55 → 22.08 s, 5 runs each, σ ≤ 0.5 s). What `cacheDevServer` saves on top of that isn't measured yet.
 - **`keepApp` and `flightLoads` remove the HTML of a page load:** reading it to the end costs 0.7–1.2 ms per page load, and what follows the Flight payload 0.6 ms.
 - **Prefetches run beside the test.** With `watchDom` off, fidelity mode sends 3,357 prefetches in a run, 10 s of request time, but they take only 0.4 s of the tests' time. With `watchDom` on, it sends 1,240–1,410, as the tests end sooner.
+- **The browser's delay between the steps of a render costs nothing measurable.** React's renderers for the edge wait for a `setTimeout(work, 0)` between their steps, which a browser delays by 4 ms five deep. A speed feature that ran them as immediates moved no phase of a request by more than 0.3 ms, in either mode, so there is none.
 
 So for a quick loop, take fast mode as a whole, or fidelity mode with the features whose price you accept. `cacheDevServer` gives up nothing a test can see:
 
