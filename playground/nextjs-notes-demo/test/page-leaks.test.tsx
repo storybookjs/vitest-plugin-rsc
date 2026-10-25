@@ -260,7 +260,7 @@ function grown(of: (sample: Sample) => string[]) {
   return [...counts].filter(([, count]) => count > 0).map(([name, count]) => `${count}× ${name}`);
 }
 
-// The count, as names that differ from page to page differ in what grew too.
+// Counts, not names: a name that differs from page to page would show as grown.
 function expectNoGrowth(of: (sample: Sample) => string[]) {
   expect(samples).toHaveLength(PAGES);
   const counts = samples.slice(WARMUP).map((it) => of(it).length);
@@ -278,7 +278,10 @@ function leavesNo(
   of: (sample: Sample) => string[],
   known?: { where: boolean; is: (name: string) => boolean },
 ) {
-  if (!known?.where) return test(name, () => expectNoGrowth(of));
+  if (!known?.where) {
+    test(name, () => expectNoGrowth(of));
+    return;
+  }
   test.fails(name, () => expectNoGrowth(of));
   test(`${name}, but for what leaks already`, () => {
     expectNoGrowth((it) => of(it).filter((leaked) => !known.is(leaked)));
@@ -290,7 +293,7 @@ function leavesNo(
 // and jsdom never calls its `destroy()` (SB-2419).
 leavesNo("leaves no listener on window", (it) => it.listeners.window, {
   where: isJsdom,
-  is: (listener) => /: bound handle(Focus|Keyboard|Mouse)Event$/.test(listener),
+  is: (listener) => /^\w+ \(capture\): bound handle(Focus|Keyboard|Mouse)Event$/.test(listener),
 });
 
 leavesNo("leaves no listener on document", (it) => it.listeners.document);
@@ -302,7 +305,7 @@ leavesNo("leaves no listener on document", (it) => it.listeners.document);
 // (SB-2419). The recorder has let go of what it recorded.
 leavesNo("leaves no wrapper of addEventListener on window", (it) => it.wrappers.window, {
   where: isNodeHost,
-  is: (frame) => frame.startsWith("at record "),
+  is: (frame) => /^at record \(.*leftovers[.-]/.test(frame),
 });
 
 leavesNo("leaves no wrapper of addEventListener on document", (it) => it.wrappers.document);
@@ -313,20 +316,23 @@ for (const target of ["window", "document", "html", "head"] as const) {
 
 leavesNo("leaves no stylesheet in the head", (it) => it.stylesheets);
 
-// The last page may still have a timer of its own to run.
+// But for the last page: jsdom keeps the body of the page that was left last,
+// until the next one, one page and no more.
 test("keeps no body of a page that was left", () => {
+  expect(bodies).toHaveLength(PAGES);
   collectAll();
   const kept = bodies.slice(WARMUP, -1).filter((body) => body.deref()).length;
   expect(kept, "pages left after the warmup whose body is kept").toBe(0);
 });
 
-// A page that is kept is the whole of its module graph: 2 MB in Chromium
-// with Next's production build, 3 MB with its development build, 6 to 7 MB in
-// a Node.js worker. Without one, the heap grows by 0.3 to 0.8 MB a page,
-// which no check here names yet. The bound is between them. Both heaps are of
-// when no page is open.
-test.runIf(measuresHeap)("grows the heap by less than 1 MB a page", () => {
+// A page that is kept is the whole of its module graph: 2 to 3 MB in
+// Chromium, 6 to 7 MB in a Node.js worker. Without one, the heap grows by 0.3
+// to 0.8 MB a page, which no check here names yet. The bound is half a kept
+// page; the check of the bodies above names a kept page. Both are read when
+// no page is open.
+test.runIf(measuresHeap)("grows the heap by less than a kept page would", () => {
   expect(heapAfterWarmup).toBeGreaterThan(0);
   const perPage = (heapUsed() - heapAfterWarmup) / (PAGES - WARMUP);
-  expect(Math.round(perPage / 1024), "kB of heap per page after the warmup").toBeLessThan(1024);
+  const bound = isNodeHost ? 3072 : 1024;
+  expect(Math.round(perPage / 1024), "kB of heap per page after the warmup").toBeLessThan(bound);
 });
