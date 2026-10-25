@@ -3,7 +3,9 @@ name: Vitest vs Playwright
 # The same tests of two apps, each in Vitest with `renderServer()` and in
 # Playwright on Postgres in Docker, with 1 worker: Vitest in development
 # against `next dev`, Vitest in production against `next build` and
-# `next start`. playground/vitest-vs-playwright is a todo app with 25 tests,
+# `next start`. The notes app's column in the Node host on Bun with
+# happy-dom runs with 4 workers too. playground/vitest-vs-playwright is a
+# todo app with 25 tests,
 # playground/vitest-vs-playwright-notes a notes app with accounts and 500
 # tests: see their README.md. Each job writes what its steps took to the
 # summary of the run, and every test with its time to its log; the job
@@ -178,16 +180,17 @@ jobs:
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          count=$(grep -oP 'Tests\s+\K.*\(\d+\)' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
+            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}, in Chromium"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-          printf "| %s | development | %s | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "$VITEST_PLUGIN_RSC_MODE" "$tests" \
+          printf "| %s | development | %s | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "$VITEST_PLUGIN_RSC_MODE" "${count// |/,}" \
             "$(echo "$end - $start" | bc)" "$duration" >> "$RUNNER_TEMP/columns.md"
           echo "VITEST_SECONDS_${{ matrix.mode == 'fast' && 'FAST' || 'FIDELITY' }}_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
       # The job of fast mode runs the tests in fidelity mode too, on the
@@ -203,16 +206,17 @@ jobs:
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          count=$(grep -oP 'Tests\s+\K.*\(\d+\)' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest on Bun, production, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
+            echo "### Vitest on Bun, production, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, in Chromium, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-          printf "| %s | production | fidelity | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "$tests" \
+          printf "| %s | production | fidelity | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "${count// |/,}" \
             "$(echo "$end - $start" | bc)" "$duration" >> "$RUNNER_TEMP/columns.md"
           echo "VITEST_SECONDS_FIDELITY_PRODUCTION=$duration" >> "$GITHUB_ENV"
       - name: Run the tests in fidelity mode, Next and React in development
@@ -226,16 +230,17 @@ jobs:
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          count=$(grep -oP 'Tests\s+\K.*\(\d+\)' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, on the runner of fast mode"
+            echo "### Vitest on Bun, development, ${{ matrix.app }}, ${{ matrix.tests }}, fidelity mode, in Chromium, on the runner of fast mode"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-          printf "| %s | development | fidelity | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "$tests" \
+          printf "| %s | development | fidelity | 1 | %s | %.1f | %.1f |\n" "$COLUMN" "${count// |/,}" \
             "$(echo "$end - $start" | bc)" "$duration" >> "$RUNNER_TEMP/columns.md"
           echo "VITEST_SECONDS_FIDELITY_DEVELOPMENT=$duration" >> "$GITHUB_ENV"
       - name: Compare fidelity mode with fast mode
@@ -406,7 +411,7 @@ jobs:
             printf "| %s tests, 1 worker, \`next dev\` included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             echo "| Of which Playwright's own time | $duration |"
           } >> "$GITHUB_STEP_SUMMARY"
-          printf "| %s | Playwright | playwright | Chromium | Chromium | development | | 1 | %s passed | %.1f | %.1f |\n" \
+          printf "| %s | Playwright | playwright | Chromium | Chromium | development | | 1 | %s passed | %.1f | %.0f |\n" \
             "${{ matrix.app }}" "$tests" "$(echo "$end - $start" | bc)" \
             "$(awk '/m$/ { print $0 * 60; next } { print $0 + 0 }' <<< "$duration")" >> "$RUNNER_TEMP/columns.md"
       - name: Build the app with next build
@@ -431,7 +436,7 @@ jobs:
             printf "| %s tests, 1 worker, \`next start\` included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             echo "| Of which Playwright's own time | $duration |"
           } >> "$GITHUB_STEP_SUMMARY"
-          printf "| %s | Playwright | playwright | Chromium | Chromium | production | | 1 | %s passed | %.1f | %.1f |\n" \
+          printf "| %s | Playwright | playwright | Chromium | Chromium | production | | 1 | %s passed | %.1f | %.0f |\n" \
             "${{ matrix.app }}" "$tests" "$(echo "$end - $start" | bc)" \
             "$(awk '/m$/ { print $0 * 60; next } { print $0 + 0 }' <<< "$duration")" >> "$RUNNER_TEMP/columns.md"
       - uses: actions/upload-artifact@v4
@@ -445,9 +450,11 @@ jobs:
   # the rows they write to their artifacts `columns-*`: production first,
   # then by workers, the fastest first. The host is where the page runs,
   # Chromium or the Node host, a worker of Vitest; the DOM is Chromium's,
-  # happy-dom or jsdom. The seconds all included are the command's: the
-  # runner's startup, Vite's optimization of the dependencies, `next dev`
-  # or `next start` in them, `next build` not.
+  # happy-dom or jsdom. The seconds all included are the command's: they
+  # include the startup of Vitest or Playwright and `next dev` or
+  # `next start`, not `next build`, and Vite's optimization of the
+  # dependencies in the first run of a job only. Playwright prints its own
+  # time in tenths of a minute past 60 s.
   summary:
     name: Every run in one table
     needs: [vitest, playwright]
@@ -464,7 +471,7 @@ jobs:
             {
               echo "### Every run, $app"
               echo
-              echo "| Runner | Tests | Host | DOM | Next and React | Mode | Workers | Tests counted | Seconds, all included | Of which the runner's own |"
+              echo "| Test runner | Tests | Host | DOM | Next and React | Mode | Workers | Tests counted | Seconds, all included | Of which Vitest's or Playwright's own |"
               echo "| --- | --- | --- | --- | --- | --- | ---: | --- | ---: | ---: |"
               { grep -h "^| $app |" columns/*/columns.md || true; } \
                 | sed "s/^| $app //" \
@@ -472,3 +479,5 @@ jobs:
               echo
             } >> "$GITHUB_STEP_SUMMARY"
           done
+          echo "A run with 4 workers starts with the dependencies that its job's run with 1 optimized." \
+            >> "$GITHUB_STEP_SUMMARY"
