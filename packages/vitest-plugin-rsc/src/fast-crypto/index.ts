@@ -62,6 +62,29 @@ export function derive(algorithm: string, inputs: Input[], length: number): Byte
   return output;
 }
 
+/**
+ * PBKDF2, by the name of its hash as Web Crypto spells it, like `SHA-256`.
+ * The real PBKDF2 derives one key for the same inputs through any API, so the
+ * stand-ins of each do too: a key that a test derives with `node:crypto`
+ * verifies in an app that derives it with Web Crypto or @noble/hashes.
+ */
+function pbkdf2Bytes(
+  password: Input,
+  salt: Input,
+  iterations: number,
+  hash: string,
+  length: number,
+): Bytes {
+  return derive("pbkdf2", [password, salt, iterations, hash], length);
+}
+
+/** The name of a digest of Node's, like `sha256` or `RSA-SHA256`, as Web Crypto spells it. */
+function webHashOf(digest: string): string {
+  const name = digest.toLowerCase().replace(/^rsa-|withrsaencryption$/g, "");
+  const sha = /^sha(?:2?-)?(1|224|256|384|512)$/.exec(name);
+  return sha ? `SHA-${sha[1]}` : name;
+}
+
 /** The error of a hash that the stand-in did not make. */
 export function notMadeHere(api: string, hash: string): Error {
   return new Error(
@@ -413,6 +436,17 @@ export function nodeRsArgon2() {
 
 type NobleHash = { outputLen: number; blockLen: number };
 
+// A hash function of @noble/hashes by its lengths, for PBKDF2: see `pbkdf2Bytes()`.
+const nobleHashes: Record<string, string> = {
+  "20/64": "SHA-1",
+  "28/64": "SHA-224",
+  "32/64": "SHA-256",
+  "48/128": "SHA-384",
+  "64/128": "SHA-512",
+};
+const nobleHashOf = ({ outputLen, blockLen }: NobleHash) =>
+  nobleHashes[`${outputLen}/${blockLen}`] ?? `${outputLen}/${blockLen}`;
+
 const positive = (name: string, value: unknown) => {
   if (!Number.isSafeInteger(value) || (value as number) < 1) {
     throw new Error(`"${name}" expected integer >= 1, got ${String(value)}`);
@@ -445,9 +479,11 @@ export function noblePbkdf2() {
     salt: Input,
     opts: { c: number; dkLen?: number },
   ) =>
-    derive(
-      "pbkdf2",
-      [password, salt, positive("c", opts.c), hash.outputLen, hash.blockLen],
+    pbkdf2Bytes(
+      password,
+      salt,
+      positive("c", opts.c),
+      nobleHashOf(hash),
       positive("dkLen", opts.dkLen ?? hash.outputLen),
     );
   return {
@@ -579,7 +615,7 @@ export function nodeCrypto(Buffer: { from(bytes: ArrayBuffer): Uint8Array }) {
     }
     // OpenSSL derives no key of no bytes, and Node.js says so.
     if (keylen === 0) throw new Error("Deriving bits failed");
-    return buffer(derive("pbkdf2", [password, salt, iterations, digest.toLowerCase()], keylen));
+    return buffer(pbkdf2Bytes(password, salt, iterations, webHashOf(digest), keylen));
   };
 
   const scryptSync = (
@@ -728,7 +764,7 @@ export function installWebCrypto(subtle: SubtleCrypto = globalThis.crypto.subtle
     const { salt, iterations, hash } = params as Pbkdf2Params;
     if (!password || !key.usages.includes(usage) || !bits || bits % 8 !== 0) return;
     if (!Number.isInteger(iterations) || iterations < 1 || !salt) return;
-    return derive("PBKDF2", [password, salt as Input, iterations, nameOf(hash)], bits / 8);
+    return pbkdf2Bytes(password, salt as Input, iterations, nameOf(hash), bits / 8);
   }
 
   Object.assign(subtle, {

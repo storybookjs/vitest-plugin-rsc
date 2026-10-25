@@ -3,12 +3,15 @@
 // costs microseconds where the real one costs a tenth of a second or more.
 
 import nodeCrypto from "node:crypto";
+import { sha1 } from "@noble/hashes/legacy.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { expect, test } from "vitest";
 import {
   argon2,
   bcrypt,
   derive,
   installWebCrypto,
+  noblePbkdf2,
   nobleScrypt,
   nodeCrypto as fastNodeCrypto,
   nodeRsArgon2,
@@ -250,4 +253,27 @@ test("Web Crypto's PBKDF2: deriveBits and deriveKey of a key it imported, in mic
   await expect(subtle.deriveBits({ ...params, iterations: 0 }, key, 256)).rejects.toThrow();
   await expect(subtle.deriveBits(params, other, null)).rejects.toThrow();
   expect(await derived(hkdf, hkdfKey, 256)).toEqual(realHkdf);
+});
+
+test("PBKDF2 derives one key through node:crypto, Web Crypto and @noble/hashes, as the real one does", async () => {
+  const { subtle } = globalThis.crypto;
+  installWebCrypto(subtle);
+  const salt = new Uint8Array(nodeCrypto.randomBytes(16));
+  const key = await subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
+    "deriveBits",
+  ]);
+  const { pbkdf2 } = noblePbkdf2();
+  for (const [digest, hash, noble] of [
+    ["sha256", "SHA-256", sha256],
+    ["SHA-512", "SHA-512", sha512],
+    ["RSA-SHA1", "SHA-1", sha1],
+  ] as const) {
+    const node = new Uint8Array(fast.pbkdf2Sync(password, salt, 1000, 32, digest));
+    const params = { name: "PBKDF2", hash, salt, iterations: 1000 };
+    expect(new Uint8Array(await subtle.deriveBits(params, key, 256)), hash).toEqual(node);
+    expect(pbkdf2(noble, password, salt, { c: 1000, dkLen: 32 }), hash).toEqual(node);
+  }
+  expect(fast.pbkdf2Sync(password, salt, 1000, 32, "sha512")).not.toEqual(
+    fast.pbkdf2Sync(password, salt, 1000, 32, "sha256"),
+  );
 });
