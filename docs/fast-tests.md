@@ -206,7 +206,7 @@ Of a click of `dom-locators`, 30–32 µs are its events: the pointer and mouse 
   await expect.element(page.getByText("Note created.")).toBeInTheDocument();
 ```
 
-On the benchmark, the `dom-locators` column takes 2.0 ms per test less than the `user-event` column: 16.26 → 15.25 s, by the median of 5 interleaved rounds, faster in each, on #251 before #262, #264 and #266. All of it is on the page's side. The package's own code cost about 2.2 ms per test on that build (focusing an element 0.43, the pointer events 0.45, checking that it's visible 0.14), and replaces Vitest's locators, 1.4 ms, and `user-event`, 2.3.
+On the benchmark, the `dom-locators` column takes 2.0 ms per test less than the `user-event` column: 16.26 → 15.25 s, by the median of 5 interleaved rounds, faster in each, on #251 before #262, #264 and #266. All of it is on the page's side. The package's own code cost about 2.2 ms per test on that build, and replaces Vitest's locators, 1.4 ms, and `user-event`, 2.3. In that build's CPU profile (one run, the profiler on, 2.4 ms per test), half of it is the browser's own work that it calls: a focus 0.40, the layout and the style that the visibility check reads 0.35, which Playwright's actions force too, and the dispatch of the events 0.2. Its own JavaScript, 1.1 ms, is mostly its queries; the package's README says what is left of it.
 
 What differs from Playwright's actions: every event is the page's own, so `isTrusted` is `false`, and an action doesn't wait for an element to stop moving or for what covers it to go. The package's README, on #255, has the full table. `dom-locators` is private: the repository's benchmark and playgrounds use it, and it isn't on npm.
 
