@@ -869,6 +869,12 @@ Give Bun a dependency cache of its own in your Vitest config. Vite's hash of the
 cacheDir: process.versions.bun ? "node_modules/.vite-bun" : undefined,
 ```
 
+And put the browser server on 127.0.0.1. When another process holds Vitest's port on ::1, a Vitest on Node.js for one, Bun binds `localhost` to 127.0.0.1 next to it, where Node.js would move to the next port. Chromium then opens `localhost` on ::1, the other process's server, and the run ends after 60 s with "Failed to connect to the browser session … within the timeout":
+
+```ts
+server: { host: "127.0.0.1" },
+```
+
 Vitest is made for Node.js, not Bun, so keep a run on Node.js in CI.
 
 ## Watch mode
