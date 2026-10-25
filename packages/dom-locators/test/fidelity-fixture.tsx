@@ -1,6 +1,7 @@
 // The fixture of the fidelity test: React's handlers on a button, a link, a
-// controlled input, a textarea, a checkbox with its label, a select and a
-// form with an action of `useActionState`, each writing to the log.
+// controlled input, a textarea, a checkbox with its label, a select, a form
+// with an action of `useActionState`, a file input and a box that scrolls,
+// each writing to the log.
 
 import { useActionState, useState } from "react";
 
@@ -16,6 +17,8 @@ const handlers = (...names: string[]) => Object.fromEntries(names.map((name) => 
 const pointer = handlers(
   "onClick",
   "onDoubleClick",
+  "onContextMenu",
+  "onAuxClick",
   "onMouseEnter",
   "onMouseLeave",
   "onMouseDown",
@@ -107,6 +110,27 @@ export function Fixture() {
         </button>
       </form>
       <output id="result">{state}</output>
+      <label htmlFor="file">File</label>
+      <input
+        id="file"
+        type="file"
+        multiple
+        onChange={(event) =>
+          write(
+            `react:onChange@file=${[...event.target.files!].map((file) => file.name).join(",")}`,
+          )
+        }
+        {...handlers("onInput")}
+      />
+      <div
+        id="scroller"
+        style={{ height: 40, overflow: "auto" }}
+        {...handlers("onWheel", "onScroll")}
+      >
+        <p id="scrolled" style={{ height: 200, margin: 0 }}>
+          Scroll me
+        </p>
+      </div>
     </div>
   );
 }
@@ -128,7 +152,11 @@ export const nativeEvents = [
   "mousedown",
   "mouseup",
   "click",
+  "auxclick",
+  "contextmenu",
   "dblclick",
+  "wheel",
+  "scroll",
   "focus",
   "blur",
   "focusin",
@@ -154,10 +182,15 @@ export function nativeEntry(event: Event): string {
     const related = event.relatedTarget as Element | null;
     if (/over|out|enter|leave/.test(event.type))
       detail += ` related=${related?.id || related?.localName || null}`;
+    if (event instanceof WheelEvent) detail += ` deltaX=${event.deltaX} deltaY=${event.deltaY}`;
   } else if (event instanceof InputEvent) {
     detail = ` ${event.inputType} ${JSON.stringify(event.data)}`;
   } else if (event instanceof KeyboardEvent) {
     detail = ` key=${JSON.stringify(event.key)} code=${event.code} keyCode=${event.keyCode}`;
   }
+  const held = (["alt", "ctrl", "meta", "shift"] as const).filter(
+    (key) => (event as Partial<MouseEvent>)[`${key}Key`],
+  );
+  if (held.length) detail += ` ${held.join("+")}`;
   return `${event.type}@${id}${detail}`;
 }

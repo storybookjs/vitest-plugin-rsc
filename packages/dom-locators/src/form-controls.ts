@@ -1,6 +1,7 @@
-// The values of form controls: `fill()`, `clear()` and `selectOptions()` as
-// Playwright's, and the edits of text that a key makes, each with the events
-// Chrome dispatches for it and with the value set past React's tracker.
+// The values of form controls: `fill()`, `clear()`, `selectOptions()` and
+// `upload()` as Playwright's, and the edits of text that a key makes, each
+// with the events Chrome dispatches for it and with the value set past
+// React's tracker.
 
 import { eventView } from "./environment.ts";
 import { UnsupportedError, escapeHatch } from "./errors.ts";
@@ -195,4 +196,30 @@ export function selectOptions(element: Element, values: SelectValue[]): (() => v
     element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   };
+}
+
+/**
+ * Playwright's `setInputFiles()` of files of the page: the files of a file
+ * input, then `input` and `change`. A DOM without `DataTransfer`, jsdom's,
+ * has no way to set them.
+ */
+export function setInputFiles(element: Element, files: File[]): void {
+  if (element.nodeName !== "INPUT") throw new Error("Not an <input> element");
+  const input = element as HTMLInputElement;
+  if ((input.getAttribute("type") || "").toLowerCase() !== "file") {
+    throw new Error("Not an input[type=file] element");
+  }
+  if (files.length > 1 && !input.multiple) {
+    throw new Error("Non-multiple file input can only accept single file");
+  }
+  if (typeof DataTransfer !== "function") {
+    throw new UnsupportedError(
+      `upload() in a DOM without DataTransfer is not in dom-locators: ${escapeHatch}.`,
+    );
+  }
+  const transfer = new DataTransfer();
+  for (const file of files) transfer.items.add(file);
+  input.files = transfer.files;
+  input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
 }

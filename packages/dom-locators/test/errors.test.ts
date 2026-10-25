@@ -92,14 +92,28 @@ test("an option the package does not model throws, where Vitest's page ignores i
   expect(() => configure({ exact: false })).toThrow(/has no option "exact"/);
 });
 
-test("an action's option other than timeout throws", async () => {
-  // @ts-expect-error Playwright's option.
-  await expect(page.getByText("Text").click({ position: { x: 1, y: 1 } })).rejects.toThrow(
-    /click\(\) has no option "position"/,
+test("an action's option the package does not model throws, and so does an invalid one", async () => {
+  // @ts-expect-error Playwright's option, which the page does not model.
+  await expect(page.getByText("Text").click({ delay: 10 })).rejects.toThrow(
+    /click\(\) has no option "delay"/,
   );
   const cancel = page.getByRole("button", { name: "Cancel" });
-  // @ts-expect-error Playwright's option.
-  await expect(cancel.fill("x", { force: true })).rejects.toThrow(/fill\(\) has no option "force"/);
+  // @ts-expect-error an option of click(), not of fill().
+  await expect(cancel.fill("x", { position: { x: 1, y: 1 } })).rejects.toThrow(
+    /fill\(\) has no option "position"/,
+  );
+  // @ts-expect-error an option of click(), not of dblClick().
+  await expect(cancel.dblClick({ clickCount: 3 })).rejects.toThrow(/has no option "clickCount"/);
+  // @ts-expect-error no such button.
+  await expect(cancel.click({ button: "back" })).rejects.toThrow(/invalid button/);
+  // @ts-expect-error no such modifier.
+  await expect(cancel.hover({ modifiers: ["Hyper"] })).rejects.toThrow(/invalid modifiers/);
+  // @ts-expect-error a delta and a direction.
+  await expect(cancel.wheel({ delta: { y: 1 }, direction: "up" })).rejects.toThrow(/either/);
+});
+
+test("upload() of a path throws: the page cannot read a file", async () => {
+  await expect(page.getByText("Text").upload("file.txt")).rejects.toThrow(UnsupportedError);
 });
 
 test("an open shadow root is looked into, as Vitest's locators do, a closed one by neither", () => {
@@ -127,9 +141,6 @@ test("a locator of vitest/browser in filter, and or, throws", () => {
 test("a deferred method throws, naming the way out", () => {
   const locator = page.getByRole("button", { name: "Cancel" });
   for (const call of [
-    () => locator.tripleClick(),
-    () => locator.wheel({ direction: "down" }),
-    () => locator.upload("file.txt"),
     () => locator.dropTo(page.getByText("Text")),
     () => locator.screenshot(),
     () => locator.mark("step"),
@@ -143,10 +154,15 @@ test("a deferred method throws, naming the way out", () => {
 
 test("a key the package does not press throws", async () => {
   const button = page.getByRole("button", { name: "Cancel" });
-  await expect(button.press("ArrowDown")).rejects.toThrow(UnsupportedError);
-  await expect(button.press("Shift+A")).rejects.toThrow(
-    /press\("Shift\+A"\) is not in dom-locators/,
+  await expect(button.press("F5")).rejects.toThrow(UnsupportedError);
+  await expect(button.press("Hyper+a")).rejects.toThrow(
+    /press\("Hyper\+a"\) is not in dom-locators/,
   );
+  await expect(button.press("Shift+1")).rejects.toThrow(/depends on the layout of the keyboard/);
+  document.body.innerHTML = '<input aria-label="Name"><select aria-label="Fruit"></select>';
+  await expect(page.getByLabelText("Name").press("Control+z")).rejects.toThrow(UnsupportedError);
+  await expect(page.getByLabelText("Name").press("ArrowUp")).rejects.toThrow(UnsupportedError);
+  await expect(page.getByLabelText("Fruit").press("ArrowDown")).rejects.toThrow(UnsupportedError);
 });
 
 test("filter() without a filter throws Vitest's error", () => {

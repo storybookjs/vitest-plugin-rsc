@@ -68,8 +68,12 @@ export function focusOnPress(element: Element): void {
 const tabbable =
   "input:not([type=hidden]),select,textarea,button,a[href],area[href],iframe,summary,[tabindex],[contenteditable]:not([contenteditable=false])";
 
-/** What Tab does to the focus: the next element in the tab order, else none. */
-export function focusNext(from: Element, isVisible: (element: Element) => boolean): void {
+/** What Tab does to the focus, or Shift+Tab `backward`: the next element in the tab order, else none. */
+export function focusNext(
+  from: Element,
+  isVisible: (element: Element) => boolean,
+  backward = false,
+): void {
   const candidates = [...document.querySelectorAll<HTMLElement>(tabbable)].filter(
     (element) =>
       element.tabIndex >= 0 &&
@@ -81,13 +85,13 @@ export function focusNext(from: Element, isVisible: (element: Element) => boolea
     .filter((element) => element.tabIndex > 0)
     .sort((a, b) => a.tabIndex - b.tabIndex);
   const order = [...positive, ...candidates.filter((element) => element.tabIndex === 0)];
+  if (backward) order.reverse();
   const index = order.indexOf(from as HTMLElement);
+  const after = backward ? Node.DOCUMENT_POSITION_PRECEDING : Node.DOCUMENT_POSITION_FOLLOWING;
   const next =
     index >= 0
       ? order[index + 1]
-      : order.find(
-          (element) => from.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING,
-        );
+      : order.find((element) => from.compareDocumentPosition(element) & after);
   if (next) {
     focus(next);
     return;

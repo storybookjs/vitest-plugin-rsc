@@ -29,27 +29,38 @@ export interface ActionOptions {
   timeout?: number;
 }
 
-/** An action's options, of which the package models `timeout` alone: anything else throws. */
-export function checkActionOptions(action: string, options: object | undefined): void {
+/** The options of an action that Playwright's takes with `force`. */
+export interface ForceOptions extends ActionOptions {
+  /** Whether to act on the element once it is there, without the checks of its state. */
+  force?: boolean;
+}
+
+/** An action's options, of which the package models `keys`: anything else throws. */
+export function checkActionOptions(
+  action: string,
+  options: object | undefined,
+  keys: readonly string[] = ["timeout"],
+): void {
   for (const key of Object.keys(options ?? {})) {
-    if (key !== "timeout") {
+    if (!keys.includes(key)) {
       throw new TypeError(
-        `${action} has no option "${key}" in dom-locators, which takes timeout alone: use vitest/browser's locator for it.`,
+        `${action} has no option "${key}" in dom-locators, which takes ${keys.join(", ")}: use vitest/browser's locator for it.`,
       );
     }
   }
 }
 
 /**
- * The element of `target` once it passes `checks`, retargeted by `retarget`.
- * Rejects at once for more than one element, and after the timeout with
- * "cannot find" or with the check that failed last.
+ * The element of `target` once it passes `checks`, or once it is there for
+ * `force`, retargeted by `retarget`. Rejects at once for more than one
+ * element, and after the timeout with "cannot find" or with the check that
+ * failed last.
  */
 export function actionable(
   target: Target,
   action: string,
   checks: Check[],
-  options: ActionOptions = {},
+  options: ForceOptions = {},
   retarget: (element: Element) => Element = (element) => element,
 ): Promise<Element> {
   let reason: string | undefined;
@@ -62,7 +73,7 @@ export function actionable(
         return undefined;
       }
       const element = retarget(elements[0]!);
-      reason = failedCheck(element, checks);
+      reason = options.force ? undefined : failedCheck(element, checks);
       return reason === undefined ? { value: element } : undefined;
     },
     options.timeout ?? defaultTimeout(),

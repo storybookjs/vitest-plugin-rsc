@@ -13,14 +13,37 @@ import { Fixture, log, nativeEntry, nativeEvents } from "./fidelity-fixture.tsx"
 
 // oxlint-disable-next-line typescript/no-explicit-any
 type AnyPage = any;
-type Driver = { page: AnyPage; press(locator: AnyPage, key: string): Promise<void> };
+type Driver = {
+  page: AnyPage;
+  press(locator: AnyPage, key: string): Promise<void>;
+  type(locator: AnyPage, text: string): Promise<void>;
+};
+
+/** A combination of `press()`, like "Shift+Tab", in the syntax of `userEvent.keyboard()`. */
+function keyboardSyntax(combination: string): string {
+  const keys = combination.split(/\+(?!$)/);
+  const key = keys.pop()!;
+  const name = (key: string) => (key === " " ? " " : `{${key}}`);
+  return `${keys.map((m) => `{${m}>}`).join("")}${name(key)}${keys
+    .reverse()
+    .map((m) => `{/${m}}`)
+    .join("")}`;
+}
 
 const vitest: Driver = {
   page: vitestPage,
   // Vitest's locators press no key: Playwright's keyboard, on the focused element.
-  press: (_locator, key) => userEvent.keyboard(key === " " ? " " : `{${key}}`),
+  press: (_locator, key) => userEvent.keyboard(keyboardSyntax(key)),
+  type: (locator, text) => userEvent.type(locator, text),
 };
-const ours: Driver = { page, press: (locator, key) => locator.press(key) };
+const ours: Driver = {
+  page,
+  press: (locator, key) => locator.press(key),
+  type: (locator, text) => locator.pressSequentially(text),
+};
+
+// Select all: Meta+a on macOS, Control+a elsewhere.
+const selectAll = /Mac/.test(navigator.platform) ? "Meta+a" : "Control+a";
 
 let root: Root;
 let container: HTMLElement;
@@ -157,6 +180,77 @@ const steps: Step[] = [
       await driver.page.getByRole("link", { name: "Go" }).element().focus();
       await driver.press(driver.page.getByRole("link", { name: "Go" }), "Enter");
     },
+  },
+  {
+    name: "click with Shift held",
+    run: ({ page }) => page.getByRole("button", { name: "Other" }).click({ modifiers: ["Shift"] }),
+  },
+  {
+    name: "right-click",
+    run: ({ page }) => page.getByRole("button", { name: "Other" }).click({ button: "right" }),
+  },
+  {
+    name: "middle-click",
+    run: ({ page }) => page.getByRole("button", { name: "Other" }).click({ button: "middle" }),
+  },
+  {
+    name: "triple-click",
+    run: ({ page }) => page.getByRole("button", { name: "Other" }).tripleClick(),
+  },
+  {
+    name: "click at a position",
+    run: ({ page }) =>
+      page.getByRole("button", { name: "Save" }).click({ position: { x: 1, y: 1 } }),
+  },
+  {
+    name: "hover with Control held",
+    run: ({ page }) => page.getByRole("link", { name: "Go" }).hover({ modifiers: ["Control"] }),
+  },
+  {
+    name: "upload files",
+    run: ({ page }) =>
+      page
+        .getByLabelText("File")
+        .upload([
+          new File(["a"], "a.txt", { type: "text/plain" }),
+          new File(["b"], "b.txt", { type: "text/plain" }),
+        ]),
+  },
+  {
+    name: "wheel over a box that scrolls",
+    run: ({ page }) => page.getByText("Scroll me").wheel({ delta: { y: 30 } }),
+  },
+  {
+    name: "Shift+Tab",
+    before: ({ page }) => page.getByLabelText("Name").click(),
+    run: (driver) => driver.press(driver.page.getByLabelText("Name"), "Shift+Tab"),
+  },
+  {
+    name: "select all in an input",
+    before: ({ page }) => page.getByLabelText("Name").fill("Ada"),
+    run: (driver) => driver.press(driver.page.getByLabelText("Name"), selectAll),
+  },
+  {
+    name: "a capital with Shift, and Shift alone",
+    before: ({ page }) => page.getByLabelText("Name").click(),
+    run: async (driver) => {
+      await driver.press(driver.page.getByLabelText("Name"), "Shift+a");
+      await driver.press(driver.page.getByLabelText("Name"), "Shift");
+    },
+  },
+  {
+    name: "the caret: arrows, Home and End, with Shift",
+    before: ({ page }) => page.getByLabelText("Text").fill("abc"),
+    run: async (driver) => {
+      const text = driver.page.getByLabelText("Text");
+      for (const key of ["ArrowLeft", "x", "Home", "y", "Shift+ArrowRight", "z", "End", "w"]) {
+        await driver.press(text, key);
+      }
+    },
+  },
+  {
+    name: "type a text",
+    run: (driver) => driver.type(driver.page.getByLabelText("Notes"), "hi you"),
   },
   {
     name: "Escape",
