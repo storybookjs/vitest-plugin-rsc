@@ -131,9 +131,12 @@ export function vitestPluginRSC(): Plugin[] {
         // that version in its URL. The key of a module is made once in a
         // run: a module that imports a pre-bundle that the optimizer bundles
         // again mid-run, as it finds a dependency, keeps the old version in
-        // its URL until the next run.
+        // its URL until the next run. Nor with the directory of the
+        // pre-bundles, which is the project's: two projects with the same
+        // optimizer's config have the same version, but each its own URLs.
         defineCacheKeyGenerator?.(
-          ({ environment }) => environment.depsOptimizer?.metadata.browserHash ?? "",
+          ({ environment }) =>
+            `${environment.config.cacheDir}:${environment.depsOptimizer?.metadata.browserHash ?? ""}`,
         );
       }) as unknown as () => void,
       resolveId(source) {
@@ -437,6 +440,9 @@ function workerPlugins(page: { inNode: boolean }, answers: PageAnswers): Plugin[
               /\/node_modules\/@vitejs\/plugin-rsc\//,
             ];
           }
+          // The page in a realm of its own, and Node's web APIs on the
+          // worker's global for the server: see happy-dom-environment.ts.
+          if (test.environment === "happy-dom") test.environment = ownFile("happy-dom-environment");
           // What the optimizer of the rsc layer scans: the test files and the
           // setup files, which Vitest names with Browser Mode only. Without
           // them it finds their dependencies as a test imports them, and

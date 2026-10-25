@@ -13,8 +13,19 @@ const domEnvironments = new Set(["happy-dom", "jsdom"]);
 
 type TestOptions = { browser?: { enabled?: boolean }; environment?: string };
 
+/**
+ * The file of the plugin's environment of happy-dom, which takes the place of
+ * Vitest's in such a project: see happy-dom-environment.ts.
+ */
+const isOwnHappyDomEnvironment = (environment: string): boolean =>
+  /[\\/]happy-dom-environment\.[jt]s$/.test(environment);
+
 export function hostsPageInNode(test: TestOptions | undefined): boolean {
-  return !test?.browser?.enabled && domEnvironments.has(test?.environment ?? "");
+  const environment = test?.environment ?? "";
+  return (
+    !test?.browser?.enabled &&
+    (domEnvironments.has(environment) || isOwnHappyDomEnvironment(environment))
+  );
 }
 
 // The plugin that Vitest puts in the config of every server it runs tests

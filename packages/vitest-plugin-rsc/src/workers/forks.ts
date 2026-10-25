@@ -1,6 +1,3 @@
-// Node's own web APIs, kept for the server's layers before Vitest sets up
-// the environment, whose DOM replaces them: see worker-web-apis.ts.
-import "../worker-web-apis.ts";
 import type { WorkerGlobalState } from "vitest";
 import { init, runBaseTests, setupEnvironment } from "vitest/worker";
 import { isAnswer } from "../page-protocol.ts";

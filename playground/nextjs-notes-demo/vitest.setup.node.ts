@@ -7,7 +7,8 @@ import { TEST_NOW } from "#test/now.ts";
 
 // What vitest.setup.ts is to the browser projects, for the node project: MSW
 // intercepts the requests of the worker itself, where in a browser its service
-// worker does.
+// worker does: with happy-dom the server's `fetch` too, see
+// components/next-cache.node.test.tsx.
 vi.mock("#lib/db.ts");
 
 // The clock stopped at TEST_NOW before the database does any work, and kept

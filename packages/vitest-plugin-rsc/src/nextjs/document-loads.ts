@@ -4,6 +4,7 @@
 import { leftTheApp } from "./app-requests.ts";
 import { documentUrl } from "./document.ts";
 import { enctypeOf, formBody } from "./form-submission.ts";
+import { fromPage } from "./from-page.ts";
 import type { NavigateEvent } from "./host-document.ts";
 import { currentPage, leavePage, navigate, noRouter } from "./page.ts";
 import type { PageStore } from "./page-store.ts";
@@ -89,11 +90,11 @@ export function followNavigation(event: Event, from: PageStore): void {
   }
   navigate(
     url,
-    {
+    fromPage(url, {
       method: formData ? "POST" : "GET",
       headers: { accept: "text/html" },
       body: formData && formBody(formData, enctypeOf(sourceElement)),
-    },
+    })[1]!,
     downloadRequest,
     from,
     navigationType === "push",
