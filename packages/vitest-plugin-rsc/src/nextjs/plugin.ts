@@ -840,6 +840,14 @@ export type VitestPluginNextOptions = ServerCodeOptions &
   };
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
+  // The options that compile a file of the app, for Vitest's cache: see
+  // `configureVitest` below.
+  let compiledBy: string | undefined;
+  const compileKey = () =>
+    (compiledBy ??= JSON.stringify(
+      [build, speedFeatures, options.browserModules, options.host],
+      (_, value: unknown) => (value instanceof RegExp ? String(value) : value),
+    ));
   // oxlint-disable-next-line no-process-env -- The switch of an agent's run, as `CI` is.
   const chosen = resolveSpeedFeatures(options, process.env);
   // The speed features of this run: the chosen ones, with `fastCrypto` and
@@ -1423,11 +1431,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // root: one in fast mode and one in fidelity mode compile the same
         // file otherwise, by the speed features and the options of the
         // server code, and would each get the other's.
-        const compileKey = JSON.stringify(
-          [build, speedFeatures, options.browserModules, options.host],
-          (_, value: unknown) => (value instanceof RegExp ? String(value) : value),
-        );
-        defineTransformCacheKey(testProject, defineCacheKeyGenerator, () => compileKey);
+        // One for every project of the config, which Vitest keys by each.
+        defineTransformCacheKey(testProject, defineCacheKeyGenerator, compileKey);
         const test = testProject.config;
         // Read as a file is asked about: a plugin of the host adds a setup
         // file in its own `configureVitest`, which may run after this one,

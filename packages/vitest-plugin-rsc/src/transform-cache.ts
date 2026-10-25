@@ -10,9 +10,9 @@ import { invalidatedAt } from "./module-versions.ts";
 // (`fsModuleCache`), which keeps what Vite compiled on disk for the next run,
 // where Vite's own `fetchModule()` compiles every module again in every run.
 // Vitest answers for any environment of the project's dev server, through
-// the same `fetch()` as for its own runner. Without the cache, outside a test
-// run of Vitest, like `storybook dev`, and for a page in a worker of Node.js,
-// Vite answers, as before.
+// the same `fetch()` as for its own runner. Without the cache, and outside a
+// test run of Vitest, like `storybook dev`, Vite answers. A page in a worker
+// of Node.js asks Vitest's RPC of the worker itself (vitest-modules.ts).
 
 type InvokePayload = Parameters<DevEnvironment["hot"]["handleInvoke"]>[0];
 type InvokeResult = Awaited<ReturnType<DevEnvironment["hot"]["handleInvoke"]>>;
@@ -37,16 +37,17 @@ type CachedFetch = (
 ) => Promise<CachedFetchResult>;
 
 // By the environment: the server that `configureServer` gets is another
-// object than the project's `vite`, of the same environments.
-const fetchOf = new WeakMap<DevEnvironment, CachedFetch>();
-// The environments of a project whose cache has a module by a key without
-// what a plugin adds: Vite answers for them.
+// object than the project's `vite`, of the same environments. With the
+// transform service that answers, which projects of one server can each
+// have their own of.
+const fetchOf = new WeakMap<DevEnvironment, { fetch: CachedFetch; service: object | undefined }>();
+// The environments whose cache could have a module by a key without what a
+// plugin adds, or by another project's: Vite answers for them.
 const unkeyed = new WeakSet<DevEnvironment>();
 
-// What of Vitest a project of an instance of Browser Mode needs for its key:
-// Vitest's own, not public.
-type InstanceInternals = {
-  _parent?: TestProject;
+// What of Vitest the key of a project needs: Vitest's own, not public.
+type ServiceInternals = {
+  _transformService?: { config?: object };
   vitest: {
     cache: {
       _modules?: {
@@ -56,15 +57,23 @@ type InstanceInternals = {
   };
 };
 
+function leaveToVite(project: TestProject): void {
+  for (const environment of Object.values(project.vite.environments)) {
+    unkeyed.add(environment);
+    fetchOf.delete(environment);
+  }
+}
+
 /**
  * Has Vitest's transform cache key what it compiles for `project` by
  * `generate` too, where `define` is the `defineCacheKeyGenerator` that
- * Vitest gives the project's `configureVitest`. A project of an instance of
- * Browser Mode, like `chromium`, compiles through the transform service of
- * the project it is an instance of, which keys a module by that project's
- * config, where `define` adds to the instance's: so the key goes to that
- * config too. Where it cannot, the page's runners get every module from
- * Vite (`invokeEnvironment()`).
+ * Vitest gives the project's `configureVitest`. `define` adds to the
+ * project's own config, and the transform service keys a module by its
+ * config: for a project of an instance of Browser Mode, like `chromium`,
+ * that of the project it is an instance of, whose service it shares. So the
+ * key goes to the service's config. Where it cannot, the page's runners get
+ * every module from Vite (`invokeEnvironment()`). Pass the same `generate`
+ * for every project: Vitest keys by each one it has.
  */
 export function defineTransformCacheKey(
   project: TestProject,
@@ -72,13 +81,13 @@ export function defineTransformCacheKey(
   generate: CacheKeyIdGenerator,
 ): void {
   define?.(generate);
-  const { _parent: parent, vitest } = project as unknown as InstanceInternals;
-  if (!parent) return;
-  const cache = vitest.cache._modules;
-  if (cache?.defineCacheKeyGenerator) return cache.defineCacheKeyGenerator(parent.config, generate);
-  for (const environment of Object.values(project.vite.environments)) {
-    unkeyed.add(environment);
-    fetchOf.delete(environment);
+  const { _transformService: service, vitest } = project as unknown as ServiceInternals;
+  if (define && service?.config === project.config) return;
+  const keys = vitest.cache._modules;
+  if (define && service?.config && keys?.defineCacheKeyGenerator) {
+    keys.defineCacheKeyGenerator(service.config, generate);
+  } else {
+    leaveToVite(project);
   }
 }
 
@@ -88,18 +97,20 @@ export function defineTransformCacheKey(
  * `invokeEnvironment()`. Nothing where the project has the cache off.
  */
 export async function answerFromTransformCache(project: TestProject): Promise<void> {
-  const environments = Object.values(project.vite.environments).filter(
-    (environment) => !unkeyed.has(environment) && !fetchOf.has(environment),
-  );
-  if (!project.config.fsModuleCache || environments.length === 0) return;
+  if (!project.config.fsModuleCache) return;
   // Of the Vitest that runs the project, by the path of its build: the
   // plugin does not import Vitest, an optional peer dependency, but for
   // the setup files (optional-vitest.test.ts).
   const vitestNode = pathToFileURL(path.join(project.vitest.distPath, "node.js")).href;
   const { createMethodsRPC } = (await import(vitestNode)) as typeof import("vitest/node");
   const { fetch } = createMethodsRPC(project);
-  for (const environment of environments) {
-    if (!unkeyed.has(environment)) fetchOf.set(environment, fetch as CachedFetch);
+  const service = (project as unknown as ServiceInternals)._transformService;
+  for (const environment of Object.values(project.vite.environments)) {
+    const answering = fetchOf.get(environment);
+    if (unkeyed.has(environment)) continue;
+    // Another project of the server, with a service and a key of its own.
+    if (answering && answering.service !== service) leaveToVite(project);
+    else if (!answering) fetchOf.set(environment, { fetch: fetch as CachedFetch, service });
   }
 }
 
@@ -114,7 +125,7 @@ export async function invokeEnvironment(
   environment: DevEnvironment,
   payload: InvokePayload,
 ): Promise<InvokeResult> {
-  const fetch = fetchOf.get(environment);
+  const fetch = fetchOf.get(environment)?.fetch;
   const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
   if (!fetch || name !== "fetchModule") return environment.hot.handleInvoke(payload);
   const [url, importer, options] = data as [string, string | undefined, FetchOptions?];
@@ -137,11 +148,14 @@ async function fromCache(
   importer: string | undefined,
   options: FetchOptions | undefined,
 ) {
-  // A specifier like a page's entry by its package resolves from its
-  // importer, as Vitest's `fetch()` resolves it; Vite answers what does not.
+  // A specifier: the page's entry by its package, which Vite resolves
+  // through the environment's plugins, as Vitest does. Of a module, like an
+  // `import()` that Vite could not read, Vite resolves it as Node.js does,
+  // and answers it.
+  if (!url.startsWith("/") && importer) return;
   const id = url.startsWith("/")
     ? unwrapId(url)
-    : (await environment.pluginContainer.resolveId(url, importer))?.id;
+    : (await environment.pluginContainer.resolveId(url))?.id;
   if (!id) return;
   // Vitest keys a module by its file as it first read it in a run, and
   // forgets that key only for a change that its own watcher sees. Vite
@@ -163,7 +177,7 @@ async function fromCache(
   // dependency that is not inlined, which Vitest would leave to Node.js.
   if ("externalize" in result) return;
   if ("cache" in result) return result;
-  const code = "tmp" in result ? await readFile(result.tmp, "utf8") : result.code;
+  const code = "tmp" in result ? withoutTrailer(await readFile(result.tmp, "utf8")) : result.code;
   const { file, url: moduleUrl, invalidate } = result;
   return {
     code: withLinesBefore(code, options?.startOffset ?? 0, result.id),
@@ -173,6 +187,13 @@ async function fromCache(
     invalidate,
   };
 }
+
+// Vitest's file of a module ends in what it knows of the module, for itself.
+const trailer = "\n//# vitestCache=";
+const withoutTrailer = (code: string) => {
+  const at = code.lastIndexOf(trailer);
+  return at === -1 ? code : code.slice(0, at);
+};
 
 // The id of a module by the URL that its importer's code has, as Vite's
 // `fetchModule()` reads it: import analysis writes a resolved id that is no

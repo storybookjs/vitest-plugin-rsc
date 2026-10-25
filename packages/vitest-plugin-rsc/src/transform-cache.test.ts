@@ -52,11 +52,11 @@ function setUp({ fsModuleCache = true, invalidated = 0 } = {}) {
   return { environment, handleInvoke, project, node, moduleGraph };
 }
 
-const fetchModule = (url: string, options?: object) =>
+const fetchModule = (url: string, options?: object, importer: string | null = "/importer.ts") =>
   ({
     type: "custom",
     event: "vite:invoke",
-    data: { name: "fetchModule", id: "send:1", data: [url, "/importer.ts", options] },
+    data: { name: "fetchModule", id: "send:1", data: [url, importer ?? undefined, options] },
   }) as Parameters<DevEnvironment["hot"]["handleInvoke"]>[0];
 
 test("answers a module that Vitest has on disk with its code, without Vite", async () => {
@@ -130,54 +130,94 @@ test("leaves to Vite a module invalidated while Vitest read it, and forgets Vite
   expect(handleInvoke).toHaveBeenCalledOnce();
 });
 
-test("finds the module of a URL or of a specifier as Vite does, and leaves to Vite what does not resolve", async () => {
+test("finds the module of a URL or of the page's entry as Vite does, and leaves to Vite what it resolves itself", async () => {
   const { environment, handleInvoke, project, moduleGraph } = setUp();
   await answerFromTransformCache(project);
   fetch.mockResolvedValue({ cache: true });
 
   await invokeEnvironment(environment, fetchModule("/@id/__x00__virtual:a", { cached: true }));
   expect(moduleGraph.ensureEntryFromUrl).toHaveBeenCalledWith("\0virtual:a");
-  expect(await invokeEnvironment(environment, fetchModule("vitest-plugin-rsc/a"))).toEqual({
-    result: { cache: true },
-  });
+  // The page's entry, by its package, without an importer.
+  const entry = fetchModule("vitest-plugin-rsc/a", undefined, null);
+  expect(await invokeEnvironment(environment, entry)).toEqual({ result: { cache: true } });
   expect(moduleGraph.ensureEntryFromUrl).toHaveBeenCalledWith(
     "/node_modules/vitest-plugin-rsc/a.js",
   );
   expect(fetch).toHaveBeenLastCalledWith(
     "vitest-plugin-rsc/a",
-    "/importer.ts",
+    undefined,
     "react_client",
     undefined,
   );
-  expect(await invokeEnvironment(environment, fetchModule("missing/a"))).toEqual(viteAnswer);
+  // What does not resolve, and a specifier of a module, which Vite resolves
+  // as Node.js does.
+  expect(await invokeEnvironment(environment, fetchModule("missing/a", undefined, null))).toEqual(
+    viteAnswer,
+  );
+  expect(await invokeEnvironment(environment, fetchModule("vitest-plugin-rsc/a"))).toEqual(
+    viteAnswer,
+  );
   expect(fetch).toHaveBeenCalledTimes(2);
-  expect(handleInvoke).toHaveBeenCalledOnce();
+  expect(handleInvoke).toHaveBeenCalledTimes(2);
 });
 
-test("keys a module of an instance of Browser Mode by the config of the project it is an instance of, or leaves it to Vite", async () => {
-  const parent = { config: {} };
-  const generate = () => "key";
-  const { project } = setUp();
-  const define = vi.fn();
-  const defineCacheKeyGenerator = vi.fn();
-  const instance = Object.assign(project, {
-    _parent: parent,
-    vitest: { distPath: dir, cache: { _modules: { defineCacheKeyGenerator } } },
-  });
-  defineTransformCacheKey(instance, define, generate);
-  expect(define).toHaveBeenCalledWith(generate);
-  expect(defineCacheKeyGenerator).toHaveBeenCalledWith(parent.config, generate);
+// A project with Vitest's internals that its key needs: its transform
+// service's config, and the registry of keys by config.
+function withService(project: TestProject, config: object, keys?: object) {
+  return Object.assign(project, {
+    _transformService: { config },
+    vitest: { distPath: dir, cache: { _modules: keys } },
+  }) as TestProject;
+}
 
-  // A Vitest without the place of its keys: the key would miss what the
-  // plugins add, so Vite answers.
-  const other = setUp();
-  const unreachable = Object.assign(other.project, {
-    _parent: parent,
-    vitest: { distPath: dir, cache: {} },
+test("keys a module by the config that the transform service keys by, or leaves it to Vite", async () => {
+  const generate = () => "key";
+  // A project of its own service: Vitest's own `define`.
+  const own = setUp();
+  const define = vi.fn();
+  defineTransformCacheKey(withService(own.project, own.project.config), define, generate);
+  expect(define).toHaveBeenCalledWith(generate);
+
+  // An instance of Browser Mode, on the service of its parent.
+  const instance = setUp();
+  const parent = {};
+  const defineCacheKeyGenerator = vi.fn();
+  const keys = { defineCacheKeyGenerator };
+  defineTransformCacheKey(withService(instance.project, parent, keys), define, generate);
+  expect(defineCacheKeyGenerator).toHaveBeenCalledWith(parent, generate);
+  await answerFromTransformCache(instance.project);
+  fetch.mockResolvedValue({ cache: true });
+  expect(await invokeEnvironment(instance.environment, fetchModule("/a.ts"))).toEqual({
+    result: { cache: true },
   });
-  defineTransformCacheKey(unreachable, undefined, generate);
-  await answerFromTransformCache(unreachable);
-  expect(await invokeEnvironment(other.environment, fetchModule("/a.ts"))).toEqual(viteAnswer);
+
+  // Without the registry, without a service, or without Vitest's `define`:
+  // the key would miss what the plugins add, so Vite answers, also when the
+  // cache had started to answer.
+  for (const [project, environment, defineOf] of [
+    [instance.project, instance.environment, define],
+    [withService(setUp().project, parent), undefined, define],
+    [withService(own.project, own.project.config), own.environment, undefined],
+  ] as const) {
+    fetch.mockClear();
+    const env = environment ?? Object.values(project.vite.environments)[0]!;
+    if (project === instance.project)
+      Object.assign(project, { vitest: { distPath: dir, cache: {} } });
+    defineTransformCacheKey(project, defineOf, generate);
+    await answerFromTransformCache(project);
+    expect(await invokeEnvironment(env, fetchModule("/a.ts"))).toEqual(viteAnswer);
+    expect(fetch).not.toHaveBeenCalled();
+  }
+});
+
+test("leaves to Vite the environments of a server that two projects with their own cache share", async () => {
+  const { environment, project } = setUp();
+  await answerFromTransformCache(withService(project, {}));
+  const other = Object.assign(Object.create(project) as object, {
+    _transformService: { config: {} },
+  }) as unknown as TestProject;
+  await answerFromTransformCache(other);
+  expect(await invokeEnvironment(environment, fetchModule("/a.ts"))).toEqual(viteAnswer);
   expect(fetch).not.toHaveBeenCalled();
 });
 

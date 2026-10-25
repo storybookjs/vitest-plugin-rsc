@@ -92,6 +92,20 @@ export function vitestPluginRSC(): Plugin[] {
   let inNode = false;
   // The directory of the server's files of the run, in a worker of Node.js.
   let serverFiles = "";
+  // Vitest keeps what it compiled on disk for the next run, by a key
+  // without the place and the version of the optimizer's pre-bundles,
+  // which a module that imports one has in its URL, nor the plugin's code,
+  // which compiles the module. The key of a module is made once in a run: a
+  // module that imports a pre-bundle that the optimizer bundles again
+  // mid-run, as it finds a dependency, keeps the old version in its URL
+  // until the next run; a page in a browser gets Vite's in that run
+  // (transform-cache.ts). One for every project of the config.
+  const transformCacheKey: CacheKeyIdGenerator = ({ environment }) =>
+    [
+      environment.config.cacheDir,
+      environment.depsOptimizer?.metadata.browserHash ?? "",
+      ownCodeKey(),
+    ].join(":");
   return [
     pageViteClientPlugin(),
     ...referencingTestFilesLast(
@@ -118,21 +132,7 @@ export function vitestPluginRSC(): Plugin[] {
         defineCacheKeyGenerator,
       }: VitestPluginContext) => {
         inNode = hostsPageInNode(project.config);
-        // Vitest keeps what it compiled on disk for the next run, by a key
-        // without the place and the version of the optimizer's pre-bundles,
-        // which a module that imports one has in its URL, nor the plugin's
-        // code, which compiles the module. The key of a module is made once
-        // in a run: a module that imports a pre-bundle that the optimizer
-        // bundles again mid-run, as it finds a dependency, keeps the old
-        // version in its URL until the next run; a page in a browser gets
-        // Vite's in that run (transform-cache.ts).
-        defineTransformCacheKey(project, defineCacheKeyGenerator, ({ environment }) =>
-          [
-            environment.config.cacheDir,
-            environment.depsOptimizer?.metadata.browserHash ?? "",
-            ownCodeKey(),
-          ].join(":"),
-        );
+        defineTransformCacheKey(project, defineCacheKeyGenerator, transformCacheKey);
         if (!inNode) {
           if (project.config.browser.enabled) await answerFromTransformCache(project);
           return;
@@ -287,7 +287,9 @@ export function vitestPluginRSC(): Plugin[] {
 // the file, which may not be written yet; and this package and Vite RSC,
 // whose modules import the plugin's virtual modules. And the worker keeps
 // Node's own web APIs for the server. With Browser Mode, Vitest leaves the
-// environments as they are, and so do these.
+// environments as they are, and so do these, but for the pre-bundles of
+// the page's runners and this package, which Vitest compiles for them
+// where it answers from its cache (transform-cache.ts).
 type VitestProject = TestProject & {
   config: {
     environmentOptions?: Record<string, Record<string, unknown> | undefined>;
