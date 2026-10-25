@@ -15,6 +15,7 @@ import {
 export const SESSION_COOKIE = "session";
 
 const cookieOptions = { httpOnly: true, sameSite: "lax", path: "/" } as const;
+const userCookieOptions = { ...cookieOptions, maxAge: USER_COOKIE_MAX_AGE };
 
 // A prepared statement, as every request without a fresh user cookie runs
 // it: see notes.ts.
@@ -27,8 +28,9 @@ const sessionUser = db
 
 /**
  * The signed-in user of the request, by the session cookie: from the user
- * cookie while it is fresh, else from the database. A render can't set a
- * cookie, so a stale one stays until the next sign-in.
+ * cookie while it is fresh, else from the database. The user cookie is
+ * signed at sign-in and on a rename only, so five minutes after the sign-in,
+ * every request looks the session up again.
  */
 export const currentUser = cache(async (): Promise<SessionUser | undefined> => {
   const jar = await cookies();
@@ -53,10 +55,7 @@ export async function startSession(user: SessionUser): Promise<void> {
   await db.insert(sessions).values({ token, userId: user.id });
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, cookieOptions);
-  jar.set(USER_COOKIE, await signUserCookie(token, user), {
-    ...cookieOptions,
-    maxAge: USER_COOKIE_MAX_AGE,
-  });
+  jar.set(USER_COOKIE, await signUserCookie(token, user), userCookieOptions);
 }
 
 /** The user cookie anew, after the user changed. */
@@ -64,10 +63,7 @@ export async function updateSessionUser(user: SessionUser): Promise<void> {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
   if (!token) return;
-  jar.set(USER_COOKIE, await signUserCookie(token, user), {
-    ...cookieOptions,
-    maxAge: USER_COOKIE_MAX_AGE,
-  });
+  jar.set(USER_COOKIE, await signUserCookie(token, user), userCookieOptions);
 }
 
 export async function endSession(): Promise<void> {

@@ -7,7 +7,7 @@ import { endSession, requireUser, startSession, updateSessionUser } from "./auth
 import { db } from "./db.ts";
 import { hashPassword, verifyPassword } from "./password.ts";
 import { notes, users } from "./schema.ts";
-import { field, noteErrors, type FormState } from "./validation.ts";
+import { field, nameError, noteErrors, type FormState } from "./validation.ts";
 
 export async function signUp(_: FormState, formData: FormData): Promise<FormState> {
   const values = {
@@ -16,8 +16,9 @@ export async function signUp(_: FormState, formData: FormData): Promise<FormStat
   };
   const password = String(formData.get("password") ?? "");
   const errors: Record<string, string> = {};
-  if (!values.name) errors.name = "Name is required.";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email))
+  const invalidName = nameError(values.name);
+  if (invalidName) errors.name = invalidName;
+  if (values.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email))
     errors.email = "Enter a valid email address.";
   if (password.length < 8) errors.password = "Password must be at least 8 characters.";
   if (!errors.email) {
@@ -93,7 +94,8 @@ export async function deleteNote(formData: FormData): Promise<void> {
 export async function updateName(_: FormState, formData: FormData): Promise<FormState> {
   const user = await requireUser();
   const values = { name: field(formData, "name") };
-  if (!values.name) return { errors: { name: "Name is required." }, values };
+  const invalidName = nameError(values.name);
+  if (invalidName) return { errors: { name: invalidName }, values };
   await db.update(users).set(values).where(eq(users.id, user.id));
   await updateSessionUser({ ...user, ...values });
   // The header of every page shows the name.
