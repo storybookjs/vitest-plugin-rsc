@@ -739,7 +739,7 @@ A browser has a `window`, and a `fetch` that Next has not patched. A browser can
 - `fetch`, `Request` and `Response` are the server's, even when they are written as `globalThis.fetch`. So a `fetch` in your server code is the one Next patches: two calls for the same URL in one render are one request. The browser still makes the request, so its rules for a request apply, like CORS.
 - `AbortController` and `AbortSignal` are the server's too, of the same web APIs as its streams, which Next pipes a response with a signal of its own: in a browser they are the page's, and in a worker of Node.js the runtime's, not the DOM's, which Bun's native `pipeTo()` takes no signal of.
 
-Apart from `setImmediate` and `clearImmediate`, which become the server's, nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the browser's `window` here.
+Apart from `setImmediate`, `clearImmediate`, `setTimeout` and `clearTimeout`, which become the server's, nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the browser's `window` here.
 
 The async functions in the source files of the `rsc` layer are compiled as well, to keep the stores of `AsyncLocalStorage` across an `await`: see [The Scope Of A Cached Function](#the-scope-of-a-cached-function). Not in a worker of Node.js, whose own `AsyncLocalStorage` keeps them.
 

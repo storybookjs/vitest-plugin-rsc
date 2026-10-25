@@ -70,7 +70,7 @@ import { createCommonJsPlugin } from "./commonjs.ts";
 import { esmRequirePlugin } from "./esm-require.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
-import { pageTimersPlugin } from "./page-timers.ts";
+import { pageTimersDefine, pageTimersPlugin } from "./page-timers.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
@@ -1125,7 +1125,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ? []
                 : [
                     instrumentationPlugin(),
-                    serverCode.optimizerPlugin(layer),
+                    ...(layer === "rsc" ? [serverCode.optimizerPlugin()] : []),
                     serverCode.asyncFunctionsOptimizerPlugin(layer),
                   ]),
             ],
@@ -1143,6 +1143,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             transform: {
               define: {
                 ...definesOf(project, layer),
+                // The rewrites of the layer that hold for every dependency.
+                ...(layer === "browser" ? pageTimersDefine : serverCode.optimizerDefine(layer)),
                 ...(layer === "browser" ? serverCode.browserCacheKey : serverCode.cacheKey),
                 ...optimizerCacheKey(project, layer),
                 // A pre-bundle has the stand-ins of `fastCrypto` in it, or not.
