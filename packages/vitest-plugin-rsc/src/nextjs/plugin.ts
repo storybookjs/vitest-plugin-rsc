@@ -417,9 +417,16 @@ function createLayerResolver(
         // layers and the test files, with the speed feature `fastCrypto`: the
         // stand-ins. Not for a dependency whose `browser` field says what it
         // uses for `crypto`, which gets that, as without the option.
-        if (layer !== "browser" && fastCrypto()) {
+        // Not the stand-in's own import of the `node:crypto` it wraps, which
+        // in a worker of Node.js is that name too. And Node's own modules know
+        // no `browser` field.
+        if (layer !== "browser" && fastCrypto() && !importer?.startsWith(fastCryptoPrefix)) {
           const name = fastCryptoModuleOf(source);
-          if (name && (name !== "node-crypto" || browserMapping(source, importer) === undefined)) {
+          const native = nodeModules() === "native";
+          if (
+            name &&
+            (name !== "node-crypto" || native || browserMapping(source, importer) === undefined)
+          ) {
             return fastCryptoPrefix + name;
           }
         }
