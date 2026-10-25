@@ -14,8 +14,3 @@ export { HeadManagerContext } from "next/dist/shared/lib/head-manager-context.sh
 
 /** Next's client entry, which reads the Flight payload in the document as it loads. */
 export const loadAppIndex = () => import("next/dist/client/app-index");
-
-// What client.tsx reads a `redirect()` in the Flight payload of a page with,
-// for a page of a kept app that loads by its payload alone: `redirectURL()`.
-export { getURLFromRedirectError } from "next/dist/client/components/redirect";
-export { isRedirectError } from "next/dist/client/components/redirect-error";
