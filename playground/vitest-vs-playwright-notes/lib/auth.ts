@@ -6,13 +6,13 @@ import { db } from "./db.ts";
 import { sessions, users } from "./schema.ts";
 import {
   readUserCookie,
+  SESSION_COOKIE,
+  sessionCookies,
   signUserCookie,
   USER_COOKIE,
   USER_COOKIE_MAX_AGE,
   type SessionUser,
 } from "./session-cookie.ts";
-
-export const SESSION_COOKIE = "session";
 
 const cookieOptions = { httpOnly: true, sameSite: "lax", path: "/" } as const;
 const userCookieOptions = { ...cookieOptions, maxAge: USER_COOKIE_MAX_AGE };
@@ -54,8 +54,8 @@ export async function startSession(user: SessionUser): Promise<void> {
   const token = crypto.randomUUID();
   await db.insert(sessions).values({ token, userId: user.id });
   const jar = await cookies();
-  jar.set(SESSION_COOKIE, token, cookieOptions);
-  jar.set(USER_COOKIE, await signUserCookie(token, user), userCookieOptions);
+  for (const { name, value, maxAge } of await sessionCookies(token, user))
+    jar.set(name, value, { ...cookieOptions, maxAge });
 }
 
 /** The user cookie anew, after the user changed. */

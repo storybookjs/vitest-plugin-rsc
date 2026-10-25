@@ -6,6 +6,7 @@ import type { User } from "./schema.ts";
 // missing, stale or of another session. Signing out ends both cookies; a
 // session deleted elsewhere lasts in this browser until its cookie is stale.
 
+export const SESSION_COOKIE = "session";
 export const USER_COOKIE = "session_user";
 export const USER_COOKIE_MAX_AGE = 5 * 60;
 
@@ -81,4 +82,18 @@ export async function readUserCookie(
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- What signUserCookie() signed.
   const payload = JSON.parse(new TextDecoder().decode(bytes)) as Payload;
   return payload.token === token && payload.expires > Date.now() ? payload.user : undefined;
+}
+
+export type SessionCookie = { name: string; value: string; maxAge?: number };
+
+/**
+ * The cookies of a session, as signing in leaves them in the browser: its
+ * token, and its user signed. The sign-in of the app and the helpers of the
+ * tests set these, so a test signs in as a user of the app does.
+ */
+export async function sessionCookies(token: string, user: SessionUser): Promise<SessionCookie[]> {
+  return [
+    { name: SESSION_COOKIE, value: token },
+    { name: USER_COOKIE, value: await signUserCookie(token, user), maxAge: USER_COOKIE_MAX_AGE },
+  ];
 }
