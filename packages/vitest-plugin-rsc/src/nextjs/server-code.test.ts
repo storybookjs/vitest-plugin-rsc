@@ -74,6 +74,19 @@ test("reads fetch, Request and Response from the server", async () => {
   );
 });
 
+test("makes its abort controllers and signals with the server's", async () => {
+  class ServerAbortController {}
+  const ServerAbortSignal = { timeout: () => "server signal" };
+  vi.stubGlobal("__server__", {
+    AbortController: ServerAbortController,
+    AbortSignal: ServerAbortSignal,
+  });
+  expect(await run(`var result = new AbortController().constructor.name;`)).toBe(
+    "ServerAbortController",
+  );
+  expect(await run(`var result = AbortSignal.timeout(1);`)).toBe("server signal");
+});
+
 test("has React's Flight server in the rsc layer queue a microtask with the server's queueMicrotask", async () => {
   const serverCode = createServerCode(registry);
   const compile = async (layer: "rsc" | "ssr", file: string) =>

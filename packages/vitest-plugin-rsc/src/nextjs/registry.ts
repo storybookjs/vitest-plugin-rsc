@@ -115,6 +115,9 @@ export type NextRegistry = {
   fetch: typeof fetch;
   /** The network itself: no request of it is the app's, and Next caches none. */
   network: typeof fetch;
+  /** Those of the server's web APIs, whose streams take their signals. */
+  AbortController: typeof AbortController;
+  AbortSignal: typeof AbortSignal;
   /** Node's, for Next's server: a task after the microtasks. Not globals. */
   setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
   clearImmediate(id: unknown): void;

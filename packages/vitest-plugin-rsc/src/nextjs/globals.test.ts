@@ -1,7 +1,16 @@
 import { afterAll, expect, test, vi } from "vitest";
 
+// The host's web APIs of the server, which are not the page's, as in a DOM of
+// Node.js.
+const serverAbort = vi.hoisted(() => ({
+  AbortController: class ServerAbortController {},
+  AbortSignal: class ServerAbortSignal {},
+}));
 vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
-  default: { serverWebApis: globalThis, fromPage: (init: unknown) => init },
+  default: {
+    serverWebApis: Object.assign(Object.create(globalThis), serverAbort),
+    fromPage: (init: unknown) => init,
+  },
 }));
 vi.mock("virtual:vitest-plugin-rsc/next-env", () => ({
   default: { ASSIGNED_FIRST: "of-the-env", NOT_ASSIGNED: "of-the-env" },
@@ -19,6 +28,13 @@ test("fills the env of the run into the names that the page's process.env does n
 
   expect(process.env.ASSIGNED_FIRST).toBe("of-the-page");
   expect(process.env.NOT_ASSIGNED).toBe("of-the-env");
+});
+
+test("gives the server code the host's abort controller and signal of the server", async () => {
+  const { registry } = await import("./registry.ts");
+  await import("./globals.ts");
+  expect(registry.AbortController).toBe(serverAbort.AbortController);
+  expect(registry.AbortSignal).toBe(serverAbort.AbortSignal);
 });
 
 test("the bytes of a form decode the same at every call, as Node's Buffer decodes them", async () => {
