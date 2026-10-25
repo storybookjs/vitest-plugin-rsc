@@ -8,6 +8,8 @@ vi.mock("./client-graph.ts", () => ({}));
 vi.mock("./document.ts", () => ({}));
 vi.mock("./server-layers.ts", () => ({}));
 vi.mock("../utils.ts", () => ({}));
+// An app with a `basePath`.
+vi.mock("virtual:vitest-plugin-rsc/next-manifest", () => ({ routing: { basePath: "/shop" } }));
 
 beforeEach(() => {
   // Before `page.ts` evaluates: it keeps the timers it finds, as a test's
@@ -117,4 +119,21 @@ test("stops waiting for a page that does not stop starting, and releases it once
   page.defer(() => released.push("root"));
   started();
   await vi.waitFor(() => expect(released).toEqual(["root", "runner"]));
+});
+
+test("has a redirect of a Flight payload go under the app's base path, as Next's 307 of a document does", async () => {
+  const { redirectOf } = await import("./page.ts");
+  // The URL of a `redirect()`, which its digest names: see `redirectURL()` of client.tsx.
+  const client = { redirectURL: (digest: string) => digest.split(";")[2] };
+  const payload = (...rows: string[]) => new TextEncoder().encode(rows.join("\n"));
+  const redirect = (url: string) =>
+    `1:E${JSON.stringify({ digest: `NEXT_REDIRECT;replace;${url};307;` })}`;
+
+  expect(redirectOf(payload('0:"$L1"', redirect("/sign-in?next=%2Fnotes")), client)).toBe(
+    "/shop/sign-in?next=%2Fnotes",
+  );
+  expect(redirectOf(payload(redirect("https://example.com/out")), client)).toBe(
+    "https://example.com/out",
+  );
+  expect(redirectOf(payload('2:E{"digest":"1234"}'), client)).toBeUndefined();
 });
