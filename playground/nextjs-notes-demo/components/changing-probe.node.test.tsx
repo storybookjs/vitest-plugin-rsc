@@ -17,31 +17,14 @@ declare module "vitest" {
 }
 
 const file = "components/changing-label.ts";
-const changeLabel = async (label: string) => {
-  step(`change to ${label}`);
-  await fileChanged(file, `export const label = ${JSON.stringify(label)};`);
-  step(`changed to ${label}`);
-};
+const changeLabel = (label: string) =>
+  fileChanged(file, `export const label = ${JSON.stringify(label)};`);
 // What is in the file again, for the dev server.
 afterAll(() => fileChanged(file));
 
 // Without the server's HTML: the ssr layer renders the Client Component as it
 // was, and the page would hydrate that with the module of now.
-const started = performance.now();
-const step = (name: string) =>
-  process.stderr.write(
-    `[probe-debug] ${Math.round(performance.now() - started)} ms ${name}: ${document.body.textContent?.slice(-200)}\n`,
-  );
-const open = async () => {
-  step("open");
-  try {
-    await renderServer({ url: "/changing-probe", ssr: false });
-  } catch (error) {
-    step(`open failed ${String(error)}`);
-    throw error;
-  }
-  step("opened");
-};
+const open = () => renderServer({ url: "/changing-probe", ssr: false });
 
 const shows = (label: string) => `Client Component: ${label}`;
 
