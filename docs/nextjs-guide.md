@@ -822,7 +822,7 @@ A Vitest project without Browser Mode, with `environment: "happy-dom"` or `"jsdo
 - **A database over TCP**: a driver like `pg`, `postgres`, `mysql2` or `mongodb` reaches a real server, or one your setup file starts. The notes demo's TCP project runs the app's own `pg` module against PGlite served over TCP by [`@electric-sql/pglite-socket`](https://www.npmjs.com/package/@electric-sql/pglite-socket), in `vitest.setup.tcp.ts`.
 - **Native addons**, like `sharp`, `bcrypt` or `better-sqlite3`: list the package in `optimizeDeps.exclude` of the project, so that Node.js loads it itself rather than Vite bundling it.
 
-What still differs from `next start`: the test, your server and the page share one process, with its globals, `process.env` and a test's fake timers; a request to your app is a call, not a request over a socket, so code that calls your app's own URL with `http` rather than `fetch` reaches Vite's dev server, not your app; and the [disk](#the-disk-without-browser-mode) is your machine's.
+What still differs from `next start`: the test, your server and the page share one process, with its globals, `process.env` and a test's fake timers; a request to your app is a call, not a request over a socket, so code that calls your app's own URL with `http` rather than `fetch` reaches Vite's dev server, not your app; MSW's `setupServer()` sees the page's `fetch`, but not a `fetch` of your server code, which goes to the network; and the [disk](#the-disk-without-browser-mode) is your machine's.
 
 ### The disk without Browser Mode
 
