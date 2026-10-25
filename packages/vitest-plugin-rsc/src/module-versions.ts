@@ -6,12 +6,14 @@ import type { EnvironmentModuleGraph, EnvironmentModuleNode, ViteDevServer } fro
 // runner that outlives a page load evaluates again what changed: see
 // utils.ts.
 
-// When Vite last invalidated the module, or 0: for a change of its file, or
-// of a module it imports, also through others, and when a plugin says so.
-// Each invalidation takes a new time from Vite's clock, and a change of a
-// file stamps its modules and their importers as Vite sees it, before its
-// HMR does.
-const invalidatedAt = (node: EnvironmentModuleNode) =>
+/**
+ * When Vite last invalidated the module, or 0: for a change of its file, or
+ * of a module it imports, also through others, and when a plugin says so.
+ * Each invalidation takes a new time from Vite's clock, and a change of a
+ * file stamps its modules and their importers as Vite sees it, before its
+ * HMR does.
+ */
+export const invalidatedAt = (node: EnvironmentModuleNode): number =>
   Math.max(node.lastInvalidationTimestamp, node.lastHMRTimestamp);
 
 /** When Vite last invalidated a module of the graph, or 0. */

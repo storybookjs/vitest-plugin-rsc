@@ -2,13 +2,16 @@ import "./compile-cache.ts";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizePath, type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
+import type { TestProject } from "vitest/node";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
+import { ownCodeKey } from "./own-code.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
+import { answerFromTransformCache, invokeEnvironment } from "./transform-cache.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 import {
   answerPage,
@@ -99,18 +102,20 @@ export function vitestPluginRSC(): Plugin[] {
       // Vitest's hook, which awaits what it returns.
       configureVitest: (async ({ project, defineCacheKeyGenerator }: VitestPluginContext) => {
         inNode = hostsPageInNode(project.config);
-        if (!inNode) return;
-        await startWorkerPage(project);
         // Vitest keeps what it compiled on disk for the next run, by a key
-        // without the version of the optimizer's pre-bundles, which it has
-        // turned off without Browser Mode: a module that imports one has
-        // that version in its URL. The key of a module is made once in a
-        // run: a module that imports a pre-bundle that the optimizer bundles
-        // again mid-run, as it finds a dependency, keeps the old version in
-        // its URL until the next run.
+        // without the version of the optimizer's pre-bundles, which a module
+        // that imports one has in its URL, nor the plugin's code, which
+        // compiles the module. The key of a module is made once in a run: a
+        // module that imports a pre-bundle that the optimizer bundles again
+        // mid-run, as it finds a dependency, keeps the old version in its URL
+        // until the next run; a page in a browser gets Vite's in that run
+        // (transform-cache.ts).
         defineCacheKeyGenerator?.(
-          ({ environment }) => environment.depsOptimizer?.metadata.browserHash ?? "",
+          ({ environment }) =>
+            `${environment.depsOptimizer?.metadata.browserHash ?? ""}:${ownCodeKey()}`,
         );
+        if (inNode) await startWorkerPage(project);
+        else if (project.config.browser.enabled) await answerFromTransformCache(project);
       }) as unknown as () => void,
       resolveId(source) {
         if (source !== pageHostId) return;
@@ -153,7 +158,10 @@ export function vitestPluginRSC(): Plugin[] {
           const name = invoke.environment ?? "react_client";
           const environment = server.environments[name];
           return environment && name !== "client"
-            ? describeModule(environment, await environment.hot.handleInvoke(invoke.payload))
+            ? describeModule(
+                environment,
+                await invokeEnvironment(server, environment, invoke.payload),
+              )
             : { error: { message: `No environment "${name}" to run in the page` } };
         });
         answerPageWith(server, versionEvent, ({ environment }: { environment?: string }) =>
@@ -249,13 +257,10 @@ export function vitestPluginRSC(): Plugin[] {
 // whose modules import the plugin's virtual modules. And the worker keeps
 // Node's own web APIs for the server. With Browser Mode, Vitest leaves the
 // environments as they are, and so do these.
-type VitestProject = {
+type VitestProject = TestProject & {
   config: {
-    browser: { enabled: boolean };
-    environment: string;
     environmentOptions?: Record<string, Record<string, unknown> | undefined>;
   };
-  vite: ViteDevServer;
 };
 // What Vitest gives `configureVitest`.
 type VitestPluginContext = {
@@ -332,6 +337,12 @@ function hostsPageInNode(test: TestOptions | undefined): boolean {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// What Vitest compiles where it would have Node.js import the file itself.
+function inline(test: TestOptions, ...patterns: RegExp[]): void {
+  const deps = ((test.server ??= {}).deps ??= {});
+  if (deps.inline !== true) deps.inline = [...(deps.inline ?? []), ...patterns];
+}
+
 function workerPlugins(): Plugin[] {
   // Whether the config is of a page in a worker: then only these do anything.
   let inWorker = false;
@@ -344,20 +355,28 @@ function workerPlugins(): Plugin[] {
         handler(config) {
           const { test } = config as { test?: TestOptions };
           inWorker = hostsPageInNode(test);
-          if (!test || !inWorker) return;
+          if (!test) return;
+          const root = config.root ?? process.cwd();
+          const viteCacheDir = path.resolve(root, config.cacheDir || "node_modules/.vite");
+          if (!inWorker) {
+            // In a browser, the pre-bundles of the page's runners, which
+            // Vitest compiles for them only when it inlines them
+            // (transform-cache.ts): of every environment but `client`, which
+            // the browser imports itself.
+            if (test.browser?.enabled) {
+              inline(test, new RegExp(`^${escapeRegExp(normalizePath(viteCacheDir))}/deps_`));
+            }
+            return;
+          }
           // The pre-bundles of its own: the projects of a root that run in a
           // browser bundle the same dependencies, from other entries.
-          const root = config.root ?? process.cwd();
-          const cacheDir = path.resolve(root, config.cacheDir || "node_modules/.vite", "worker");
-          const deps = ((test.server ??= {}).deps ??= {});
-          if (deps.inline !== true) {
-            deps.inline = [
-              ...(deps.inline ?? []),
-              new RegExp(`^${escapeRegExp(normalizePath(cacheDir))}/`),
-              /\/node_modules\/vitest-plugin-rsc\//,
-              /\/node_modules\/@vitejs\/plugin-rsc\//,
-            ];
-          }
+          const cacheDir = path.resolve(viteCacheDir, "worker");
+          inline(
+            test,
+            new RegExp(`^${escapeRegExp(normalizePath(cacheDir))}/`),
+            /\/node_modules\/vitest-plugin-rsc\//,
+            /\/node_modules\/@vitejs\/plugin-rsc\//,
+          );
           // Node's own web APIs, kept for the server's layers before the DOM
           // replaces them: see worker-web-apis.ts.
           const webApis = pathToFileURL(ownFile("worker-web-apis")).href;
