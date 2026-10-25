@@ -319,6 +319,11 @@ export function checkedVersions(): Promise<string> {
   return checked!;
 }
 
+/** Has the next `checkedVersions()` check again, as a test file starts and ends. */
+export function forgetCheckedVersions(): void {
+  checked = undefined;
+}
+
 type FetchModulePayload = { data: { name: string; data: [string?, string?, FetchOptions?] } };
 type FetchOptions = { cached?: boolean; startOffset?: number };
 

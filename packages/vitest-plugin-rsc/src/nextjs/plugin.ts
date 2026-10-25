@@ -809,10 +809,12 @@ export type VitestPluginNextOptions = ServerCodeOptions &
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
   // oxlint-disable-next-line no-process-env -- The switch of an agent's run, as `CI` is.
   const chosen = resolveSpeedFeatures(options, process.env);
-  // The speed features of this run: the chosen ones, with `fastCrypto` in a
-  // test run of Vitest only, once the `config` hook knows: a static build, or
-  // a dev server of another host, hashes for real.
-  let speedFeatures: SpeedFeatures = { ...chosen, fastCrypto: false };
+  // The speed features of this run: the chosen ones, with `fastCrypto` and
+  // `cacheDevServer` in a test run of Vitest only, once the `config` hook
+  // knows: a static build, or a dev server of another host, hashes for real,
+  // and the page of another host has no test file whose end forgets the
+  // answers of the dev server.
+  let speedFeatures: SpeedFeatures = { ...chosen, fastCrypto: false, cacheDevServer: false };
   let project: NextProject;
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
@@ -952,8 +954,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // config: what tells a test run from a dev server here.
         // oxlint-disable-next-line no-process-env
         const testRun = !isBuild && process.env.VITEST !== undefined;
-        const fastCrypto = chosen.fastCrypto && testRun;
-        speedFeatures = { ...chosen, fastCrypto };
+        speedFeatures = {
+          ...chosen,
+          fastCrypto: chosen.fastCrypto && testRun,
+          cacheDevServer: chosen.cacheDevServer && testRun,
+        };
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
           static: isBuild,

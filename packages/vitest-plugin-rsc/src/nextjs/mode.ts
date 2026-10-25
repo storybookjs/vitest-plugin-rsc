@@ -70,7 +70,8 @@ export type SpeedOptions = {
    */
   flightLoads?: boolean;
   /**
-   * Experimental. Next's `<Link>` and `<Form>` prefetch nothing.
+   * Experimental. Next's router prefetches nothing: not for a `<Link>` or a
+   * `<Form>`, nor for a `router.prefetch()` of the app.
    *
    * Gives up: a test sees no prefetch: no request of one, and no route
    * that renders from what one got.
@@ -94,8 +95,9 @@ export type SpeedOptions = {
    * next change of the document, not after a growing wait: a mutation of the
    * DOM, or an event of what changes without one, like `input` or the `load`
    * of a stylesheet; after 5 ms for what a script sets on a property. Not
-   * with an interval of the poll's own, nor while the test's timers are fake;
-   * an `expect.poll.interval` of the config does not count.
+   * with an interval of the poll's own, nor while the test's timers are fake:
+   * those poll at that interval, or at `expect.poll.interval` of the config,
+   * 5 ms where the config sets none. Else that option does not count.
    *
    * Gives up nothing: it changes when an assertion looks at the DOM, not
    * what it sees. Without it, Vitest waits between the looks, after 0, 20,
@@ -108,11 +110,23 @@ export type SpeedOptions = {
    */
   watchDom?: boolean;
   /**
-   * Experimental. What the dev server answers about the stylesheets and the
-   * modules of a test file is asked once per test file, not for every page.
+   * Experimental. Whether the modules that the page fetched changed is
+   * asked once per test file, not before every page load, and every request
+   * takes the versions of that check for the stylesheets of its route, where
+   * it asks the dev server otherwise. The stylesheets of the host's files,
+   * like what a test file imports, are asked once per test file, not for
+   * every test.
    *
-   * Gives up: an answer that changes while a test file runs, which nothing
-   * does: a change of a file runs the test file again.
+   * In a test run of Vitest only, whose test files end: a dev server of
+   * another host, like `storybook dev`, asks every time.
+   *
+   * Gives up: a change of a file while a test file runs shows at the next
+   * test file, not the next page load, and every test links the stylesheets
+   * of the host's files as they were at the start of the test file. Only a
+   * suite whose tests change files sees it: in watch mode, a change of a
+   * file runs the test file again. On #251 after #268, it took about 7 ms
+   * per test off the notes benchmark in fidelity mode: the dev server's
+   * answers in navigations and Server Actions.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */

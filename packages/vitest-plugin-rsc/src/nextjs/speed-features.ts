@@ -1,3 +1,4 @@
+import { forgetCheckedVersions } from "../utils.ts";
 import type { SpeedFeature } from "./mode.ts";
 import { registry } from "./registry.ts";
 
@@ -6,11 +7,12 @@ import { registry } from "./registry.ts";
 // the options of the features decide: see `SpeedOptions` in mode.ts.
 //
 // What the dev server answers about the files of a test, like the
-// stylesheets of a route or whether a module changed, does not change while
-// a test file runs: a change of a file runs the file again. So with
-// `cacheDevServer` an answer is kept until the test file ends, where it is
-// asked for again for every page and every test otherwise. The caches are
-// the registry's, as the layers that ask are module graphs of their own.
+// stylesheets of the host's files or whether a module changed, seldom changes
+// while a test file runs: in watch mode a change of a file runs the file
+// again. So with `cacheDevServer` an answer is kept until the test file ends,
+// where it is asked for again for every page and every test otherwise. The
+// caches are the registry's, as the layers that ask are module graphs of their
+// own.
 
 const caches = () => (registry.testFileCaches ??= new Set());
 
@@ -43,6 +45,7 @@ export function oncePerTestFile<T>(
 /** Forgets the answers of `oncePerTestFile()`, as a test file ends. */
 export function forgetTestFileAnswers(): void {
   for (const cache of caches()) cache.clear();
+  forgetCheckedVersions();
 }
 
 // Vitest's `expect.element()` looks for an element that is not there yet
@@ -141,7 +144,9 @@ export function findOnEveryChange(locator: object): void {
 // click sets. With `watchDom` every call after the first waits for the next
 // change of the document since the call before instead. Not while the test's
 // timers are fake, which Vitest advances by the interval between the calls,
-// nor with an interval of the caller's: those keep Vitest's.
+// nor with an interval of the caller's: those keep Vitest's poll, at the
+// caller's interval or the config's, which the plugin sets to 5 ms where the
+// config has none (plugin.ts).
 const pollsOnEveryChange = Symbol.for("vitest-plugin-rsc:poll-on-every-change");
 
 type Poll = (this: unknown, fn: (...args: unknown[]) => unknown, options?: object) => unknown;

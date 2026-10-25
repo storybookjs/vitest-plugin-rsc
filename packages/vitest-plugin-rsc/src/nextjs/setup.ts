@@ -26,8 +26,10 @@ export async function setUpTestFiles(setupFiles: readonly string[]): Promise<voi
   // Vitest evaluates a setup file again before every test file, also one whose
   // tests are all skipped. So the files with `"use client"` are evaluated again
   // for the next file, as Vitest evaluates them, and the CSS of a test file
-  // goes once the next file starts.
+  // goes once the next file starts. So do the answers of the dev server of the
+  // file before, also when an `afterAll` of its own failed before the one below.
   forgetClientFiles();
+  forgetTestFileAnswers();
 
   // The node of a test has the stylesheets of the files that render it: the
   // setup files, in the order of the config, and the test file, which Vitest
