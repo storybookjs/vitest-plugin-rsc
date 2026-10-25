@@ -72,6 +72,18 @@ function withConfiguredSourceConditions(
 // `vitest-plugin-rsc-encryption-key`, in base64.
 const encryptionKey = JSON.stringify("dml0ZXN0LXBsdWdpbi1yc2MtZW5jcnlwdGlvbi1rZXk=");
 
+// `node:async_hooks` is this package's `async-hooks`, in every layer. Vite's
+// dependency optimizer takes an aliased bare import for a dependency of its
+// own, whatever imports it, also a file of this package: unless the
+// optimizers of the page exclude it, the first module to import it with a
+// cold cache has Vite pre-bundle again and reload the page, which then has no
+// runner for the tests.
+const asyncHooks = {
+  "node:async_hooks": "vitest-plugin-rsc/async-hooks",
+  async_hooks: "vitest-plugin-rsc/async-hooks",
+};
+const asyncHooksIds = Object.keys(asyncHooks);
+
 // The host of the page, see page-host.ts: a browser, or without Vitest's
 // Browser Mode a worker of Node.js. By the file of this package that is the
 // one, in `src` or in `dist`.
@@ -201,12 +213,7 @@ export function vitestPluginRSC(): Plugin[] {
       },
       config(config) {
         return {
-          resolve: {
-            alias: {
-              "node:async_hooks": "vitest-plugin-rsc/async-hooks",
-              async_hooks: "vitest-plugin-rsc/async-hooks",
-            },
-          },
+          resolve: { alias: asyncHooks },
           environments: {
             client: {
               keepProcessEnv: false,
@@ -230,7 +237,7 @@ export function vitestPluginRSC(): Plugin[] {
                   vendoredFlight("server.edge"),
                   vendoredFlight("client.edge"),
                 ],
-                exclude: ["vite", "vitest-plugin-rsc", "@vitejs/plugin-rsc"],
+                exclude: ["vite", "vitest-plugin-rsc", "@vitejs/plugin-rsc", ...asyncHooksIds],
               },
             },
             react_client: {
@@ -253,7 +260,7 @@ export function vitestPluginRSC(): Plugin[] {
                   "react/jsx-dev-runtime",
                   vendoredFlight("client.browser"),
                 ],
-                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
+                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc", ...asyncHooksIds],
               },
             },
           },
