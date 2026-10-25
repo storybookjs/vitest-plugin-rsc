@@ -38,6 +38,8 @@ const pendingInvokes = new Map<string, PendingInvoke>();
 // What the page listens to the server with: the socket brings the news and
 // the answers in the order the server sent them.
 const listeners = new Set<PageNews>();
+// The page's own, before a browser context of the plugin's replaces it.
+const pageFetch = globalThis.fetch;
 
 const browserHost: PageHost = {
   request: requestOverWebSocket,
@@ -46,6 +48,7 @@ const browserHost: PageHost = {
   },
   navigation: (window as { navigation?: EventTarget }).navigation,
   loadsStylesheets: true,
+  serverFetch: (input, init) => pageFetch(input, init),
   compileInPage: (params, body) => new AsyncFunction(...params, body),
   // No browser hands over what a page sends.
   interceptRequests: () => false,

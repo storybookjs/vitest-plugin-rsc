@@ -42,6 +42,16 @@ export type PageHost = {
    */
   readonly loadsStylesheets: boolean;
   /**
+   * The server's `fetch` to the network, as Node's is Next's on `next start`.
+   * In a browser the page's own, as the page loads, before the plugin puts
+   * one of its own in its place (nextjs/browser-context.ts): a mock of the
+   * network there is a service worker. In a worker of Node.js with a window
+   * of its own, the worker's global at each call, so a mock that patches it
+   * after the page loaded, like MSW's `setupServer()`, sees the server's
+   * requests.
+   */
+  serverFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  /**
    * Compiles `body` as the body of an async function of `params` in the
    * page's realm, whose globals are the window's: for the modules of the
    * browser layer (utils.ts). In a browser the page's own realm, which the

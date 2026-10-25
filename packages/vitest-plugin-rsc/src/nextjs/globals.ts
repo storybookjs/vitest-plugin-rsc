@@ -162,10 +162,10 @@ registry.performWork = (request, performWork) => {
 };
 
 // Next patches the `fetch` of its server to cache and dedupe. That must not
-// be the `fetch` of the page, which is the browser's.
-const nativeFetch = globalThis.fetch;
-registry.fetch = (input, init) => nativeFetch(input, init);
-registry.network = (input, init) => nativeFetch(input, init);
+// be the `fetch` of the page, which is the browser's: the host's
+// (`serverFetch()` of page-host.ts).
+registry.fetch = (input, init) => pageHost.serverFetch(input, init);
+registry.network = (input, init) => pageHost.serverFetch(input, init);
 
 // Node.js has these as globals. A browser has none of them.
 const scope = globalThis as Record<string, any>;

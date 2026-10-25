@@ -117,12 +117,16 @@ export function nodeHost(
   // the server's platform gives it one (nextjs/globals.ts): the server's own
   // `env`, not the rest of Node's `process`.
   if (realm) (realm as { process?: unknown }).process ??= { env: process.env };
+  // jsdom's global `fetch` is the page's, which the plugin's takes the place
+  // of (nextjs/browser-context.ts): the server keeps the one of now.
+  const jsdomServerFetch = realm ? undefined : globalThis.fetch;
   return {
     request: askOverWorkerChannel,
     modules: vitestModules(),
     // The DOM has no Navigation API: see navigation-shim.ts.
     navigation: createNavigation(window),
     loadsStylesheets: false,
+    serverFetch: (input, init) => (jsdomServerFetch ?? globalThis.fetch)(input, init),
     // Laid out as `new AsyncFunction()` lays it out: see page-host.ts.
     compileInPage(params, body) {
       if (!realm) return new AsyncFunction(...params, body);
