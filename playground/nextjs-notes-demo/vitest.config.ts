@@ -6,6 +6,7 @@ import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type Mode, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { fileChangeService } from "../test-helpers/file-change-service.ts";
 import { setup as buildStorybookFramework } from "../test-helpers/storybook-framework.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
@@ -73,9 +74,13 @@ const browserProject = (name: string, mode: Mode) =>
         build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
         mode,
       }),
+      // For components/changing-probe.test.tsx.
+      fileChangeService(),
     ],
     test: {
       name,
+      // For components/changing-probe.test.tsx and test/page-leaks.test.tsx.
+      provide: { mode },
       include: ["**/*.test.{ts,tsx}"],
       // e2e/ runs Storybook: see vitest.storybook.config.ts. A `.node.test`
       // file is the node project's.
@@ -98,15 +103,17 @@ const browserProject = (name: string, mode: Mode) =>
       // `expect.element()` waits until the test's own timeout.
       expect: { poll: { timeout: 10_000 } },
       setupFiles: ["./vitest.setup.ts"],
-      provide: { mode },
     },
   });
 
 // The tests of the app in a Node.js worker, with happy-dom or jsdom for the
 // document, where the browser projects run in Chromium, in fidelity mode, as
 // the benchmark's columns of a DOM of Node.js run in fast mode. The same plugins: without
-// Browser Mode the plugin is the page's host itself (SB-2419).
-const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
+// Browser Mode the plugin is the page's host itself (SB-2419). With
+// `cacheDevServer` a page load asks the dev server nothing of its modules,
+// and the page takes the news of a change, which the host hears on a stream
+// of its own: see components/changing-probe.node.test.tsx.
+const nodeProject = (name: string, environment: "happy-dom" | "jsdom", cacheDevServer: boolean) =>
   defineProject({
     root,
     envPrefix: ["VITE_", "CI"],
@@ -127,10 +134,14 @@ const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
         // Testing Library, which the tests query the page with, where the
         // browser projects have `vitest/browser`: it asks for `document`.
         browserModules: ["**/node_modules/@testing-library/**"],
+        cacheDevServer,
       }),
+      // For components/changing-probe.node.test.tsx.
+      fileChangeService(),
     ],
     test: {
       name,
+      provide: { cacheDevServer },
       // test/page-leaks.test.tsx runs in Chromium and here alike.
       include: ["**/*.node.test.{ts,tsx}", "test/page-leaks.test.tsx"],
       exclude: ["e2e/**", "node_modules"],
@@ -148,8 +159,8 @@ const nodeProject = (name: string, environment: "happy-dom" | "jsdom") =>
   });
 
 export const nextjsNotesProjects = [
-  nodeProject("nextjs-notes-demo-happy-dom", "happy-dom"),
-  nodeProject("nextjs-notes-demo-jsdom", "jsdom"),
+  nodeProject("nextjs-notes-demo-happy-dom", "happy-dom", true),
+  nodeProject("nextjs-notes-demo-jsdom", "jsdom", false),
   browserProject("nextjs-notes-demo-browser", "fidelity"),
   browserProject("nextjs-notes-demo-fast", "fast"),
   // Every story of the app, as a test of Storybook's Vitest addon, which

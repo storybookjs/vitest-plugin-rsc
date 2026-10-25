@@ -1,4 +1,4 @@
-import type { EnvironmentModuleGraph, EnvironmentModuleNode } from "vite";
+import type { EnvironmentModuleGraph, EnvironmentModuleNode, ViteDevServer } from "vite";
 
 // The version of the modules of an environment, and which of them changed
 // after a version, as Vite's module graph has them. A page keeps the modules
@@ -30,4 +30,37 @@ export function changedAfter(graph: EnvironmentModuleGraph | undefined, version:
     if (invalidatedAt(node) > version) changed.push(id);
   }
   return changed;
+}
+
+/**
+ * Calls `changed` with the name of an environment in the microtask after Vite
+ * invalidated modules of it: once, however many modules an invalidation
+ * reaches, like `invalidateAll()` of the optimizer. So before any answer to
+ * the page that has a module of after the invalidation, which the server
+ * sends after an `await`. An answer of the version itself is read off the
+ * graph as it is sent.
+ *
+ * Every invalidation that changes the code of a module goes through the
+ * graph's `invalidateModule()`: for a change of a file that Vite's watcher
+ * sees, one that Vitest's watcher tells the graph of itself, which a plugin
+ * hears of in no hook, the optimizer's, and a plugin's own. So that is where
+ * it is heard. Vite's HMR stamps a module that an update no longer imports
+ * without it: that changes no code, but moves the version of `versionOf()`,
+ * which the page then sees at its next question.
+ */
+export function onInvalidation(server: ViteDevServer, changed: (environment: string) => void) {
+  const pending = new Set<string>();
+  const flush = () => {
+    const environments = [...pending];
+    pending.clear();
+    environments.forEach(changed);
+  };
+  for (const [name, { moduleGraph }] of Object.entries(server.environments)) {
+    const invalidate = moduleGraph.invalidateModule;
+    moduleGraph.invalidateModule = function (...args) {
+      if (pending.size === 0) queueMicrotask(flush);
+      pending.add(name);
+      return invalidate.apply(this, args);
+    };
+  }
 }
