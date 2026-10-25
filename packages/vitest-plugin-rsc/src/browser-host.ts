@@ -33,12 +33,12 @@ let lastAnswer = 0;
 const pendingInvokes = new Map<string, PendingInvoke>();
 // What the page listens to the server with: the socket brings the news and
 // the answers in the order the server sent them.
-let news: PageNews | undefined;
+const listeners = new Set<PageNews>();
 
 const browserHost: PageHost = {
   request: requestOverWebSocket,
   listen: (listener) => {
-    news = listener;
+    listeners.add(listener);
   },
   navigation: (window as { navigation?: EventTarget }).navigation,
   loadsStylesheets: true,
@@ -101,7 +101,7 @@ async function openReactClientWebSocket() {
   socket.addEventListener("close", () => {
     // Also one that closes after the next has opened: it may have missed
     // news.
-    news?.missed();
+    for (const listener of listeners) listener.missed();
     if (webSocket === socket) {
       webSocket = undefined;
     }
@@ -143,7 +143,7 @@ function handleWebSocketMessage(event: MessageEvent) {
   const message = parseMessage(event.data);
   if (message?.type !== "custom" || typeof message.event !== "string") return;
   if (message.event !== answerEvent) {
-    news?.heard(message.event, message.data);
+    for (const listener of listeners) listener.heard(message.event, message.data);
     return;
   }
   const { id, result } = (message.data ?? {}) as { id?: unknown; result?: unknown };

@@ -62,3 +62,15 @@ test("a change while a page loads: the page after it has the modules as they are
 
   await openUntilLabel("During a load");
 });
+
+test("a change at the end of a test", async () => {
+  await open();
+  await changeLabel("Before");
+  await openUntilLabel("Before");
+
+  await changeLabel("Between two tests");
+});
+
+test("the next test of the file has the modules as they are now", async () => {
+  await openUntilLabel("Between two tests");
+});

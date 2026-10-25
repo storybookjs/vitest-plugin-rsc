@@ -166,7 +166,7 @@ export function listenForPage(server: ViteDevServer): Promise<string> {
       return;
     }
     if (listens) {
-      tellPage(server, response);
+      streamNews(server, response);
       return;
     }
     answerRequest(server, request, response).catch((error: unknown) => {
@@ -213,7 +213,7 @@ async function answerRequest(
 
 // The news for a page in a worker of Node.js, from now until it closes: see
 // `pageNewsPath`.
-function tellPage(server: ViteDevServer, response: ServerResponse): void {
+function streamNews(server: ViteDevServer, response: ServerResponse): void {
   const { streams, told } = pages(server);
   response.writeHead(200, { "content-type": "application/x-ndjson", "cache-control": "no-store" });
   response.write(`${JSON.stringify({ told })}\n`);

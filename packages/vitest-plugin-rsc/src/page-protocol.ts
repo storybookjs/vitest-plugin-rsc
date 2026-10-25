@@ -4,7 +4,7 @@
 // and the server answers at `answerEvent` with `{ id, result }`. On the
 // WebSocket of a page in a browser (browser-host.ts), or, for a page in a
 // worker of Node.js, where Vitest has no WebSocket without Browser Mode, a
-// listener of HTTP of the plugin's own (node-host.ts). Names and types only:
+// listener of HTTP of the plugin's own (node-channel.ts). Names and types only:
 // the page imports this file, in a browser too, and the server's side of the
 // channel, with Node's `http`, is page-bridge.ts.
 

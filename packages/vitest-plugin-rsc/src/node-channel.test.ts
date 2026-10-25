@@ -31,8 +31,9 @@ test("hears the news that the dev server told before an answer, before the answe
   expect(heard).toHaveLength(20);
 });
 
-test("holds an answer until the news before it has come on the stream, and hears that it may have missed news once the stream closes", async () => {
-  // A dev server whose answer comes before the news it told before it.
+// A dev server whose answer, which says it told one piece of news before it,
+// comes before that news, which the test writes to the stream.
+async function answerBeforeItsNews(answer: string) {
   let stream: http.ServerResponse | undefined;
   let answered: () => void;
   const sent = new Promise<void>((resolve) => (answered = resolve));
@@ -43,7 +44,7 @@ test("holds an answer until the news before it has come on the stream, and hears
       return;
     }
     response.setHeader(toldHeader, 1);
-    response.end("42", answered);
+    response.end(answer, answered);
   });
   await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
   onTestFinished(() => {
@@ -53,7 +54,18 @@ test("holds an answer until the news before it has come on the stream, and hears
   const { port } = listener.address() as AddressInfo;
   const channel = channelTo(`http://127.0.0.1:${port}`);
   const heard: unknown[] = [];
-  channel.listen({ heard: (event) => heard.push(event), missed: () => heard.push("missed") });
+  channel.listen({ heard: (_, data) => heard.push(data), missed: () => heard.push("missed") });
+  const tell = (...pieces: { told: number; data: unknown }[]) =>
+    stream!.write(
+      pieces
+        .map(({ told, data }) => `${JSON.stringify({ told, event: "changed", data })}\n`)
+        .join(""),
+    );
+  return { channel, heard, sent, tell, stream: () => stream! };
+}
+
+test("holds an answer until the news before it has come on the stream, and hears that it may have missed news once the stream closes", async () => {
+  const { channel, heard, sent, tell, stream } = await answerBeforeItsNews("42");
 
   let answer: unknown;
   const asking = channel.request("ask", {}).then((result) => (answer = result));
@@ -61,11 +73,26 @@ test("holds an answer until the news before it has come on the stream, and hears
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(answer).toBeUndefined();
 
-  stream!.write(`${JSON.stringify({ told: 1, event: "changed", data: 1 })}\n`);
+  tell({ told: 1, data: "changed" });
   await asking;
   expect(answer).toBe(42);
   expect(heard).toEqual(["changed"]);
 
-  stream!.end();
+  stream().end();
   await vi.waitFor(() => expect(heard).toEqual(["changed", "missed"]));
+});
+
+test("says the page missed news when news the server told after an answer comes before the answer is done", async () => {
+  const { channel, heard, sent, tell } = await answerBeforeItsNews("5");
+
+  const asking = channel
+    .request("version", {})
+    .then((result) => heard.push(`answer ${String(result)}`));
+  await sent;
+  // Version 5 and then 6, in one chunk, with the answer of version 5 waiting.
+  tell({ told: 1, data: 5 }, { told: 2, data: 6 });
+  await asking;
+
+  // The page asks again, where it would keep the answer's version 5.
+  expect(heard).toEqual([5, 6, "missed", "answer 5"]);
 });

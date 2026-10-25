@@ -16,7 +16,8 @@ export type PageHost = {
    * Hands `news` what the dev server tells the page unasked, like a change of
    * its modules (`tellPages()` in page-bridge.ts), in order with the answers
    * of `request()`: an answer that the server sent after a piece of news
-   * resolves after `news` heard it. The page's one listener.
+   * resolves after `news` heard it, and a piece of news that the server sent
+   * after an answer comes after the answer resolved, or with `missed()`.
    */
   listen(news: PageNews): void;
   /**
@@ -48,7 +49,10 @@ export type PageHost = {
 export type PageNews = {
   /** A piece of news, at `event`. */
   heard(event: string, data: unknown): void;
-  /** The host may have missed news, like when its connection closed. */
+  /**
+   * The host may have missed news, like when its connection closed, or
+   * brought it before an answer that the server sent before it.
+   */
   missed(): void;
 };
 

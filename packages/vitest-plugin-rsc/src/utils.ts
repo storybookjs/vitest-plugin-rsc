@@ -291,7 +291,8 @@ export function versionOfModules(environment: string): Promise<number> {
   const askedNow = asked;
   const askingNow = asking;
   const answer = pageHost.request(versionEvent, { environment }) as Promise<number>;
-  // Before the next message of the socket, so before a change after it.
+  // Before news of a change after it, which the host brings after the
+  // answer, or says it `missed()`: see `listen()` in page-host.ts.
   const version = answer.then((version) => {
     heardVersions.set(environment, version);
     askedNow.add(environment);

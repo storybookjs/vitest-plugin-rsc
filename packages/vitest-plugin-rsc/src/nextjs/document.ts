@@ -154,9 +154,13 @@ function elementsOf<Tag extends keyof HTMLElementTagNameMap>(
   return Array.from(parent.getElementsByTagName(tag));
 }
 
-// Whether `rel` of `link` has `keyword`, which HTML compares in any case.
+// Whether `rel` of `link` has `keyword`, which HTML compares in any case,
+// between its spaces.
 const hasRel = (link: HTMLLinkElement, keyword: string) =>
-  link.rel.toLowerCase().split(/\s+/).includes(keyword);
+  link.rel
+    .toLowerCase()
+    .split(/[\t\n\f\r ]+/)
+    .includes(keyword);
 
 // The stylesheets in `parent` of a parsed page that the server serves itself,
 // which the page waits for. One of another server may never answer. One that
@@ -357,7 +361,7 @@ export async function loadDocument(
   // request for a file that is not there.
   const urlOf = (element: Element, name: string) => {
     const value = element.getAttribute(name);
-    return value === null ? undefined : URL.parse(value, url)?.href;
+    return value !== null && URL.canParse(value, url) ? new URL(value, url).href : undefined;
   };
   const sources = new Set(elementsOf(page, "script").map((script) => urlOf(script, "src")));
   sources.delete(undefined);

@@ -38,29 +38,50 @@ type News = {
   listen(listener: PageNews): void;
   /** Resolves once the stream is open, which a request waits for. */
   open(): Promise<void>;
-  /** Resolves once the page heard the news that the server told before an answer. */
-  heard(told: number): Promise<void>;
+  /**
+   * Resolves once the page heard the `told` pieces of news that the server
+   * told before an answer, which waits for it.
+   */
+  after(told: number): Promise<void>;
 };
 
 // The news of the dev server, on a stream of its own next to the requests:
 // see `pageNewsPath`. An answer says how many pieces the server had told as
 // it sent it, and waits for those, as a socket would bring them before it.
+// The two connections can bring the other order too: news the server told
+// after an answer heard before the answer is done, as a few lines of news
+// come at once, or the stream is quicker. The page is told it `missed()`
+// news then, and asks again: an answer of its own about what the news is of,
+// a version of the modules, is older than what it heard.
 function listenForNews(url: string): News {
-  let listener: PageNews | undefined;
+  const listeners = new Set<PageNews>();
+  const missed = () => listeners.forEach((listener) => listener.missed());
   let told = 0;
   let waiting: { told: number; resolve: () => void }[] = [];
   let opened: Promise<void> | undefined;
   const release = () => {
     const due = waiting.filter((wait) => wait.told <= told);
     waiting = waiting.filter((wait) => wait.told > told);
+    if (due.some((wait) => wait.told < told)) missed();
     for (const wait of due) wait.resolve();
   };
-  const open = () =>
-    (opened ??= new Promise<void>((resolve, reject) => {
+  const open = () => {
+    if (opened) return opened;
+    const stream: Promise<void> = new Promise<void>((resolve, reject) => {
+      // Only the current stream's: one that went sets none of the next.
+      const gone = (error: Error) => {
+        if (opened !== stream) return;
+        opened = undefined;
+        // The news of the answers that wait will not come: the page asks
+        // again, after every change the server made before.
+        missed();
+        for (const wait of waiting.splice(0)) wait.resolve();
+        reject(error);
+      };
       const request = http.get(url, { agent: false }, (response: IncomingMessage) => {
         if (response.statusCode !== 200) {
           response.resume();
-          reject(
+          gone(
             new Error(`vitest-plugin-rsc: the dev server tells no news: ${response.statusCode}`),
           );
           return;
@@ -68,59 +89,57 @@ function listenForNews(url: string): News {
         let rest = "";
         response.setEncoding("utf8");
         response.on("data", (chunk: string) => {
+          if (opened !== stream) return;
           const lines = (rest + chunk).split("\n");
           rest = lines.pop()!;
           for (const line of lines) {
             const piece = JSON.parse(line) as { told: number; event?: string; data?: unknown };
             told = piece.told;
             if (piece.event === undefined) resolve();
-            else listener?.heard(piece.event, piece.data);
+            else for (const listener of listeners) listener.heard(piece.event, piece.data);
           }
           release();
         });
-        response.on("close", () => {
-          opened = undefined;
-          // The news of the answers that wait will not come: the page asks
-          // again, after every change the server made before.
-          listener?.missed();
-          for (const wait of waiting.splice(0)) wait.resolve();
-          reject(new Error("vitest-plugin-rsc: the news of the dev server closed"));
-        });
+        response.on("close", () =>
+          gone(new Error("vitest-plugin-rsc: the news of the dev server closed")),
+        );
       });
-      request.on("error", (error) => {
-        opened = undefined;
-        reject(error);
-      });
+      request.on("error", gone);
       // Keeps no process running.
       request.on("socket", (socket) => socket.unref());
-    }));
+    });
+    opened = stream;
+    return stream;
+  };
   return {
-    listen: (news) => {
-      listener = news;
+    listen: (listener) => {
+      listeners.add(listener);
     },
     open,
-    heard: (count) =>
-      count <= told || !opened
-        ? Promise.resolve()
-        : new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-              waiting = waiting.filter((wait) => wait !== waited);
-              reject(
-                new Error(
-                  `vitest-plugin-rsc: the dev server told the page ${count} pieces of news before an answer, ` +
-                    `and the page heard ${told} in ${newsTimeout} ms.`,
-                ),
-              );
-            }, newsTimeout);
-            const waited = {
-              told: count,
-              resolve: () => {
-                clearTimeout(timeout);
-                resolve();
-              },
-            };
-            waiting.push(waited);
-          }),
+    after: (count) => {
+      if (!opened) return Promise.resolve();
+      if (count < told) missed();
+      if (count <= told) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          waiting = waiting.filter((wait) => wait !== waited);
+          reject(
+            new Error(
+              `vitest-plugin-rsc: the dev server told the page ${count} pieces of news before an answer, ` +
+                `and the page heard ${told} in ${newsTimeout} ms.`,
+            ),
+          );
+        }, newsTimeout);
+        const waited = {
+          told: count,
+          resolve: () => {
+            clearTimeout(timeout);
+            resolve();
+          },
+        };
+        waiting.push(waited);
+      });
+    },
   };
 }
 
@@ -152,8 +171,8 @@ function post(agent: Agent, url: string, body: string, news: News): Promise<unkn
             return;
           }
           // An answer that says nothing of the news waits for none.
-          const told = Number(response.headers[toldHeader] ?? 0);
-          news.heard(told).then(() => resolve(result), reject);
+          const told = Number(response.headers[toldHeader]) || 0;
+          news.after(told).then(() => resolve(result), reject);
         });
       },
     );
