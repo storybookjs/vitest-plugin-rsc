@@ -1,70 +1,26 @@
 import { expect, test, vi } from "vitest";
-import { answerEvent, invokeEvent, versionEvent } from "./page-protocol.ts";
+import { versionEvent } from "./page-protocol.ts";
 
-// The page's runners of a dev server's environment, without a browser: a
-// socket whose server answers every module from `graph`, with what it
-// imports, as `describeModule()` in index.ts does, and counts what it is
-// asked for.
+// The page's checks of a dev server's modules, without a browser: a host of
+// the page whose server answers the version of the modules of each
+// environment, as `versionOf()` in module-versions.ts does. The question goes
+// through the host, so it is the same in a browser and in Node.js.
+
+// The version of the modules of each environment, by its name.
+const versions = vi.hoisted(() => new Map<string, number>());
 
 vi.mock("virtual:vitest-plugin-rsc/host-modules", () => ({ default: undefined }));
 vi.mock("virtual:vitest-plugin-rsc/layers", () => ({ default: undefined }));
 vi.mock("virtual:vitest-plugin-rsc/vite-client", () => ({}));
+vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
+  default: {
+    async request(event: string, data: { environment: string }) {
+      if (event !== versionEvent) throw new Error(`no answer for ${event}`);
+      return versions.get(data.environment) ?? 1;
+    },
+  },
+}));
 
-const graph: Record<string, string[]> = {
-  "/entry.js": ["/a.js", "/b.js"],
-  "/a.js": ["/b.js"],
-  "/b.js": [],
-};
-const asked: string[] = [];
-// The version of the modules of each environment, by its name.
-const versions = new Map<string, number>();
-
-type Message = {
-  event: string;
-  data: { id: string; environment?: string; payload?: { data: { name: string; data: [string] } } };
-};
-function answer({ event, data }: Message): unknown {
-  if (event === versionEvent) return versions.get(data.environment!) ?? 1;
-  if (event !== invokeEvent) throw new Error(`no answer for ${event}`);
-  const { name, data: args } = data.payload!.data;
-  if (name === "getBuiltins") return { result: [] };
-  const [url] = args;
-  asked.push(url);
-  const code = graph[url]!.map(
-    (imported) => `await __vite_ssr_import__(${JSON.stringify(imported)});`,
-  );
-  return {
-    result: { id: url, url, file: url, code: code.join("\n"), invalidate: false },
-    imports: graph[url],
-  };
-}
-
-class Socket extends EventTarget {
-  static readonly OPEN = 1;
-  readyState = 0;
-  constructor() {
-    super();
-    setTimeout(() => {
-      this.readyState = 1;
-      this.dispatchEvent(new Event("open"));
-    });
-  }
-  send(raw: string) {
-    const message = JSON.parse(raw) as Message;
-    const result = answer(message);
-    setTimeout(() => {
-      const data = JSON.stringify({
-        type: "custom",
-        event: answerEvent,
-        data: { id: message.data.id, result },
-      });
-      this.dispatchEvent(new MessageEvent("message", { data }));
-    });
-  }
-}
-vi.stubGlobal("WebSocket", Socket);
-vi.stubGlobal("window", { location: new URL("http://localhost:63315/") });
-vi.stubGlobal("fetch", async () => Response.json({ token: "t", path: "/socket" }));
 const { checkFetchedModules, checkedVersions } = await import("./utils.ts");
 
 test("checks the versions of the modules the page keeps answers about before a page load", async () => {
