@@ -48,6 +48,13 @@ const dataOfNull = (inputType: string, id: string, events = ["beforeinput", "inp
 
 /** What the package does otherwise in a DOM of Node.js than Playwright in Chromium, by step: what the DOM does otherwise. */
 const expectedDifferences: Record<string, string[]> = {
+  // As in Chromium: a caret the package moves is the page's
+  // `setSelectionRange()`, which fires `select`; React's `onSelect` sees
+  // no selection in jsdom's.
+  "the caret: arrows, Home and End, with Shift": [
+    ...(environment === "jsdom" ? ["- react:onSelect@text"] : []),
+    ...Array.from({ length: 6 }, () => "+ select@text"),
+  ],
   // The label's own click of its checkbox is the DOM's: a `MouseEvent`, of a
   // `detail` of 0 in happy-dom, and no focus.
   "click a label": [

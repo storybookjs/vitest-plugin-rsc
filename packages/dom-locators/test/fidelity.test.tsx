@@ -56,7 +56,12 @@ afterAll(() => tearDown());
  * Playwright's log it has not (`- entry`) and the ones it has that
  * Playwright's has not (`+ entry`). The README's table of events says why.
  */
-const expectedDifferences: Record<string, string[]> = {};
+const expectedDifferences: Record<string, string[]> = {
+  // A caret the package moves, after an edit in the middle of the text or
+  // by an arrow, Home or End, is the page's `setSelectionRange()`, for which
+  // Chrome fires `select`, where it fires none for a key's.
+  "the caret: arrows, Home and End, with Shift": Array.from({ length: 6 }, () => "+ select@text"),
+};
 
 // Playwright's log of each step, in a DOM of Node.js the oracle.
 const recorded: Record<string, string[]> = {};
