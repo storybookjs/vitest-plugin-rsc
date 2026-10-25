@@ -182,7 +182,7 @@ On the benchmark's notes page, with 20 notes, in fast mode, in the benchmark of 
 
 A click of the DOM's own, `element.click()`, takes 0.040 ms, and so does a fill of its own. Vitest's click and fill are Playwright's: each goes from the page to Node.js and back. Its fill takes 8.0 ms on a CI runner, in the benchmark of primitives (the median of 100). The Testing Library column's clicks and fills are `user-event`'s. That primitive hands `user-event` the element, where the click of `dom-locators` first finds it and checks that it's visible and enabled; its queries are faster, and that's where it saves time.
 
-The micro test of `dom-locators`, `packages/dom-locators/test/micro.test.ts` on #255, times each primitive alone on a static copy of the notes page with 20 notes, without Next or React, against Vitest's own in the same run, so its click renders nothing. In µs per call, the median of 5 runs of the test, each the median of 20 batches of 50, at a resolution of 2 µs:
+The micro test of `dom-locators`, `packages/dom-locators/test/micro.test.ts`, times each primitive alone on a static copy of the notes page with 20 notes, without Next or React, against Vitest's own in the same run, so its click renders nothing. In µs per call, the median of 5 runs of the test, each the median of 20 batches of 50, at a resolution of 2 µs:
 
 | primitive                     | Vitest's `page` | `dom-locators` |
 | ----------------------------- | --------------: | -------------: |
@@ -196,7 +196,7 @@ Of a click of `dom-locators`, 30–32 µs are its events: the pointer and mouse 
 
 ### `dom-locators`
 
-`dom-locators`, of [#255](https://github.com/storybookjs/vitest-plugin-rsc/pull/255), on #251, is `page` of `vitest/browser` answered inside the document: the same locators, the same elements in the same order, its waits and its actions, without a round trip to Playwright and without Testing Library. A test of `vitest/browser` changes one import:
+`dom-locators` ([#255](https://github.com/storybookjs/vitest-plugin-rsc/pull/255), on #251) is `page` of `vitest/browser` answered inside the document: the same locators, the same elements in the same order, its waits and its actions, without a round trip to Playwright and without Testing Library. A test of `vitest/browser` changes one import:
 
 ```diff
 - import { page } from "vitest/browser";
@@ -209,7 +209,7 @@ Of a click of `dom-locators`, 30–32 µs are its events: the pointer and mouse 
 
 On the benchmark, the `dom-locators` column takes 2.0 ms per test less than the `user-event` column: 16.26 → 15.25 s, by the median of 5 interleaved rounds, faster in each, on #251 before #262, #264 and #266. All of it is on the page's side. The package's own code cost about 2.2 ms per test on that build, and replaces Vitest's locators, 1.4 ms, and `user-event`, 2.3. In that build's CPU profile (one run, the profiler on, 2.4 ms per test), half of it is the browser's own work that it calls: a focus 0.40, the layout and the style that the visibility check reads 0.35, which Playwright's actions force too, and the dispatch of the events 0.2. Its own JavaScript, 1.1 ms, is mostly its queries; the package's README says what is left of it.
 
-What differs from Playwright's actions: every event is the page's own, so `isTrusted` is `false`, and an action doesn't wait for an element to stop moving or for what covers it to go. The package's README, on #255, has the full table. `dom-locators` is private: the repository's benchmark and playgrounds use it, and it isn't on npm.
+What differs from Playwright's actions: every event is the page's own, so `isTrusted` is `false`, and an action doesn't wait for an element to stop moving or for what covers it to go. The package's README, `packages/dom-locators/README.md`, has the full table. `dom-locators` is private: the repository's benchmark and playgrounds use it, and it isn't on npm.
 
 ### Testing Library's `user-event`
 

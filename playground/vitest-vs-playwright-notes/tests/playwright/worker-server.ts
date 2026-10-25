@@ -103,8 +103,7 @@ export const serverPerWorker: typeof base = base.extend<
   // The tables of the worker's database emptied before each test, the ids
   // from 1 again: the statements at once, one round trip.
   emptyDb: [
-    // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
-    async ({}, use) => {
+    async ({ database: _database }, use) => {
       await db.$client.query(emptyTables);
       await use();
     },

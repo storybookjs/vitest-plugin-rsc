@@ -3,7 +3,7 @@
 How to make the tests of a Next.js App Router app fast: what a test costs, the patterns that make it cheaper with what each gives up, how to find where your own suite spends its time, and what didn't pay. Read it once, before you tune anything. Every number was measured, and its footnote says on what, when and how often. [Fast tests](fast-tests.md) has the full measurements behind most of them.
 
 > [!NOTE]
-> **Status, 25 October 2026.** Fast mode and its features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), not released yet. `dom-locators` (#255) is on #251 too; the host of the page in Node.js (#261 and the PRs on top of it) is on draft pull requests. A pattern that needs one of them says so. Several numbers ran on a build with both merged in; the host in Node.js also changes the browser's side of the plugin, and what that does to a run in Chromium isn't measured on its own.
+> **Status, 25 October 2026.** Fast mode and its features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), not released yet. `dom-locators` (#255) is on #251 too; the host of the page in Node.js (#261 and the PRs on top of it) is on draft pull requests. A pattern that needs the host in Node.js says so. Several numbers ran on a build with both merged in; the host in Node.js also changes the browser's side of the plugin, and what that does to a run in Chromium isn't measured on its own.
 
 - [What costs what](#what-costs-what)
 - [The patterns](#the-patterns)
@@ -156,7 +156,7 @@ export function seedNotes(ownerId: number, list: NewNote[]) {
 }
 ```
 
-With `PLAYWRIGHT_ISOLATION=worker` (#297), the benchmark does the other thing: a server and a database per worker of Playwright, with the reset before each test kept. The table of [the benchmark's README](../playground/vitest-vs-playwright-notes/README.md) has the two side by side. In Vitest every worker has its own database already, and the reset takes 0.30 ms a test, 0.15 s of a run of 500 tests at 1 worker,[^reset] so data per test can win little more than that there; the two haven't run side by side in Vitest yet.
+With `PLAYWRIGHT_ISOLATION=worker` (#297), the benchmark does the other thing: a server and a database per worker of Playwright, and the tables emptied before each test, as before #298. The table of [the benchmark's README](../playground/vitest-vs-playwright-notes/README.md) has the two side by side. In Vitest every worker has its own database already, and the reset takes 0.30 ms a test, 0.15 s of a run of 500 tests at 1 worker,[^reset] so data per test can win little more than that there; the two haven't run side by side in Vitest yet.
 
 **Pin the clock before the database starts.** PGlite's Postgres times its own timeouts with the page's `Date.now()`. A clock pinned months back after the database armed a timeout puts the timeout months away, longer than a `setTimeout()` can wait. In the host in Node.js, Node.js then fires it at once, and Postgres, which sees that it isn't due, arms it again: 4,037 times in one test.[^clock] It's not measured in Chromium. So call `vi.setSystemTime()` at the top of the setup file, before anything imports the database, rather than in a `beforeEach()` after the reset, as the recipes in [Databases](databases.md) still do:
 
@@ -186,7 +186,7 @@ await expect.element(page.getByText("Archived.")).toBeVisible();
 
 Vitest's `page.getByRole(...).click()` sends the click to Playwright, in Node.js, and back: about 50 ms. Testing Library's `user-event` clicks in the page, in 0.12 ms.[^primitives] A test of a few clicks spends more on Playwright's round trips than on everything else it does.
 
-`dom-locators`, of #255, on #251, is Vitest's `page` answered in the document: the same locators, waits and actions, without the round trip. A test changes one import:
+`dom-locators` (#255, on #251) is Vitest's `page` answered in the document: the same locators, waits and actions, without the round trip. A test changes one import:
 
 ```diff
 - import { page } from "vitest/browser";
