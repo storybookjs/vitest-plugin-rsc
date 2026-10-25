@@ -148,8 +148,6 @@ registry.Response = ServerResponse;
 registry.Headers = Headers;
 // The directory of the server's own files, which is the host's: see page-host.ts.
 registry.serverDir = () => pageHost.serverDir;
-// Its `http`, for Next's request handlers: see node-server.ts.
-registry.serverHttp = pageHost.serverHttp;
 // Of the same web APIs as the server's streams, which Next's server pipes
 // with a signal of its own: in a DOM of Node.js the global ones are the
 // DOM's, which Node's streams take and Bun's native `pipeTo()` does not.
