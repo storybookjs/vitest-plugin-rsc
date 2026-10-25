@@ -1,5 +1,5 @@
 import path from "node:path";
-import { normalizePath, type Plugin } from "vite";
+import { normalizePath, type Environment, type Plugin } from "vite";
 import type { Vitest } from "vitest/node";
 
 // Vitest's hook of a plugin of a project.
@@ -9,12 +9,21 @@ type VitestContext = {
 };
 type VitestPlugin = { configureVitest(context: VitestContext): void };
 
+// Where Vitest keeps the module of an id in its cache on disk, by the
+// environment: `vitest.invalidateFile()` forgets it, in every project.
+type ModuleCache = { invalidateCachePath(environment: Environment, id: string): void };
+
 /**
  * Stands in for a change to a file of the app while the tests are watched:
  * the dev server invalidates the modules of the file as Vitest's watcher
  * does for a change. With `content`, that is what the file has from then on
  * for the dev server, which leaves the file as it is. Without, it has what is
  * in the file again.
+ *
+ * In the dev server of the project alone, which `vitest.invalidateFile()`
+ * does in every project: the other projects, which run at the same time,
+ * have the file as it is, and the invalidation would be a change of their
+ * modules, which starts a kept app anew in the middle of a test.
  */
 export function fileChangeService(): Plugin & VitestPlugin {
   const contents = new Map<string, string>();
@@ -37,7 +46,20 @@ export function fileChangeService(): Plugin & VitestPlugin {
         const content = searchParams.get("content");
         if (content === null) contents.delete(changed);
         else contents.set(changed, content);
-        vitest!.invalidateFile(changed);
+        // What `vitest.invalidateFile()` does, in the environments of this
+        // server alone. Where Vitest has its cache of modules elsewhere,
+        // `invalidateFile()` itself: in every project, but no stale module.
+        const cache = (vitest!.cache as unknown as { _modules?: Partial<ModuleCache> })._modules;
+        if (!cache?.invalidateCachePath) {
+          vitest!.invalidateFile(changed);
+        } else {
+          for (const environment of Object.values(server.environments)) {
+            for (const node of environment.moduleGraph.getModulesByFile(changed) ?? []) {
+              environment.moduleGraph.invalidateModule(node);
+              cache.invalidateCachePath(environment, node.id!);
+            }
+          }
+        }
         response.end();
       });
     },
