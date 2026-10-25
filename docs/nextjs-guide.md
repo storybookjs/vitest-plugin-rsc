@@ -798,6 +798,19 @@ Tests within a file run one at a time. [`test.concurrent`](https://vitest.dev/ap
 
 Each worker loads Next's runtime before its first test, so that one's slower. With as many workers as CPU cores, it can even time out. The notes demo sets `maxWorkers: 4` to avoid that.
 
+### A faster start, until Vitest has it
+
+At every start, Vitest's mocker parses each pre-bundled dependency that has an `import()` or a `vi.mock(` in its text, to wrap the `import()`s for its mocks: the page loads hundreds of those chunks, Next's and React's, and a database like PGlite is one of 1.8 MB. On CI, skipping them takes 0.27–0.42 s off a one-file run of the notes benchmark of about 4 s, in the medians of 8 rounds on each of four runners. This repository skips them with [`pnpm patch`](https://pnpm.io/cli/patch) (`patches/@vitest__mocker@5.0.5.patch`, applied through `patchedDependencies` in `pnpm-workspace.yaml`), until Vitest has the change. A `vi.mock()` of a dependency still applies, by the module's URL, and the modules inside a chunk can't be mocked one by one either way. What you give up: an `import()` inside a dependency no longer waits for a `vi.doMock()` that is still on its way to the browser, and a `vi.mock()` inside a pre-bundled dependency isn't hoisted.
+
+To use it in your app with pnpm, copy the patch file and add it to your `pnpm-workspace.yaml`, for the version of `@vitest/mocker` that you have:
+
+```yaml
+patchedDependencies:
+  "@vitest/mocker@5.0.5": patches/@vitest__mocker@5.0.5.patch
+```
+
+Then run `pnpm install --config.optimistic-repeat-install=false` once, so that pnpm installs the patched package. The patch is a small helper, `isOptimizedDepFile()`, and a check of it in the transform of both plugins, `vitest:browser:esm-injector` and `vitest:mocks`, in `dist/node.js`. It pins `@vitest/mocker` 5.0.5: on a bump of Vitest, redo it for the new version with `pnpm patch @vitest/mocker`, or drop it once Vitest has the change.
+
 ## Development or production
 
 By default, Next and React run their development builds, like `next dev`. Set `vitestPluginNext({ build: "production" })` to run them like `next start`: faster, and without dev warnings. It's still experimental.
@@ -821,7 +834,7 @@ VITEST_PLUGIN_RSC_MODE=fast npx vitest
 Fast mode turns on every speed feature. Each is an option of its own, which defaults to `true` in fast mode and `false` in fidelity mode:
 
 - **One app per test file** (`keepApp`). The first page of a test file starts the app, and every `renderServer({ url })` after it renders its page in that app, from its Flight payload, without loading the page. Each page gets a React tree and a router of its own, so the state of a component doesn't carry over from one test to the next. The state of a module does, as in an app that never reloads: a module that keeps a value from the test before has it in the next one. So does what the code of the app added to the `<head>`, like the stylesheets of the pages before, as after a navigation of the app. The page renders on the client, as with `ssr: false`, and so does a page that the app loads itself from it, like after a `<form>` without a Server Action, so a test doesn't see the server's HTML or a hydration mismatch. A test that asserts on them passes `renderServer({ url, ssr: true })` and gets a page load of its own. In development, the page has no dev overlay.
-- **Page loads without a document** (`flightLoads`). A page of the kept app loads with the request Next's router sends for a page, for its Flight payload alone, so the server renders no HTML for it. Its `response` in what `renderServer()` returns is that one: `text/x-component`, not the document. The head has no `<meta name="next-size-adjust">` of `next/font`, and a page that the test leaves while it loads stops rendering on the server: a test of a render that outlives its page passes `ssr: true`. A page whose render throws, like one that calls `redirect()` or `notFound()`, loads as a document after all, with the status and the response of that document. The server then handles that page twice, with the cookies the first response set.
+- **Page loads without a document** (`flightLoads`). A page of the kept app loads with the request Next's router sends for a page, for its Flight payload alone, so the server renders no HTML for it. Its `response` in what `renderServer()` returns is that one: `text/x-component`, not the document. The head has no `<meta name="next-size-adjust">` of `next/font`, and a page that the test leaves while it loads stops rendering on the server: a test of a render that outlives its page passes `ssr: true`. The server handles each page once. A page whose render calls `redirect()`, Suspense or not, loads as its target, as a browser follows the 307 of a document: its `response` is the target's Flight response, with `redirected` and the final URL, and a redirect to another origin throws, as in fidelity mode. A `notFound()` or an error renders its boundary from the payload, with the status 200 of the Flight response: the 404 or the 500 of a render that fails before any of the document is out is not there, as it is not with `keepApp` alone.
 - **No prefetching** (`skipPrefetch`). `<Link>` and `<Form>` don't prefetch.
 - **No delay between the steps of a render** (`immediates`). The server doesn't wait the few milliseconds a browser adds to a timeout of `0` between the steps of a render, unless the test fakes the timers.
 - **Less waiting for the DOM** (`watchDom`). `expect.element()` looks for an element again on every change of the DOM, and `expect.poll()` every 5 ms, unless your config sets `expect.poll.interval`.
@@ -836,6 +849,24 @@ vitestPluginNext({ mode: "fidelity", watchDom: true });
 ```
 
 A suite that passes in fast mode should pass in fidelity mode too. CI tells you when it doesn't.
+
+## Start sooner on Bun
+
+A run of one test file is mostly startup. [Bun](https://bun.sh) can run Vitest's own process, with Vite and Playwright, while your tests still run in the browser. On the notes app of `playground/vitest-vs-playwright-notes` (where `pnpm test:vitest` runs on Bun), a run of one file took 10.4 s with `pnpm exec vitest run` and 7.6 s with `bun --bun vitest run`; once the tests run, they take the same time. About 1.1 s of that is `pnpm exec` itself, which `./node_modules/.bin/vitest` skips on Node.js too.
+
+```bash
+bun --bun vitest run --configLoader native
+```
+
+`--configLoader native` has Bun import the config file itself, rather than Vite bundle it first.
+
+Give Bun a dependency cache of its own in your Vitest config. Vite's hash of the config includes its functions as text, which Bun prints differently from Node.js, so each runtime would find the other's cache stale and optimize the dependencies again:
+
+```ts
+cacheDir: process.versions.bun ? "node_modules/.vite-bun" : undefined,
+```
+
+Vitest is made for Node.js, not Bun, so keep a run on Node.js in CI.
 
 ## Watch mode
 
