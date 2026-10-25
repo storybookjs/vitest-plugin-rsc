@@ -10,14 +10,12 @@ env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/postgres";
 // `renderServer()` waits for the page to hydrate. `next build` needs it too.
 env.__NEXT_TEST_MODE ??= "1";
 const port = 3300;
-// With PLAYWRIGHT_ISOLATION=worker, each worker runs its own `next start`, on
-// port 3300 + its index, on a database of its own: tests/playwright/
+// With PLAYWRIGHT_ISOLATION=worker, each worker runs its own server, on port
+// 3300 + its index, on a database of its own: tests/playwright/
 // worker-server.ts. A worker evaluates this file with its index before the
 // test files import lib/db.ts, which connects test/db.ts to DATABASE_URL.
 const perWorker = env.PLAYWRIGHT_ISOLATION === "worker";
-if (perWorker && env.PLAYWRIGHT_SERVER === "dev") {
-  throw new Error("PLAYWRIGHT_ISOLATION=worker runs `next start`: each `next dev` writes .next");
-}
+const dev = env.PLAYWRIGHT_SERVER === "dev";
 if (perWorker && env.TEST_PARALLEL_INDEX) {
   const database = new URL(env.DATABASE_URL);
   database.pathname = `/notes_w${env.TEST_PARALLEL_INDEX}`;
@@ -30,8 +28,9 @@ export default defineConfig({
   globalSetup: perWorker ? undefined : "./tests/playwright/global-setup.ts",
   // One worker: the tests share one database, which each empties first, as
   // each Vitest test empties its own. With a database per worker, any number,
-  // and the tests of a file in parallel too.
-  workers: perWorker ? undefined : 1,
+  // and the tests of a file in parallel too; but one `next dev`, which writes
+  // .next.
+  workers: perWorker && !dev ? undefined : 1,
   fullyParallel: perWorker,
   forbidOnly: Boolean(env.CI),
   reporter: "list",
@@ -43,7 +42,7 @@ export default defineConfig({
         // `next start` after `next build`, or `next dev` with
         // `PLAYWRIGHT_SERVER=dev`: as Vitest runs Next in production or in
         // development.
-        command: `pnpm ${env.PLAYWRIGHT_SERVER === "dev" ? "dev" : "start"} --port ${port}`,
+        command: `pnpm ${dev ? "dev" : "start"} --port ${port}`,
         port,
         reuseExistingServer: !env.CI,
         env: { DATABASE_URL: env.DATABASE_URL, __NEXT_TEST_MODE: env.__NEXT_TEST_MODE },

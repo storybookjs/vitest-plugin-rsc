@@ -9,15 +9,16 @@ import { Client } from "pg";
 import { db } from "#lib/db.ts";
 
 // With PLAYWRIGHT_ISOLATION=worker, each Playwright worker serves the app
-// itself: a `next start` of the one `next build`, on a port of its own, on a
-// database of its own, made from lib/schema.sql as the worker starts and
-// dropped as it stops. Its tests still empty that database before each test
-// (test.ts), so they keep their ids and counts, on any number of workers and
-// in any order.
+// itself: a `next start` of the one `next build`, or `next dev` with
+// PLAYWRIGHT_SERVER=dev, on a port of its own, on a database of its own,
+// made from lib/schema.sql as the worker starts and dropped as it stops. Its
+// tests still empty that database before each test (test.ts), so they keep
+// their ids and counts, on any number of workers and in any order.
 
 // oxlint-disable-next-line no-process-env
 const env = process.env;
 export const perWorker = env.PLAYWRIGHT_ISOLATION === "worker";
+const command = env.PLAYWRIGHT_SERVER === "dev" ? "dev" : "start";
 
 const app = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -26,6 +27,9 @@ export const serverPerWorker: typeof base = base.extend<object, { server: string
   server: [
     // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
     async ({}, use, workerInfo) => {
+      if (command === "dev" && workerInfo.config.workers > 1) {
+        throw new Error("`next dev` runs on 1 worker: each `next dev` writes the one .next");
+      }
       // The port of the config's baseURL, plus the worker's index.
       const origin = new URL(workerInfo.project.use.baseURL!);
       const port = Number(origin.port) + workerInfo.parallelIndex;
@@ -43,7 +47,7 @@ export const serverPerWorker: typeof base = base.extend<object, { server: string
       await run(postgres, drop, `CREATE DATABASE "${name}"`);
       await run(database, await readFile(`${app}/lib/schema.sql`, "utf8"));
 
-      const server = spawn("node_modules/.bin/next", ["start", "--port", String(port)], {
+      const server = spawn(`${app}/node_modules/.bin/next`, [command, "--port", String(port)], {
         cwd: app,
         env: { ...env, DATABASE_URL: database.href },
         stdio: ["ignore", "ignore", "inherit"],
@@ -83,7 +87,7 @@ async function run(database: URL, ...statements: string[]): Promise<void> {
 async function listening(server: ChildProcess, port: number): Promise<void> {
   while (!(await accepts(port))) {
     if (server.exitCode !== null) {
-      throw new Error(`\`next start\` on port ${port} exited with code ${server.exitCode}`);
+      throw new Error(`\`next ${command}\` on port ${port} exited with code ${server.exitCode}`);
     }
     await sleep(50);
   }
