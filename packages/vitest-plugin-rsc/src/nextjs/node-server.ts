@@ -47,7 +47,6 @@ function createNodeRequest(request: ServerRequest) {
   });
 }
 
-export type { Writing };
 const writings = new WeakMap<Response, Writing>();
 /** How the body of a response of `handleRequest()` is written, if it has one. */
 export const writingOf = (response: Response): Writing | undefined => writings.get(response);

@@ -13,7 +13,10 @@ import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-li
 const screen = () => within(document.body);
 const happyDom = "happyDOM" in window;
 
-const answer = (text: string) => screen().findByText(`answer: ${text}`);
+// The first request of a route handler compiles it, which takes longer than
+// the second that `findByText()` waits by default on a busy machine.
+const answer = (text: string) =>
+  screen().findByText(`answer: ${text}`, undefined, { timeout: 5_000 });
 
 test("a fetch of a Client Component reaches a route handler, with the cookies the app set", async () => {
   await renderServer({ url: "/request-probe" });

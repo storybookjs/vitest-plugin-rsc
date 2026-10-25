@@ -96,6 +96,7 @@ test("the response of a HEAD has no body", async () => {
   );
   expect(response.status).toBe(200);
   expect(response.body).toBe(null);
+  await writingOf(response)!.written;
 });
 
 test("each Set-Cookie of a route handler is a header of its own", async () => {
@@ -172,4 +173,67 @@ test("a body that the page cancels takes nothing more of what Node had read", as
     await response.body!.cancel();
     await writingOf(response)!.written;
   }
+});
+
+test("a request that the page leaves before its head fails once Next's handler is done with it", async () => {
+  const page = new AbortController();
+  let done = false;
+  let started!: () => void;
+  const running = new Promise<void>((resolve) => (started = resolve));
+  const answer = handleRequest({ ...request(), signal: page.signal }, {}, async (_, res) => {
+    started();
+    await new Promise<void>((resolve) => (res as http.ServerResponse).once("close", resolve));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    done = true;
+  });
+  await running;
+  page.abort();
+  await expect(answer).rejects.toMatchObject({ name: "AbortError" });
+  // Its stores have to be there until then.
+  expect(done).toBe(true);
+});
+
+test("an error that Next destroys a response with after its head reaches the page", async () => {
+  const response = await handleRequest(request(), {}, async (_, res) => {
+    const out = res as http.ServerResponse;
+    out.write("<html>");
+    setTimeout(() => out.destroy(new Error("the render failed")));
+  });
+  await expect(response.text()).rejects.toThrow("the render failed");
+});
+
+test("a head of more than Node's 16 KB reaches the page, as a browser takes one", async () => {
+  const cookies = Array.from({ length: 5 }, (_, at) => `part${at}=${"x".repeat(4000)}`);
+  const response = await handleRequest(
+    request(),
+    {},
+    route(() => {
+      const headers = new Headers();
+      for (const cookie of cookies) headers.append("set-cookie", cookie);
+      return new Response("ok", { headers });
+    }),
+  );
+  expect(response.headers.getSetCookie()).toEqual(cookies);
+  expect(await response.text()).toBe("ok");
+});
+
+test("a header that Node's http does not take fails the request, and nothing waits on it", async () => {
+  await expect(
+    handleRequest(
+      { ...request(), headers: new Headers({ "x-probe": "a\x01b" }) },
+      {},
+      route(() => new Response("ok")),
+    ),
+  ).rejects.toMatchObject({ code: "ERR_INVALID_CHAR" });
+  await expect(
+    handleRequest(
+      request(),
+      {},
+      route(() => new Response("ok")),
+      undefined,
+      {
+        headers: new Headers({ "x-routed": "a\x7fb" }),
+      },
+    ),
+  ).rejects.toMatchObject({ code: "ERR_INVALID_CHAR" });
 });
