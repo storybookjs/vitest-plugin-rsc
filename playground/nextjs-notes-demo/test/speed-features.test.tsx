@@ -7,8 +7,8 @@ import { fileChanged } from "../../test-helpers/file-changed.ts";
 
 // What each speed feature gives up, a test per claim of the table of
 // docs/fast-tests.md, "The two modes": each asserts what a test sees with the
-// speed features that are on in its project. nextjs-notes-demo-browser runs
-// the file with none but `watchDom`, nextjs-notes-demo-fast with all, and a
+// speed features that are on in its project: nextjs-notes-demo-speed-fidelity
+// with none but `watchDom`, nextjs-notes-demo-speed-fast with all, and a
 // project per feature in fast mode without that one (vitest.config.ts).
 
 declare module "vitest" {

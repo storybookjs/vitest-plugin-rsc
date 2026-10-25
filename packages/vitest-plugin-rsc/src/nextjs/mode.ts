@@ -30,23 +30,19 @@ export type SpeedOptions = {
    * are now.
    *
    * Gives up: a fresh page per test. Each page gets a tree, a router and
-   * caches of the router of its own, so no state of a component carries
-   * over from one test to the next. What does is the state of the modules
-   * of the app, of a package and of Next and React, as in a single-page app
-   * that never reloads, and so is what they took of the window as they
-   * loaded: Next reports an error that no boundary of the app catches
-   * with the `reportError` it found then, which a spy of a later test does
-   * not see. The server
-   * renders no HTML (`ssr: false`), also not of a page that the app loads
-   * itself from one of these, like after a `<form>` without a Server
-   * Action, so no preload of the HTML or its `Link` header: a test that
-   * asserts on it passes `ssr: true`, and gets a page load of its own. In
-   * development the page has no dev overlay. The status of the `response` is the one Next sets as
-   * it renders the HTML, read from the error in the Flight payload, and a
-   * page whose payload redirects loads as its target, as a browser follows
-   * the 307 of a document: but for a page that fails under a Suspense
-   * boundary, which gets the error's status, where Next has sent the 200 of
-   * its document before the error.
+   * caches of the router of its own, so no state of a component carries over
+   * from one test to the next. What does is the state of the modules of the
+   * app, of a package and of Next and React, as in a single-page app that
+   * never reloads. The server renders no HTML (`ssr: false`), also not of a
+   * page that the app loads itself from one of these, like after a `<form>`
+   * without a Server Action, so no preload of the HTML or its `Link` header:
+   * a test that asserts on it passes `ssr: true`, and gets a page load of its
+   * own. In development the page has no dev overlay. The status of the
+   * `response` is the one Next sets as it renders the HTML, read from the
+   * error in the Flight payload, and a page whose payload redirects loads as
+   * its target, as a browser follows the 307 of a document: but for a page
+   * that fails under a Suspense boundary, which gets the error's status,
+   * where Next has sent the 200 of its document before the error.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */

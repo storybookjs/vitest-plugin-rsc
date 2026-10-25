@@ -95,12 +95,12 @@ jobs:
             projects: --project nextjs-notes-demo-storybook
           - part: notes demo Storybook build and changes
             projects: --project 'nextjs-notes-demo-storybook*' --project '!nextjs-notes-demo-storybook'
-          # Fast mode without one speed feature: a browser each, which
+          # The tests of the speed features: a browser per project, which
           # next to the others would take longer to connect than Vitest waits.
-          - part: fast mode without a feature
-            projects: --project 'nextjs-notes-demo-fast-without-*'
+          - part: speed features
+            projects: --project 'nextjs-notes-demo-speed-*'
           - part: other projects
-            projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*' --project '!nextjs-notes-demo-fast-without-*'
+            projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*' --project '!nextjs-notes-demo-speed-*'
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -146,10 +146,10 @@ jobs:
       # Next prefetches in production only. A step of its own: a browser per
       # project, which next to the others would take longer to connect than
       # Vitest waits.
-      - name: Test fast mode without a speed feature
+      - name: Test the speed features
         env:
           VITEST_PLUGIN_RSC_BUILD: production
-        run: pnpm test:dist --project 'nextjs-notes-demo-fast-without-*'
+        run: pnpm test:dist --project 'nextjs-notes-demo-speed-*'
 
   next:
     name: Next.js ${{ matrix.next }}, ${{ matrix.build }}

@@ -57,16 +57,16 @@ const browserMode = () => ({
   instances: [{ browser: "chromium" as const }],
 });
 
+// The tests of what each speed feature gives up, in projects of their own: a
+// change of a module by another test file of the same dev server, like
+// components/changing-probe.test.tsx does, starts their kept app anew.
+const speedFeaturesTest = "test/speed-features.test.tsx";
+
 // The tests of the app, which open its routes: in fidelity mode, as CI runs
 // them, and in fast mode (`mode` of `vitestPluginNext()`), which they pass in
-// too. `speed` turns speed features on or off over the mode, and `include`
-// runs some of the tests only.
-const browserProject = (
-  name: string,
-  mode: Mode,
-  speed: SpeedOptions = {},
-  include = ["**/*.test.{ts,tsx}"],
-) =>
+// too. With `speed`, which turns speed features on or off over the mode, the
+// tests of the speed features alone.
+const browserProject = (name: string, mode: Mode, speed?: SpeedOptions) =>
   defineProject({
     root,
     // MSW's worker lives in the repo-root public/ (package.json#msw). Vitest 5
@@ -91,9 +91,9 @@ const browserProject = (
       name,
       // For components/changing-probe.test.tsx and test/speed-features.test.tsx.
       provide: { mode, build },
-      include,
+      include: speed ? [speedFeaturesTest] : ["**/*.test.{ts,tsx}"],
       // e2e/ runs Storybook: see vitest.storybook.config.ts.
-      exclude: ["e2e/**", "node_modules"],
+      exclude: ["e2e/**", "node_modules", ...(speed ? [] : [speedFeaturesTest])],
       browser: { ...browserMode(), viewport: { width: 390, height: 844 } },
       // Browser workers each own their browser state and run in parallel.
       // Inside one worker, test files run sequentially with `isolate: false`,
@@ -124,12 +124,14 @@ const speedFeatures: (keyof SpeedOptions)[] = [
 export const nextjsNotesProjects = [
   browserProject("nextjs-notes-demo-browser", "fidelity"),
   browserProject("nextjs-notes-demo-fast", "fast"),
-  // Fast mode without one of its speed features, for the tests of what each
-  // gives up: see test/speed-features.test.tsx.
+  // What each speed feature gives up: with none, with all, and in fast mode
+  // without one of them.
+  browserProject("nextjs-notes-demo-speed-fidelity", "fidelity", {}),
+  browserProject("nextjs-notes-demo-speed-fast", "fast", {}),
   ...speedFeatures.map((feature) =>
-    browserProject(`nextjs-notes-demo-fast-without-${feature}`, "fast", { [feature]: false }, [
-      "test/speed-features.test.tsx",
-    ]),
+    browserProject(`nextjs-notes-demo-speed-fast-without-${feature}`, "fast", {
+      [feature]: false,
+    }),
   ),
   // Every story of the app, as a test of Storybook's Vitest addon, which
   // makes a story file a test file: a server story renders in a page of the

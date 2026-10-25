@@ -18,10 +18,9 @@ import rscVitestDemoProject from "./playground/rsc-vitest-demo/vitest.config.ts"
 
 // The projects that start a dev server, `storybook dev`, `storybook build` or
 // a static build: minutes, where the others take seconds together. And those
-// of fast mode without one of its speed features: a browser each, for one
-// file.
+// of the speed features: a browser each, for one file.
 const slowProject =
-  /^(nextjs-host-demo|nextjs-notes-demo-storybook|nextjs-notes-demo-fast-without-)|-build$/;
+  /^(nextjs-host-demo|nextjs-notes-demo-storybook|nextjs-notes-demo-speed-)|-build$/;
 
 // `pnpm test` runs the fast tier, `pnpm test:slow` the slow one, and
 // `pnpm test:all`, `pnpm test:dist` and CI every project. A file or a
