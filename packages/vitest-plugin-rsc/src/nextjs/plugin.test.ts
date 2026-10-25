@@ -825,11 +825,13 @@ test("takes the mode from `VITEST_PLUGIN_RSC_MODE` in a test run of Vitest, when
   );
 });
 
-test("gives the page the speed features, with `fastCrypto` in a test run of Vitest only, never in a build", async () => {
-  const fastOf = async (command: "serve" | "build", cacheDir?: string) => {
-    const plugin = vitestPluginNext({ mode: "fast" }).find(
-      ({ name }) => name === "vitest-plugin-rsc:next",
-    )!;
+test("gives the page the speed features, with `fastCrypto` and `cacheDevServer` in a test run of Vitest only", async () => {
+  const fastOf = async (
+    command: "serve" | "build",
+    cacheDir?: string,
+    options: VitestPluginNextOptions = { mode: "fast" },
+  ) => {
+    const plugin = vitestPluginNext(options).find(({ name }) => name === "vitest-plugin-rsc:next")!;
     const config = await (plugin.config as ConfigHook<{ cacheDir?: string }>)(
       { root, cacheDir },
       { command },
@@ -847,14 +849,31 @@ test("gives the page the speed features, with `fastCrypto` in a test run of Vite
   expect(await fastOf("serve")).toMatchObject({
     keepApp: true,
     fastCrypto: true,
+    cacheDevServer: true,
     cacheDir: path.join("node_modules/.vite", "fast-crypto"),
   });
   expect(await fastOf("serve", "/cache")).toMatchObject({ cacheDir: "/cache/fast-crypto" });
   expect(await fastOf("build")).toMatchObject({
     keepApp: true,
     fastCrypto: false,
+    cacheDevServer: false,
     cacheDir: undefined,
   });
+  // A dev server of another host, like `storybook dev`, in either mode.
+  vi.stubEnv("VITEST", undefined);
+  try {
+    expect(
+      await fastOf("serve", undefined, { mode: "fidelity", cacheDevServer: true }),
+    ).toMatchObject({ cacheDevServer: false });
+    expect(await fastOf("serve")).toMatchObject({
+      keepApp: true,
+      fastCrypto: false,
+      cacheDevServer: false,
+      cacheDir: undefined,
+    });
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });
 
 test("gives the server layers the package's module of Node.js, after Next's aliases and the bridges", async () => {

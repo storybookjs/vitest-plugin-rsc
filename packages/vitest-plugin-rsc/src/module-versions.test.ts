@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { createServer } from "vite";
 import { expect, onTestFinished, test } from "vitest";
-import { changedAfter, versionOf } from "./module-versions.ts";
+import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
 
 // A dev server of a project where `page.ts` imports `badge.ts`, which
 // imports `label.ts`, and `note.ts` imports nothing, with the modules of an
@@ -29,7 +29,7 @@ async function serve() {
   for (const name of Object.keys(files)) await environment.transformRequest(`/${name}`);
   const { moduleGraph } = environment;
   const id = (name: string) => path.join(root, name);
-  return { environment, moduleGraph, id };
+  return { server, environment, moduleGraph, id };
 }
 
 test("is a new version for a change of a file, with the modules that import it", async () => {
@@ -68,4 +68,27 @@ test("says what changed after a version, also for a plugin's invalidation and fo
 test("is 0 for an environment that has no modules", () => {
   expect(versionOf(undefined)).toBe(0);
   expect(changedAfter(undefined, 0)).toEqual([]);
+});
+
+test("tells of an invalidation once per environment, after it, whatever made it", async () => {
+  const { server, environment, moduleGraph, id } = await serve();
+  const heard: [string, number][] = [];
+  onInvalidation(server, (name) =>
+    heard.push([name, versionOf(server.environments[name]?.moduleGraph)]),
+  );
+
+  // As Vitest's watcher does, without a hook of a plugin: the file's modules
+  // and their importers.
+  moduleGraph.onFileChange(id("label.ts"));
+  expect(heard).toEqual([]);
+  await Promise.resolve();
+  expect(heard).toEqual([["ssr", versionOf(moduleGraph)]]);
+
+  // As the optimizer does, every module of the graph: once.
+  moduleGraph.invalidateAll();
+  await Promise.resolve();
+  // And Vite's HMR.
+  await environment.reloadModule(moduleGraph.getModuleById(id("note.ts"))!);
+  expect(heard.map(([name]) => name)).toEqual(["ssr", "ssr", "ssr"]);
+  expect(heard.at(-1)![1]).toBe(versionOf(moduleGraph));
 });

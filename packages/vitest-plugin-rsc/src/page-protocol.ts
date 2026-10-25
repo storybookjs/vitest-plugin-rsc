@@ -4,7 +4,7 @@
 // and the server answers at `answerEvent` with `{ id, result }`. On the
 // WebSocket of a page in a browser (browser-host.ts), or, for a page in a
 // worker of Node.js, where Vitest has no WebSocket without Browser Mode, a
-// listener of HTTP of the plugin's own (node-host.ts). Names and types only:
+// listener of HTTP of the plugin's own (node-channel.ts). Names and types only:
 // the page imports this file, in a browser too, and the server's side of the
 // channel, with Node's `http`, is page-bridge.ts.
 
@@ -22,6 +22,13 @@ export const versionEvent = "vitest-plugin-rsc:react-client:version";
  */
 export const changedEvent = "vitest-plugin-rsc:react-client:changed";
 export type ChangedQuestion = { environment: string; since: number };
+/**
+ * Where the dev server tells the page that Vite invalidated modules of an
+ * environment, with their version from then on: see `onInvalidation()` in
+ * module-versions.ts.
+ */
+export const modulesChangedEvent = "vitest-plugin-rsc:react-client:modules-changed";
+export type ModulesChanged = { environment: string; version: number };
 /** Where the dev server answers what the page asks over the websocket. */
 export const answerEvent = "vitest-plugin-rsc:react-client:invoke-result";
 
@@ -32,3 +39,15 @@ export type PageAnswer<T> = { answer: T } | { error: string };
 export type PageRequest = { event: string; data: object };
 /** Where the listener of `listenForPage()` takes a `PageRequest`. */
 export const pageRequestPath = "/@vitest-plugin-rsc/page-request";
+/**
+ * Where a page in a worker of Node.js listens to the news of the dev server,
+ * which a page in a browser hears on its socket: a line of JSON for each
+ * piece, `{ told, event, data }`, after a first line `{ told }`. `told` is
+ * how many pieces the server had told by then.
+ */
+export const pageNewsPath = "/@vitest-plugin-rsc/page-news";
+/**
+ * The header of an answer of the listener: how many pieces of news the server
+ * had told as it sent the answer, which the page hears before the answer.
+ */
+export const toldHeader = "x-vitest-plugin-rsc-told";

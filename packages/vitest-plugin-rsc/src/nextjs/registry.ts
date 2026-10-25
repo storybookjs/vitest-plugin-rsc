@@ -103,8 +103,6 @@ export type RequestTiming = {
 export type NextRegistry = {
   /** The speed features that are on, `mode` and the options of the features resolved: see speed-features.ts. */
   speedFeatures?: SpeedFeatures;
-  /** The caches of `oncePerTestFile()` in speed-features.ts, which a test file ends with. */
-  testFileCaches?: Set<Map<string, Promise<unknown>>>;
   /**
    * For a profile of a test run: set to an array, the server adds the timing
    * of each request of the page to it, in the order they reached it.
@@ -117,6 +115,9 @@ export type NextRegistry = {
   fetch: typeof fetch;
   /** The network itself: no request of it is the app's, and Next caches none. */
   network: typeof fetch;
+  /** Those of the server's web APIs, whose streams take their signals. */
+  AbortController: typeof AbortController;
+  AbortSignal: typeof AbortSignal;
   /** Node's, for Next's server: a task after the microtasks. Not globals. */
   setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
   clearImmediate(id: unknown): void;

@@ -841,10 +841,12 @@ export type VitestPluginNextOptions = ServerCodeOptions &
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
   // oxlint-disable-next-line no-process-env -- The switch of an agent's run, as `CI` is.
   const chosen = resolveSpeedFeatures(options, process.env);
-  // The speed features of this run: the chosen ones, with `fastCrypto` in a
-  // test run of Vitest only, once the `config` hook knows: a static build, or
-  // a dev server of another host, hashes for real.
-  let speedFeatures: SpeedFeatures = { ...chosen, fastCrypto: false };
+  // The speed features of this run: the chosen ones, with `fastCrypto` and
+  // `cacheDevServer` in a test run of Vitest only, once the `config` hook
+  // knows: a static build, or a dev server of another host, hashes for real,
+  // and the page of another host has no test file whose end forgets the
+  // answers of the dev server.
+  let speedFeatures: SpeedFeatures = { ...chosen, fastCrypto: false, cacheDevServer: false };
   // What the server layers import for a module of Node.js, once the `config`
   // hook knows where the page is: Node's own in a worker of Node.js, the
   // package's stand-ins in a browser (node-builtins.ts). The two pre-bundle
@@ -994,8 +996,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // config: what tells a test run from a dev server here.
         // oxlint-disable-next-line no-process-env
         const testRun = !isBuild && process.env.VITEST !== undefined;
-        const fastCrypto = chosen.fastCrypto && testRun;
-        speedFeatures = { ...chosen, fastCrypto };
+        speedFeatures = {
+          ...chosen,
+          fastCrypto: chosen.fastCrypto && testRun,
+          cacheDevServer: chosen.cacheDevServer && testRun,
+        };
         // Whether the page, and with it the server, is in a worker of Node.js.
         const pageInNode = hostsPageInNode(
           (config as { test?: Parameters<typeof hostsPageInNode>[0] }).test,

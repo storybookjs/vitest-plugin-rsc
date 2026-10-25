@@ -6,6 +6,7 @@ import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type Mode, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { fileChangeService } from "../test-helpers/file-change-service.ts";
 import { setup as buildStorybookFramework } from "../test-helpers/storybook-framework.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
@@ -73,9 +74,13 @@ const browserProject = (name: string, mode: Mode) =>
         build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
         mode,
       }),
+      // For components/changing-probe.test.tsx.
+      fileChangeService(),
     ],
     test: {
       name,
+      // For components/changing-probe.test.tsx.
+      provide: { mode },
       include: ["**/*.test.{ts,tsx}"],
       // e2e/ runs Storybook: see vitest.storybook.config.ts. A `.node.test`
       // file is the node project's.
@@ -102,7 +107,10 @@ const browserProject = (name: string, mode: Mode) =>
 // Node.js run. The same plugins: without Browser Mode the plugin is the
 // page's host itself (SB-2419). Its server runs on Node.js itself, with
 // Node's `AsyncLocalStorage`, which components/async-context.node.test.tsx
-// probes, with `page` of dom-locators for the one of `vitest/browser`.
+// probes, with `page` of dom-locators for the one of `vitest/browser`. With
+// `cacheDevServer` a page load asks the dev server nothing of its modules,
+// and the page takes the news of a change, which the host hears on a stream
+// of its own: see components/changing-probe.node.test.tsx.
 //
 // A `.tcp.node.test` file is the TCP project's: the app's own `lib/db.ts`, on
 // node-postgres, without the mock, reaches Postgres over TCP: PGlite, served
@@ -114,8 +122,9 @@ const nodeProject = (
   {
     overTcp = false,
     mode = "fidelity",
+    cacheDevServer = mode === "fast",
     files,
-  }: { overTcp?: boolean; mode?: Mode; files?: string[] } = {},
+  }: { overTcp?: boolean; mode?: Mode; cacheDevServer?: boolean; files?: string[] } = {},
 ) =>
   defineProject({
     root,
@@ -144,10 +153,14 @@ const nodeProject = (
         // And dom-locators, `page` of the probes, and jest-dom's matchers:
         // the page's own modules, as `vitest` is.
         host: { packages: ["dom-locators", "@testing-library/jest-dom"] },
+        cacheDevServer,
       }),
+      // For components/changing-probe.node.test.tsx.
+      fileChangeService(),
     ],
     test: {
       name,
+      provide: { cacheDevServer },
       include: files ?? [overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}"],
       exclude: ["e2e/**", "node_modules", ...(overTcp ? [] : ["**/*.tcp.node.test.{ts,tsx}"])],
       environment,
@@ -164,7 +177,7 @@ const nodeProject = (
   });
 
 export const nextjsNotesProjects = [
-  nodeProject("nextjs-notes-demo-happy-dom", "happy-dom"),
+  nodeProject("nextjs-notes-demo-happy-dom", "happy-dom", { cacheDevServer: true }),
   // In fast mode the probes of the stores, not yet the pages: with `keepApp`,
   // PGlite, the test's database, arms a timer as long as the real time is
   // ahead of the clock that the setup file sets, 172 days, which Node.js

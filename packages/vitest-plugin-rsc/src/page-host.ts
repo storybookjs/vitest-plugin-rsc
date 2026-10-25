@@ -13,6 +13,14 @@ export type PageHost = {
    */
   request(event: string, data: object, expires?: boolean): Promise<unknown>;
   /**
+   * Hands `news` what the dev server tells the page unasked, like a change of
+   * its modules (`tellPages()` in page-bridge.ts), in order with the answers
+   * of `request()`: an answer that the server sent after a piece of news
+   * resolves after `news` heard it, and a piece of news that the server sent
+   * after an answer comes after the answer resolved, or with `missed()`.
+   */
+  listen(news: PageNews): void;
+  /**
    * What fires the `navigate` events of the Navigation API for the document:
    * the browser's `navigation`, or a stand-in for a DOM without one. None
    * where the browser has none.
@@ -51,6 +59,17 @@ export type PageHost = {
    * cancels it.
    */
   serverImmediate(callback: () => void): () => void;
+};
+
+/** What the page hears of the dev server unasked: see `listen()`. */
+export type PageNews = {
+  /** A piece of news, at `event`. */
+  heard(event: string, data: unknown): void;
+  /**
+   * The host may have missed news, like when its connection closed, or
+   * brought it before an answer that the server sent before it.
+   */
+  missed(): void;
 };
 
 /** The web APIs that a server and a browser both have, and Node.js its own of. */

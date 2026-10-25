@@ -737,6 +737,7 @@ A browser has a `window`, and a `fetch` that Next has not patched. A browser can
 
 - `typeof window` is replaced by `"undefined"`. `next build` does the same to the code it compiles for a server, and libraries rely on it to tell a server from a browser. The same goes for `typeof document`, `typeof location`, `typeof localStorage` and `typeof sessionStorage`, which are `"undefined"` on a server without help.
 - `fetch`, `Request` and `Response` are the server's, even when they are written as `globalThis.fetch`. So a `fetch` in your server code is the one Next patches: two calls for the same URL in one render are one request. The browser still makes the request, so its rules for a request apply, like CORS.
+- `AbortController` and `AbortSignal` are the server's too, of the same web APIs as its streams, which Next pipes a response with a signal of its own: in a browser they are the page's, and in a worker of Node.js the runtime's, not the DOM's, which Bun's native `pipeTo()` takes no signal of.
 
 Apart from `setImmediate` and `clearImmediate`, which become the server's, nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the browser's `window` here.
 
