@@ -91,7 +91,21 @@ export default {
       get: () => global.Date,
       set: (value) => (global.Date = value),
     });
-    vm.createContext(window);
+    // The ECMAScript globals are the context's own, as in a browser:
+    // happy-dom's window has the worker's `Object`, `Array`, `JSON` and
+    // others, where an object literal in the context has the context's
+    // prototype. React's Flight client follows a reference of its payload
+    // into an object only if its prototype is the `Object.prototype` of the
+    // client's realm, and fails the page otherwise. The window keeps them as
+    // its own, for code of the worker that reads them of it.
+    const builtIns = (
+      vm.runInNewContext("Object.getOwnPropertyNames(globalThis)") as string[]
+    ).filter(
+      (name) => name !== "Date" && Object.hasOwn(window, name) && window[name] === global[name],
+    );
+    for (const name of builtIns) delete window[name];
+    const context = vm.runInContext("globalThis", vm.createContext(window)) as Scope;
+    for (const name of builtIns) window[name] = context[name];
 
     const scope = global as Scope;
     const originals = new Map<string, PropertyDescriptor>();

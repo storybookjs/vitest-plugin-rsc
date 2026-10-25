@@ -164,12 +164,14 @@ const nodeProject = (
     ],
     test: {
       name,
-      // For components/changing-probe.node.test.tsx.
-      provide: { cacheDevServer },
-      // test/page-leaks.test.tsx runs in Chromium and here alike.
+      // For components/changing-probe.node.test.tsx, and the mode for
+      // test/page-status.test.tsx.
+      provide: { mode, cacheDevServer },
+      // test/page-leaks.test.tsx and test/page-status.test.tsx run in
+      // Chromium and here alike.
       include: [
         overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}",
-        ...(overTcp ? [] : ["test/page-leaks.test.tsx"]),
+        ...(overTcp ? [] : ["test/page-leaks.test.tsx", "test/page-status.test.tsx"]),
       ],
       exclude: ["e2e/**", "node_modules", ...(overTcp ? [] : ["**/*.tcp.node.test.{ts,tsx}"])],
       environment,
