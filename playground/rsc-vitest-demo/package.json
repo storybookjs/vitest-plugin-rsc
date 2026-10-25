@@ -9,7 +9,7 @@
     "preview": "bun --bun vite preview --configLoader native",
     "test": "bun --bun vitest --configLoader native",
     "test:run": "bun --bun vitest run --configLoader native",
-    "test:run:node": "vitest run",
+    "test:run:node": "vitest run --configLoader native",
     "test:coverage": "bun --bun vitest run --configLoader native --coverage",
     "test:watch": "bun --bun vitest watch --configLoader native"
   },

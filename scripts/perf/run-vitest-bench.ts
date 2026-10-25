@@ -67,6 +67,8 @@ function runVitestBench(outputJson: string): void {
     "exec",
     "vitest",
     "bench",
+    "--configLoader",
+    "native",
     "src/perf/render.bench.tsx",
     "--reporter=default",
     "--reporter=json",

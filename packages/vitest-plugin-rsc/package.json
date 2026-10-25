@@ -89,8 +89,8 @@
     "tag": "latest"
   },
   "scripts": {
-    "test": "vitest",
-    "test:run": "vitest run",
+    "test": "vitest --configLoader native",
+    "test:run": "vitest run --configLoader native",
     "dev": "tsdown --sourcemap --watch src",
     "build": "tsdown",
     "prepack": "tsdown && node scripts/readme.ts",

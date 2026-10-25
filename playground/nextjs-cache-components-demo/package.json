@@ -6,7 +6,7 @@
     "dev": "next dev",
     "test": "bun --bun vitest --configLoader native",
     "test:run": "bun --bun vitest run --configLoader native",
-    "test:run:node": "vitest run",
+    "test:run:node": "vitest run --configLoader native",
     "build": "bun --bun --conditions=vitest-plugin-rsc-source vite build --configLoader native"
   },
   "dependencies": {

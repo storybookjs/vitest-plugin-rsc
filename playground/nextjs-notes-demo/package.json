@@ -13,7 +13,7 @@
     "start": "next start",
     "test": "bun --bun vitest --configLoader native",
     "test:run": "bun --bun vitest run --configLoader native",
-    "test:run:node": "vitest run",
+    "test:run:node": "vitest run --configLoader native",
     "test:update": "bun --bun vitest run --configLoader native --project=nextjs-notes-demo-browser --update",
     "test:report": "bun --bun vitest run --configLoader native --reporter=html",
     "test:coverage": "bun --bun vitest run --configLoader native --coverage",
