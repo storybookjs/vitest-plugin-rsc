@@ -29,18 +29,6 @@ export function appHasNavigations(open: boolean): void {
 }
 
 /**
- * A navigation without a page of the app, which has the router, under
- * Vitest: a component that a test file with `"use client"` rendered has none.
- */
-export function noRouter(url: URL): Error {
-  return new Error(
-    `vitest-plugin-rsc: a link or a form navigated to ${url.href}, and there is no page of the ` +
-      `app to navigate in: no page of renderServer() is open, and a test file with "use client" ` +
-      `has none. Test navigation in a page of renderServer(), in a test file without "use client".`,
-  );
-}
-
-/**
  * Keeps the host's document while the host renders components outside a
  * browser context of the app: a link or a form that would load another
  * document is stopped, and `report` hears of it with the URL it would load.

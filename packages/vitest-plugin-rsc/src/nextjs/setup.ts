@@ -2,8 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
 import { forgetTestFileAnswers } from "./speed-features.ts";
-import { keepHostDocument, noRouter } from "./host-document.ts";
-import { leaveKeptAppWithPage } from "./page.ts";
+import { keepHostDocument } from "./host-document.ts";
+import { leaveKeptAppWithPage, noRouter } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
 // With the speed feature `fastCrypto`, PBKDF2 of the page's `crypto.subtle` is
