@@ -27,7 +27,10 @@ afterAll(() => network.close());
 // An interceptor of the test's, from before the host's: it gets what the
 // host's leaves.
 const before: Request[] = [];
-const { settings } = (window as unknown as { happyDOM: { settings: any } }).happyDOM;
+const { happyDOM } = window as unknown as {
+  happyDOM: { settings: any; waitUntilComplete(): Promise<void> };
+};
+const { settings } = happyDOM;
 settings.fetch.interceptor = {
   beforeAsyncRequest: async ({ request }: { request: Request }) => {
     before.push(request);
@@ -36,9 +39,15 @@ settings.fetch.interceptor = {
 };
 
 const asked: Request[] = [];
-nodeHost("http://127.0.0.1:1").interceptRequests(async (request) => {
+const handsOver = nodeHost("http://127.0.0.1:1").interceptRequests(async (request) => {
   asked.push(request);
   if (request.url.includes("/network") || request.url.includes("/mocked")) return undefined;
+  // An answer that fails as its request is aborted, as the app's does.
+  if (request.url.includes("/slow")) {
+    return new Promise((_, reject) =>
+      request.signal.addEventListener("abort", () => reject(request.signal.reason)),
+    );
+  }
   return new Response(`answer of ${request.method} ${new URL(request.url).pathname}`, {
     status: 201,
     headers: { "content-type": "text/plain" },
@@ -46,6 +55,7 @@ nodeHost("http://127.0.0.1:1").interceptRequests(async (request) => {
 });
 
 test("hands over a request of XMLHttpRequest", async () => {
+  expect(handsOver).toBe(true);
   const request = new XMLHttpRequest();
   await new Promise((resolve) => {
     request.onloadend = resolve;
@@ -81,4 +91,15 @@ test("leaves what nobody answers to the DOM, which sends it", async () => {
   const { port } = network.address() as AddressInfo;
   const response = await fetch(`http://127.0.0.1:${port}/network`);
   expect(await response.text()).toBe("network /network");
+});
+
+test("ends happy-dom's task of a request that is aborted while the app answers it", async () => {
+  const request = new XMLHttpRequest();
+  const ended = new Promise((resolve) => (request.onloadend = resolve));
+  request.open("GET", "/slow");
+  request.send();
+  await vi.waitUntil(() => asked.at(-1)?.url.endsWith("/slow"));
+  request.abort();
+  await ended;
+  await happyDOM.waitUntilComplete();
 });

@@ -44,10 +44,10 @@ export type PageHost = {
    * the DOM hands them over, as happy-dom's interceptor does for its
    * `XMLHttpRequest` and the resources it loads, and for what the page's
    * `fetch` leaves to the DOM's. With a response of the page's web APIs, or
-   * with none, and the DOM sends the request itself. Nothing where the DOM
-   * does not, like a browser's.
+   * with none, and the DOM sends the request itself. Whether the DOM hands
+   * them over: false for a browser's.
    */
-  interceptRequests(answer: (request: Request) => Promise<Response | undefined>): void;
+  interceptRequests(answer: (request: Request) => Promise<Response | undefined>): boolean;
 };
 
 /** What the page hears of the dev server unasked: see `listen()`. */

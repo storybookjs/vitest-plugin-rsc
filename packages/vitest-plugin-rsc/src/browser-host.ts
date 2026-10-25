@@ -44,7 +44,7 @@ const browserHost: PageHost = {
   loadsStylesheets: true,
   serverWebApis: globalThis,
   // No browser hands over what a page sends.
-  interceptRequests: () => {},
+  interceptRequests: () => false,
 };
 export default browserHost;
 

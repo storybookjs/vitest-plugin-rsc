@@ -9,7 +9,7 @@ Looking for every edge case, with the reason behind it? See [Not Yet](internals/
 - **No native addons.** `better-sqlite3`, `sharp`, `bcrypt` and friends don't load. Use a JavaScript or WebAssembly alternative (like `bcryptjs`), or mock the module that imports them.
 - **No TCP sockets.** Database drivers can't reach a server. Use a [database recipe](databases.md) instead, or MSW for HTTP APIs.
 - **Some Node.js functions throw.** The plugin has stand-ins for most of what servers use, and throws a clear error for the rest. See [Node.js in the browser](nodejs-in-the-browser.md).
-- **Only `fetch` reaches your app.** `XMLHttpRequest` (axios's default), `EventSource`, `navigator.sendBeacon()` and an `<img>` pointing at a route handler go to the dev server instead.
+- **Only `fetch` reaches your app.** `XMLHttpRequest` (axios's default), `EventSource`, `navigator.sendBeacon()` and an `<img>` pointing at a route handler go to the dev server instead. Without Browser Mode, with happy-dom, an asynchronous `XMLHttpRequest` and the resources the page loads reach it too.
 - **No `cookieStore`.** Code that uses the Cookie Store API without checking for it fails.
 - **Spy on `localStorage`, not `Storage.prototype`.** Your app's storage is the plugin's own object, so a spy on the prototype sees nothing.
 

@@ -177,7 +177,11 @@ registry.performWork = (request, performWork) => {
 // be the `fetch` of the page, which is the browser's.
 const nativeFetch = pageHost.serverWebApis.fetch;
 registry.fetch = (input, init) => nativeFetch(input, init);
-registry.network = (input, init) => nativeFetch(input, init);
+// With a body or a signal of the DOM's as the runtime's: what the server
+// sends on may be the page's, like the signal of its request on a rewrite to
+// another origin, or a form that a Server Action got.
+registry.network = (input, init) =>
+  nativeFetch(input, runtimeRequestInit(init, pageHost.serverWebApis));
 
 // Node.js has these as globals. A browser has none of them.
 const scope = globalThis as Record<string, any>;

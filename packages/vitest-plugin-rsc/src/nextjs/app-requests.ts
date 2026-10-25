@@ -61,7 +61,7 @@ const nativeFetch = registry.network;
 // the page's own requests: a browser's `fetch` is what they have.
 async function networkFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (!init?.body && !(isRequest(input) && input.body)) return nativeFetch(input, init);
-  const request = new ServerNativeRequest(input, init);
+  const request = new ServerNativeRequest(input, runtimeRequestInit(init, pageHost.serverWebApis));
   // A request with a body, so not a GET.
   // oxlint-disable-next-line unicorn/no-invalid-fetch-options
   return nativeFetch(new ServerNativeRequest(request, { body: await request.arrayBuffer() }));
@@ -271,7 +271,7 @@ export async function sendRequest<Passed extends undefined = never>(
     if (!response) {
       // After a redirect it is another request than the one that was passed in.
       return redirected
-        ? networkAfterRedirect(url, method, sent, body, request.signal)
+        ? nativeFetch(url, { method, headers: sent, body, signal: request.signal })
         : network!();
     }
     if (credentials) from?.receive(response.headers.getSetCookie());
@@ -316,7 +316,7 @@ export async function sendRequest<Passed extends undefined = never>(
         // drops them on such a redirect. A `cookie` header the browser's
         // `fetch` drops itself.
         sent.delete("authorization");
-        return networkAfterRedirect(url, method, sent, body, request.signal);
+        return nativeFetch(url, { method, headers: sent, body, signal: request.signal });
       }
       if (own) {
         own.receive(response.headers.getSetCookie());
@@ -331,22 +331,6 @@ export async function sendRequest<Passed extends undefined = never>(
     });
     return response;
   }
-}
-
-// A request that a redirect of the app sends to the network, with the signal
-// of the request it follows, which may be the page's: in a DOM of Node.js the
-// DOM's, which the network's `fetch` does not take.
-function networkAfterRedirect(
-  url: URL,
-  method: string,
-  headers: Headers,
-  body: Uint8Array<ArrayBuffer> | null,
-  signal: AbortSignal,
-): Promise<Response> {
-  return nativeFetch(
-    url,
-    runtimeRequestInit({ method, headers, body, signal }, pageHost.serverWebApis),
-  );
 }
 
 // What client code gets of a response of the app: one of the page's own web

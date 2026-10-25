@@ -93,15 +93,27 @@ export function nodeHost(origin: string): PageHost {
     loadsStylesheets: false,
     serverWebApis: webApis,
     interceptRequests: (answer) => {
-      if (!happyDom) return;
+      if (!happyDom) return false;
       const { fetch } = happyDom.settings;
       // Before an interceptor of the test's, which gets what the app does not answer.
       const before = fetch.interceptor;
       fetch.interceptor = {
         ...before,
-        beforeAsyncRequest: async (context) =>
-          (await answer(context.request)) ?? before?.beforeAsyncRequest?.(context),
+        beforeAsyncRequest: async (context) => {
+          let answered: Response | undefined;
+          try {
+            answered = await answer(context.request);
+          } catch (error) {
+            // happy-dom ends its task of the request only once the
+            // interceptor resolves: for one that was aborted, it fails the
+            // request itself.
+            if (context.request.signal.aborted) return;
+            throw error;
+          }
+          return answered ?? before?.beforeAsyncRequest?.(context);
+        },
       };
+      return true;
     },
   };
 }
