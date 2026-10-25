@@ -110,13 +110,23 @@ export type SpeedOptions = {
    */
   watchDom?: boolean;
   /**
-   * Experimental. What the dev server answers about the stylesheets and the
-   * modules of a test file is asked once per test file, not for every page.
+   * Experimental. Whether the modules that the page fetched changed is
+   * asked once per test file, not before every page load, and every request
+   * takes the versions of that check for the stylesheets of its route, where
+   * it asks the dev server otherwise. The stylesheets of the host's files,
+   * like what a test file imports, are asked once per test file, not for
+   * every test.
+   *
    * In a test run of Vitest only, whose test files end: a dev server of
    * another host, like `storybook dev`, asks every time.
    *
-   * Gives up: an answer that changes while a test file runs, which nothing
-   * does: a change of a file runs the test file again.
+   * Gives up: a change of a file while a test file runs shows at the next
+   * test file, not the next page load, and every test links the stylesheets
+   * of the host's files as they were at the start of the test file. Only a
+   * suite whose tests change files sees it: in watch mode, a change of a
+   * file runs the test file again. On #251 after #268, it took about 7 ms
+   * per test off the notes benchmark in fidelity mode: the dev server's
+   * answers in navigations and Server Actions.
    *
    * Default: `true` in fast mode, `false` in fidelity mode.
    */
