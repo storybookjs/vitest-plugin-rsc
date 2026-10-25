@@ -284,11 +284,14 @@ function askForModules(environment: string, known?: FetchedModules): Promise<Fet
   return fetched;
 }
 
-// The environments that the page keeps answers of the dev server about,
-// besides those of the runners that fetched modules: the document's own,
-// Vite's `client`, and the browser layer's, whose modules the stylesheets of
-// a route are read off with it.
-const answeredEnvironments = ["client", "react_client"];
+/**
+ * The environments that the page keeps answers of the dev server about,
+ * besides those of the runners that fetched modules: the document's own,
+ * Vite's `client`, and the browser layer's, whose modules the stylesheets of
+ * a route are read off with it. None for a static build, which has no dev
+ * server, and whose modules do not change.
+ */
+export const answeredEnvironments = builtLayers ? [] : ["client", "react_client"];
 // The versions of the modules of those, and of the runners' environments, as
 // the page last checked them: see `checkedVersions()`.
 let checked: Promise<string> | undefined;

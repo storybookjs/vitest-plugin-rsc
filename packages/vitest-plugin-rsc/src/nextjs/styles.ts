@@ -389,7 +389,7 @@ export function createStyles(options: StylesOptions): Styles {
       // `/@id/__x00__…`, which Vite's own server unwraps before it loads it.
       if (url.startsWith("/@id/")) url = url.slice("/@id/".length).replace("__x00__", "\0");
       const key = `${layer}:${url}`;
-      const inGraph = () => graphs[layer].moduleGraph.getModuleByUrl(url);
+      const inGraph = () => graphs[layer].moduleGraph.getModuleByUrl(url).catch(() => undefined);
       let loaded = loads.get(key);
       if (loaded) {
         const node = (await loaded.module) ?? (await inGraph());
