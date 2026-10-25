@@ -76,34 +76,31 @@ if (typeof scope.matchMedia !== "function") {
 }
 
 // A browser's answer to a stylesheet of the page and to its preload, which a
-// DOM of Node.js, that loads none, may never give: `load`, as if its bytes
-// came. happy-dom answers a stylesheet itself (with
-// `handleDisabledFileLoadingAsSuccess`, which the plugin sets), but not a
-// preload; jsdom answers neither. React holds the commit of a tree it renders
-// on the client, as Next does a page without HTML, until the stylesheets of
-// `precedence` and their preloads have loaded. So a link of either that the
-// DOM leaves unanswered gets `load` once, in a task after it is in the
-// document: of Node's own `setImmediate`, which a test's fake timers leave.
+// DOM of Node.js, that loads none (`loadsStylesheets` of node-host.ts), does
+// not always give: `load`, as if its bytes came, also for one that the
+// server would fail. happy-dom answers a stylesheet itself, also one it
+// does not load (with `handleDisabledFileLoadingAsSuccess`, which the plugin
+// sets), but never a preload; jsdom answers neither without
+// `resources: "usable"`, which the plugin does not set. React commits a tree that it renders on
+// the client, as Next does a page without HTML, only once the stylesheets of
+// `precedence` in the `<head>` and their preloads have loaded, or after a
+// minute. So a link of the `<head>` that the DOM leaves unanswered gets
+// `load` once, in a task after it is in the document: of Node's
+// `setImmediate` as this module loads, before a test's fake timers replace it.
 const { setImmediate: nodeSetImmediate } = process.getBuiltinModule("node:timers");
-const answered = new WeakSet<EventTarget>();
-for (const type of ["load", "error"]) {
-  document.addEventListener(type, (event) => answered.add(event.target!), true);
-}
-const loadsStyle = (link: Element) => {
+const answersStylesheets = "happyDOM" in window;
+const answered = new WeakSet<Node>();
+const unansweredByDom = (node: Node): node is Element => {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const link = node as Element;
+  if (link.localName !== "link" || !link.getAttribute("href")) return false;
   const rel = (link.getAttribute("rel") ?? "").toLowerCase().split(/\s+/);
-  return (
-    !!link.getAttribute("href") &&
-    (rel.includes("stylesheet") ||
-      (rel.includes("preload") && link.getAttribute("as")?.toLowerCase() === "style"))
-  );
+  if (rel.includes("stylesheet")) return !answersStylesheets;
+  return rel.includes("preload") && link.getAttribute("as")?.toLowerCase() === "style";
 };
 new MutationObserver((records) => {
-  for (const node of records.flatMap((record) => Array.from(record.addedNodes))) {
-    if (!(node instanceof Element)) continue;
-    const links = [node, ...node.querySelectorAll("link")];
-    for (const link of links.filter(
-      (element) => element.localName === "link" && loadsStyle(element),
-    )) {
+  for (const record of records) {
+    for (const link of Array.from(record.addedNodes).filter(unansweredByDom)) {
       nodeSetImmediate(() => {
         if (answered.has(link) || !link.isConnected) return;
         answered.add(link);
@@ -111,4 +108,4 @@ new MutationObserver((records) => {
       });
     }
   }
-}).observe(document, { childList: true, subtree: true });
+}).observe(document.head, { childList: true });

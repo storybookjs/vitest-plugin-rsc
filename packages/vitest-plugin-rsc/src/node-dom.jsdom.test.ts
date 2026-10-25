@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import "./node-dom.ts";
 
 // What the Node host gives jsdom of a browser's DOM that jsdom has not.
@@ -31,8 +31,8 @@ test("a stylesheet and its preload load once, which jsdom never answers itself",
     link.addEventListener("error", () => events.push(`error ${link.rel}`));
     return link;
   });
+  onTestFinished(() => links.forEach((link) => link.remove()));
   document.head.append(...links);
   await new Promise((resolve) => setTimeout(resolve, 10));
-  for (const link of links) link.remove();
   expect(events).toEqual(["load preload", "load stylesheet"]);
 });
