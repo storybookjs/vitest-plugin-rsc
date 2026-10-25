@@ -1,9 +1,9 @@
-import { expect, test } from "vitest";
+import { expect } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { click, fill } from "#test/user-event.ts";
-import { createUser, grace, seedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { createUser, seedNotes } from "#test/db.ts";
+import { expectTitles, signedIn, test } from "#test/vitest.ts";
 
 const notes = [
   { title: "Groceries", content: "Oat milk, bread, cheese" },
@@ -79,9 +79,9 @@ test("trims the query", async () => {
   await expect.element(page.getByLabelText("Search")).toHaveValue("cheese");
 });
 
-test("does not find the notes of other users", async () => {
+test("does not find the notes of other users", async ({ people }) => {
   const user = await signedIn();
-  const other = await createUser(grace);
+  const other = await createUser(people.grace);
   await seedNotes(user.id, notes);
   await seedNotes(other.id, [{ title: "Grace's milk" }]);
   await renderServer({ url: "/notes?q=milk" });

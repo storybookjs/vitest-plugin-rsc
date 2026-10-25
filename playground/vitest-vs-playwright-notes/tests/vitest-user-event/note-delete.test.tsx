@@ -1,14 +1,14 @@
-import { expect, test } from "vitest";
+import { expect } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { click } from "#test/user-event.ts";
-import { createUser, grace, seedNotes, storedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { createUser, seedNotes, storedNotes } from "#test/db.ts";
+import { expectTitles, signedIn, test } from "#test/vitest.ts";
 
 test("deletes a note and goes back to the list", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
 
@@ -17,19 +17,19 @@ test("deletes a note and goes back to the list", async () => {
 
 test("removes the note from the database", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
 
   await expect.element(page.getByText("Note deleted.")).toBeInTheDocument();
-  expect(await storedNotes()).toEqual([]);
+  expect(await storedNotes(user.id)).toEqual([]);
 });
 
 test("removes the note from the list", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
 
@@ -39,8 +39,12 @@ test("removes the note from the list", async () => {
 
 test("counts one note less", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }, { title: "Reading list" }]);
-  await renderServer({ url: "/notes/2" });
+  const [, note] = await seedNotes(user.id, [
+    { title: "Groceries" },
+    { title: "Ideas" },
+    { title: "Reading list" },
+  ]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
 
@@ -49,19 +53,26 @@ test("counts one note less", async () => {
 
 test("keeps the other notes", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }, { title: "Reading list" }]);
-  await renderServer({ url: "/notes/2" });
+  const [, note] = await seedNotes(user.id, [
+    { title: "Groceries" },
+    { title: "Ideas" },
+    { title: "Reading list" },
+  ]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
 
   await expect.element(page.getByText("Note deleted.")).toBeInTheDocument();
-  expect((await storedNotes()).map((note) => note.title)).toEqual(["Groceries", "Reading list"]);
+  expect((await storedNotes(user.id)).map((note) => note.title)).toEqual([
+    "Groceries",
+    "Reading list",
+  ]);
 });
 
 test("shows the empty state after the last note", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
 
@@ -70,20 +81,20 @@ test("shows the empty state after the last note", async () => {
 
 test("shows a 404 for the deleted note", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
   await expect.element(page.getByText("Note deleted.")).toBeInTheDocument();
-  await renderServer({ url: "/notes/1" });
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await expect.element(page.getByText("This page could not be found.")).toBeInTheDocument();
 });
 
 test("deletes a favorite", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
 
@@ -91,23 +102,23 @@ test("deletes a favorite", async () => {
   await expect.element(page.getByText("★ Favorite")).not.toBeInTheDocument();
 });
 
-test("keeps the notes of other users", async () => {
+test("keeps the notes of other users", async ({ people }) => {
   const user = await signedIn();
-  const other = await createUser(grace);
-  await seedNotes(user.id, [{ title: "Groceries" }]);
+  const other = await createUser(people.grace);
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
   await seedNotes(other.id, [{ title: "Grace's" }]);
-  await renderServer({ url: "/notes/1" });
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
 
   await expect.element(page.getByText("Note deleted.")).toBeInTheDocument();
-  expect((await storedNotes()).map((note) => note.title)).toEqual(["Grace's"]);
+  expect((await storedNotes(user.id, other.id)).map((note) => note.title)).toEqual(["Grace's"]);
 });
 
 test("shows no banner on a later visit of the list", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Delete" }));
   await expect.element(page.getByText("Note deleted.")).toBeInTheDocument();

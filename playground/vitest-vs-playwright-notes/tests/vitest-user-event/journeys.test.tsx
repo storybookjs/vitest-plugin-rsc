@@ -1,9 +1,10 @@
-import { expect, test } from "vitest";
+import { expect } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { click, fill } from "#test/user-event.ts";
-import { ada, createUser, seedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/vitest.ts";
+import { createUser, seedNotes } from "#test/db.ts";
+import { ada } from "#test/people.ts";
+import { expectTitles, signedIn, test } from "#test/vitest.ts";
 
 test("goes from the home page to sign up", async () => {
   await renderServer({ url: "/" });
@@ -32,12 +33,12 @@ test("goes from the profile back to the notes", async () => {
   await expect.element(page.getByText("No notes yet")).toBeInTheDocument();
 });
 
-test("signs up and writes a first note", async () => {
+test("signs up and writes a first note", async ({ people }) => {
   await renderServer({ url: "/sign-up" });
 
-  await fill(page.getByLabelText("Name"), ada.name);
-  await fill(page.getByLabelText("Email"), ada.email);
-  await fill(page.getByLabelText("Password"), ada.password);
+  await fill(page.getByLabelText("Name"), people.ada.name);
+  await fill(page.getByLabelText("Email"), people.ada.email);
+  await fill(page.getByLabelText("Password"), people.ada.password);
   await click(page.getByRole("button", { name: "Create account" }));
   await click(page.getByRole("link", { name: "New note" }));
   await fill(page.getByLabelText("Title"), "First note");
@@ -48,13 +49,13 @@ test("signs up and writes a first note", async () => {
   await expectTitles(["First note"]);
 });
 
-test("signs in, searches and opens a note", async () => {
-  const user = await createUser(ada);
+test("signs in, searches and opens a note", async ({ people }) => {
+  const user = await createUser(people.ada);
   await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }, { title: "Ideas" }]);
   await renderServer({ url: "/sign-in" });
 
-  await fill(page.getByLabelText("Email"), ada.email);
-  await fill(page.getByLabelText("Password"), ada.password);
+  await fill(page.getByLabelText("Email"), people.ada.email);
+  await fill(page.getByLabelText("Password"), people.ada.password);
   await click(page.getByRole("main").getByRole("button", { name: "Sign in" }));
   await fill(page.getByLabelText("Search"), "oat");
   await click(page.getByRole("button", { name: "Search" }));
@@ -108,11 +109,11 @@ test("writes and deletes a note", async () => {
 });
 
 test("signs out and back in", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/notes" });
 
   await click(page.getByRole("button", { name: "Sign out" }));
-  await fill(page.getByLabelText("Email"), ada.email);
+  await fill(page.getByLabelText("Email"), user.email);
   await fill(page.getByLabelText("Password"), ada.password);
   await click(page.getByRole("main").getByRole("button", { name: "Sign in" }));
 

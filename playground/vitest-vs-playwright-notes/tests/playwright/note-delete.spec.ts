@@ -1,10 +1,10 @@
 import { expect, test } from "./test.ts";
-import { createUser, grace, seedNotes, storedNotes } from "#test/db.ts";
+import { createUser, seedNotes, storedNotes } from "#test/db.ts";
 
 test("deletes a note and goes back to the list", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
 
@@ -13,19 +13,19 @@ test("deletes a note and goes back to the list", async ({ page, signedIn }) => {
 
 test("removes the note from the database", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
 
   await expect(page.getByText("Note deleted.")).toBeVisible();
-  expect(await storedNotes()).toEqual([]);
+  expect(await storedNotes(user.id)).toEqual([]);
 });
 
 test("removes the note from the list", async ({ page, signedIn, expectTitles }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
 
@@ -35,8 +35,12 @@ test("removes the note from the list", async ({ page, signedIn, expectTitles }) 
 
 test("counts one note less", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }, { title: "Reading list" }]);
-  await page.goto("/notes/2");
+  const [, note] = await seedNotes(user.id, [
+    { title: "Groceries" },
+    { title: "Ideas" },
+    { title: "Reading list" },
+  ]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
 
@@ -45,19 +49,26 @@ test("counts one note less", async ({ page, signedIn }) => {
 
 test("keeps the other notes", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }, { title: "Reading list" }]);
-  await page.goto("/notes/2");
+  const [, note] = await seedNotes(user.id, [
+    { title: "Groceries" },
+    { title: "Ideas" },
+    { title: "Reading list" },
+  ]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
 
   await expect(page.getByText("Note deleted.")).toBeVisible();
-  expect((await storedNotes()).map((note) => note.title)).toEqual(["Groceries", "Reading list"]);
+  expect((await storedNotes(user.id)).map((note) => note.title)).toEqual([
+    "Groceries",
+    "Reading list",
+  ]);
 });
 
 test("shows the empty state after the last note", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
 
@@ -66,20 +77,20 @@ test("shows the empty state after the last note", async ({ page, signedIn }) => 
 
 test("shows a 404 for the deleted note", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("Note deleted.")).toBeVisible();
-  await page.goto("/notes/1");
+  await page.goto(`/notes/${note!.id}`);
 
   await expect(page.getByText("This page could not be found.")).toBeVisible();
 });
 
 test("deletes a favorite", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
 
@@ -87,23 +98,23 @@ test("deletes a favorite", async ({ page, signedIn }) => {
   await expect(page.getByText("★ Favorite")).toHaveCount(0);
 });
 
-test("keeps the notes of other users", async ({ page, signedIn }) => {
+test("keeps the notes of other users", async ({ page, people, signedIn }) => {
   const user = await signedIn();
-  const other = await createUser(grace);
-  await seedNotes(user.id, [{ title: "Groceries" }]);
+  const other = await createUser(people.grace);
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
   await seedNotes(other.id, [{ title: "Grace's" }]);
-  await page.goto("/notes/1");
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
 
   await expect(page.getByText("Note deleted.")).toBeVisible();
-  expect((await storedNotes()).map((note) => note.title)).toEqual(["Grace's"]);
+  expect((await storedNotes(user.id, other.id)).map((note) => note.title)).toEqual(["Grace's"]);
 });
 
 test("shows no banner on a later visit of the list", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("Note deleted.")).toBeVisible();

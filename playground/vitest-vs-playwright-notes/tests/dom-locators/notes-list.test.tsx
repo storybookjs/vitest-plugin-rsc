@@ -1,8 +1,8 @@
-import { expect, test } from "vitest";
+import { expect } from "vitest";
 import { page } from "dom-locators";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { createUser, grace, seedNotes } from "#test/db.ts";
-import { expectTitles, signedIn } from "#test/dom-locators.ts";
+import { createUser, seedNotes } from "#test/db.ts";
+import { expectTitles, signedIn, test } from "#test/dom-locators.ts";
 
 test("shows an empty state", async () => {
   await signedIn();
@@ -76,9 +76,9 @@ test("opens the form of a new note", async () => {
   await expect.element(page.getByRole("heading", { name: "New note" })).toBeInTheDocument();
 });
 
-test("lists only the notes of the user", async () => {
+test("lists only the notes of the user", async ({ people }) => {
   const user = await signedIn();
-  const other = await createUser(grace);
+  const other = await createUser(people.grace);
   await seedNotes(user.id, [{ title: "Mine" }]);
   await seedNotes(other.id, [{ title: "Grace's" }]);
   await renderServer({ url: "/notes" });

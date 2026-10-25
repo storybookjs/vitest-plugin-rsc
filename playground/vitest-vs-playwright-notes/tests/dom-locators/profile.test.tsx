@@ -1,15 +1,15 @@
-import { expect, test } from "vitest";
+import { expect } from "vitest";
 import { page } from "dom-locators";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { createUser, grace, seedNotes, storedUser } from "#test/db.ts";
-import { signedIn } from "#test/dom-locators.ts";
+import { createUser, seedNotes, storedUser } from "#test/db.ts";
+import { signedIn, test } from "#test/dom-locators.ts";
 
 test("shows the email of the user", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/profile" });
 
   await expect.element(page.getByRole("heading", { name: "Profile" })).toBeInTheDocument();
-  await expect.element(page.getByText("Email: ada@example.com")).toBeInTheDocument();
+  await expect.element(page.getByText(`Email: ${user.email}`)).toBeInTheDocument();
 });
 
 test("counts no notes", async () => {
@@ -46,52 +46,52 @@ test("saves the name", async () => {
 });
 
 test("stores the name", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/profile" });
 
   await page.getByLabelText("Name").fill("Ada King");
   await page.getByRole("button", { name: "Save name" }).click();
 
   await expect.element(page.getByText("Name saved.")).toBeInTheDocument();
-  expect((await storedUser("ada@example.com"))?.name).toBe("Ada King");
+  expect((await storedUser(user.email))?.name).toBe("Ada King");
 });
 
 test("requires a name", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/profile" });
 
   await page.getByLabelText("Name").fill("");
   await page.getByRole("button", { name: "Save name" }).click();
 
   await expect.element(page.getByText("Name is required.")).toBeInTheDocument();
-  expect((await storedUser("ada@example.com"))?.name).toBe("Ada Lovelace");
+  expect((await storedUser(user.email))?.name).toBe("Ada Lovelace");
 });
 
 test("trims the name", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/profile" });
 
   await page.getByLabelText("Name").fill("  Ada King  ");
   await page.getByRole("button", { name: "Save name" }).click();
 
   await expect.element(page.getByText("Signed in as Ada King")).toBeInTheDocument();
-  expect((await storedUser("ada@example.com"))?.name).toBe("Ada King");
+  expect((await storedUser(user.email))?.name).toBe("Ada King");
 });
 
 test("opens from the header of the notes", async () => {
-  await signedIn();
+  const user = await signedIn();
   await renderServer({ url: "/notes" });
 
   await page.getByRole("link", { name: "Profile" }).click();
 
-  await expect.element(page.getByText("Email: ada@example.com")).toBeInTheDocument();
+  await expect.element(page.getByText(`Email: ${user.email}`)).toBeInTheDocument();
 });
 
-test("shows the user that is signed in, not another", async () => {
-  await createUser(grace);
-  await signedIn();
+test("shows the user that is signed in, not another", async ({ people }) => {
+  await createUser(people.grace);
+  const user = await signedIn();
   await renderServer({ url: "/profile" });
 
-  await expect.element(page.getByText("Email: ada@example.com")).toBeInTheDocument();
-  await expect.element(page.getByText("Email: grace@example.com")).not.toBeInTheDocument();
+  await expect.element(page.getByText(`Email: ${user.email}`)).toBeInTheDocument();
+  await expect.element(page.getByText(`Email: ${people.grace.email}`)).not.toBeInTheDocument();
 });

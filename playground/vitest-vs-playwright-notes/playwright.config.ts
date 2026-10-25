@@ -26,14 +26,15 @@ if (perWorker && env.TEST_PARALLEL_INDEX) {
 
 export default defineConfig({
   testDir: "./tests/playwright",
-  // The tables, on the one database; with a server per worker, on each.
+  // The tables, emptied once per run, on the one database; with a server per
+  // worker, its fixture makes each worker's.
   globalSetup: perWorker ? undefined : "./tests/playwright/global-setup.ts",
-  // One worker: the tests share one database, which each empties first, as
-  // each Vitest test empties its own. With a database per worker, any number,
-  // and the tests of a file in parallel too; but one with `next dev`, as Next
-  // starts one `next dev` in a directory.
-  workers: perWorker && !dev ? undefined : 1,
-  fullyParallel: perWorker,
+  // Every test on any worker, as many as `--workers` asks for, against one
+  // server and one database: each test has a user and notes of its own. With
+  // a server per worker, one worker with `next dev`, as Next starts one
+  // `next dev` in a directory.
+  workers: perWorker && dev ? 1 : undefined,
+  fullyParallel: true,
   forbidOnly: Boolean(env.CI),
   reporter: "list",
   expect: { timeout: 5_000 },

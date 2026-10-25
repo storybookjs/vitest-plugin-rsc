@@ -11,9 +11,10 @@ import { db } from "#lib/db.ts";
 // With PLAYWRIGHT_ISOLATION=worker, each Playwright worker serves the app
 // itself: a `next start` of the one `next build`, or `next dev` with
 // PLAYWRIGHT_SERVER=dev, on a port of its own, on a database of its own,
-// made from lib/schema.sql as the worker starts and dropped as it stops. Its
-// tests still empty that database before each test (test.ts), so they keep
-// their ids and counts, on any number of workers and in any order.
+// made from lib/schema.sql as the worker starts and dropped as it stops. It
+// empties that database before each test, as the tests did before each had
+// data of its own: the setup of a team that isolates its tests by process and
+// database, where the default config isolates them by their data.
 
 // oxlint-disable-next-line no-process-env
 const env = process.env;
@@ -25,7 +26,7 @@ const next = fileURLToPath(new URL("../../node_modules/.bin/next", import.meta.u
 
 /** Playwright's `test`, on the worker's own server and database. */
 export const serverPerWorker: typeof base = base.extend<
-  object,
+  { emptyDb: void },
   { port: number; database: URL; server: string }
 >({
   // The port of the config's baseURL, plus the worker's index. A server left
@@ -99,7 +100,27 @@ export const serverPerWorker: typeof base = base.extend<
   baseURL: async ({ server }, use) => {
     await use(server);
   },
+  // The tables of the worker's database emptied before each test, the ids
+  // from 1 again: the statements at once, one round trip.
+  emptyDb: [
+    // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
+    async ({}, use) => {
+      await db.$client.query(emptyTables);
+      await use();
+    },
+    { auto: true },
+  ],
 });
+
+// DELETE, not TRUNCATE, which rewrites the files of the tables and their
+// indexes. And setval for the ids.
+const emptyTables = [
+  "DELETE FROM sessions",
+  "DELETE FROM notes",
+  "DELETE FROM users",
+  "SELECT setval('users_id_seq', 1, false)",
+  "SELECT setval('notes_id_seq', 1, false)",
+].join(";\n");
 
 /** Sends the statements to the database, one after the other. */
 async function execute(database: URL, ...statements: string[]): Promise<void> {

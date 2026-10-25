@@ -31,8 +31,8 @@ for (let i = 0; i < 50; i++) {
       ...newestFirst.filter((title) => favorites.includes(title)),
       ...newestFirst.filter((title) => !favorites.includes(title)),
     ]);
-    expect((await storedNotes()).filter((note) => note.favorite).map((note) => note.title)).toEqual(
-      titles.filter((title) => favorites.includes(title)),
-    );
+    expect(
+      (await storedNotes(user.id)).filter((note) => note.favorite).map((note) => note.title),
+    ).toEqual(titles.filter((title) => favorites.includes(title)));
   });
 }

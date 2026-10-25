@@ -1,8 +1,9 @@
-import { expect, test } from "vitest";
+import { expect } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { ada, createUser, sessionCount } from "#test/db.ts";
-import { signedIn } from "#test/vitest.ts";
+import { createUser, sessionCount } from "#test/db.ts";
+import { ada } from "#test/people.ts";
+import { signedIn, test } from "#test/vitest.ts";
 
 test("renders the form", async () => {
   await renderServer({ url: "/sign-in" });
@@ -12,46 +13,46 @@ test("renders the form", async () => {
   await expect.element(page.getByLabelText("Password")).toHaveValue("");
 });
 
-test("signs in and opens the notes", async () => {
-  await createUser(ada);
+test("signs in and opens the notes", async ({ people }) => {
+  await createUser(people.ada);
   await renderServer({ url: "/sign-in" });
 
-  await page.getByLabelText("Email").fill(ada.email);
-  await page.getByLabelText("Password").fill(ada.password);
+  await page.getByLabelText("Email").fill(people.ada.email);
+  await page.getByLabelText("Password").fill(people.ada.password);
   await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
 
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeInTheDocument();
   await expect.element(page.getByText("Signed in as Ada Lovelace")).toBeInTheDocument();
 });
 
-test("signs in with the email in another case", async () => {
-  await createUser(ada);
+test("signs in with the email in another case", async ({ people }) => {
+  await createUser(people.ada);
   await renderServer({ url: "/sign-in" });
 
-  await page.getByLabelText("Email").fill("ADA@EXAMPLE.COM");
-  await page.getByLabelText("Password").fill(ada.password);
+  await page.getByLabelText("Email").fill(people.ada.email.toUpperCase());
+  await page.getByLabelText("Password").fill(people.ada.password);
   await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
 
   await expect.element(page.getByText("Signed in as Ada Lovelace")).toBeInTheDocument();
 });
 
-test("stores a session", async () => {
-  await createUser(ada);
+test("stores a session", async ({ people }) => {
+  const user = await createUser(people.ada);
   await renderServer({ url: "/sign-in" });
 
-  await page.getByLabelText("Email").fill(ada.email);
-  await page.getByLabelText("Password").fill(ada.password);
+  await page.getByLabelText("Email").fill(people.ada.email);
+  await page.getByLabelText("Password").fill(people.ada.password);
   await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
 
   await expect.element(page.getByText("Signed in as Ada Lovelace")).toBeInTheDocument();
-  expect(await sessionCount()).toBe(1);
+  expect(await sessionCount(user.id)).toBe(1);
 });
 
-test("rejects a wrong password", async () => {
-  await createUser(ada);
+test("rejects a wrong password", async ({ people }) => {
+  await createUser(people.ada);
   await renderServer({ url: "/sign-in" });
 
-  await page.getByLabelText("Email").fill(ada.email);
+  await page.getByLabelText("Email").fill(people.ada.email);
   await page.getByLabelText("Password").fill("wrong password");
   await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
 
@@ -68,28 +69,28 @@ test("rejects an email without an account", async () => {
   await expect.element(page.getByText("Invalid email or password.")).toBeInTheDocument();
 });
 
-test("keeps the email after a failed sign-in", async () => {
-  await createUser(ada);
+test("keeps the email after a failed sign-in", async ({ people }) => {
+  await createUser(people.ada);
   await renderServer({ url: "/sign-in" });
 
-  await page.getByLabelText("Email").fill(ada.email);
+  await page.getByLabelText("Email").fill(people.ada.email);
   await page.getByLabelText("Password").fill("wrong password");
   await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
 
   await expect.element(page.getByText("Invalid email or password.")).toBeInTheDocument();
-  await expect.element(page.getByLabelText("Email")).toHaveValue(ada.email);
+  await expect.element(page.getByLabelText("Email")).toHaveValue(people.ada.email);
 });
 
-test("stores no session after a failed sign-in", async () => {
-  await createUser(ada);
+test("stores no session after a failed sign-in", async ({ people }) => {
+  const user = await createUser(people.ada);
   await renderServer({ url: "/sign-in" });
 
-  await page.getByLabelText("Email").fill(ada.email);
+  await page.getByLabelText("Email").fill(people.ada.email);
   await page.getByLabelText("Password").fill("wrong password");
   await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
 
   await expect.element(page.getByText("Invalid email or password.")).toBeInTheDocument();
-  expect(await sessionCount()).toBe(0);
+  expect(await sessionCount(user.id)).toBe(0);
 });
 
 test("links to sign up", async () => {
