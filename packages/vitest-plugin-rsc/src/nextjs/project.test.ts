@@ -63,6 +63,16 @@ test("lists the routes of the app, one for each pathname", async () => {
   expect(route(routes, "/board").page).toBe("/board/@team/page");
 });
 
+test("has the entry of a page import the module of each segment once, not at every request", async () => {
+  const project = await loadNextProject(root);
+  const { code } = await project.loadRouteEntry(route(project.routes, "/notes/[id]"));
+
+  // Next's loader tree gets each module with a function that it calls for
+  // every request: see `loadingOnce()` in project/entries.ts.
+  expect(code).toContain("instrumentModuleGetter(__vitest_plugin_rsc_once__(() => import(");
+  expect(code).not.toContain("instrumentModuleGetter(() => import(");
+});
+
 // An app of its own, next to the demo so that it finds the same Next.
 function appWith(files: string[], config: object = {}): string {
   const dir = fs.mkdtempSync(path.join(root, ".app-"));
@@ -373,6 +383,26 @@ test("says which export of Next's build is gone", async () => {
 
   await expect(loadNextProject(root, next)).rejects.toThrow(
     changed("next/dist/build/route-discovery.js has no export `discoverRoutes`"),
+  );
+});
+
+test("loads a module of Next's build where it is first read, and says there that it does not load", async () => {
+  const next = nextWith({
+    "next/dist/build/webpack/loaders/next-font-loader/index.js": new Error("Cannot find module"),
+  });
+  // The project loads without it: nothing has run the font loader yet.
+  const project = await loadNextProject(root, next);
+  const compiled = await project.compile(
+    sourceOf("fonts/fonts.ts"),
+    appFile("fonts/fonts.ts"),
+    "rsc",
+  );
+  const [request] = /next\/font\/local\/target\.css\?[^']+(?=')/.exec(compiled!.code)!;
+
+  await expect(project.loadFont(request)).rejects.toThrow(
+    changed(
+      "next/dist/build/webpack/loaders/next-font-loader/index.js does not load (Cannot find module)",
+    ),
   );
 });
 

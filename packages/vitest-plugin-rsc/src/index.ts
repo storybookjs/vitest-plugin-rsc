@@ -3,7 +3,7 @@ import { type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
-import { changedAfter, versionOf } from "./module-versions.ts";
+import { changedAfter, onInvalidation, versionOf } from "./module-versions.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
@@ -15,6 +15,8 @@ import {
   invokeEvent,
   versionEvent,
   type ChangedQuestion,
+  type ModulesChanged,
+  modulesChangedEvent,
   webSocketInfoPath,
   webSocketQuery,
 } from "./websocket-bridge.ts";
@@ -74,6 +76,24 @@ export function vitestPluginRSC(): Plugin[] {
     {
       name: "rsc:run-in-browser",
       configureServer(server) {
+        // The pages hear of every change of the modules of an environment
+        // on their socket, before any answer that the server makes after
+        // it: so a page compares versions where it would ask for them. See
+        // `heardVersions` in utils.ts.
+        const pages = new Set<{ send(message: string): void }>();
+        onInvalidation(server, (environment) => {
+          const data: ModulesChanged = {
+            environment,
+            version: versionOf(server.environments[environment]?.moduleGraph),
+          };
+          const message = JSON.stringify({ type: "custom", event: modulesChangedEvent, data });
+          for (const page of pages) {
+            // A socket that is closing: the page asks again on its next one.
+            try {
+              page.send(message);
+            } catch {}
+          }
+        });
         // The ids of the modules of an environment that Vite invalidated
         // after a version of them, for a runner of the page that has that
         // version: see `takeChangedModules()` in utils.ts.
@@ -86,6 +106,8 @@ export function vitestPluginRSC(): Plugin[] {
           if (url.searchParams.get(webSocketQuery) !== "1") {
             return;
           }
+          pages.add(socket);
+          socket.on("close", () => pages.delete(socket));
 
           socket.on("message", async (raw) => {
             const invoke = parseWebSocketInvoke(raw);
