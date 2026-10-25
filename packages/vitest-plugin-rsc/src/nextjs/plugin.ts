@@ -1179,14 +1179,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // the app has no NODE_ENV of its own, and React's build follows it,
         // as the aliases of a layer do (project/layers.ts).
         const nodeEnv = JSON.stringify(build);
-        // Vitest compiles the test file as the browser starts, but not the
-        // setup files: the plugin's, with the entry of the server's API and
-        // the rsc layer that it starts, and the ssr layer, about 170 modules
-        // that the page asks for one after another once it runs. Vite
-        // compiles a file of `dev.warmup`, and what it imports, as its
-        // server starts to listen, which under Vitest is as the browser
-        // launches: by the time the page asks, they are there.
-        const warmup = (files: string[]) => (testRun ? { warmup: files } : {});
         const builtLayer = (layer: NextLayer) =>
           isBuild && {
             define: {
@@ -1220,7 +1212,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           environments: {
             [environmentOf.rsc]: {
               ...builtLayer("rsc"),
-              dev: warmup([setupFile, ownFile("rsc")]),
               optimizeDeps: optimizeDeps("rsc"),
             },
             [environmentOf.ssr]: {
@@ -1237,7 +1228,17 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                   "development|production",
                 ],
               },
-              dev: { moduleRunnerTransform: true, ...warmup([ownFile("ssr")]) },
+              // Vitest compiles the test file as the browser starts, but not
+              // the setup files, so the page asked for the ssr layer's
+              // modules one after another once the plugin's setup file ran.
+              // Vite compiles a file of `dev.warmup`, and what it imports, as
+              // its server starts to listen, which under Vitest is as the
+              // browser launches. Not the rsc layer's: it is the `client`
+              // environment, which also serves Vitest's own pages, and with
+              // no cache of pre-bundled dependencies yet, Vite holds them
+              // back until no module of the environment is being compiled:
+              // the pages would wait for the warmup.
+              dev: { moduleRunnerTransform: true, ...(testRun && { warmup: [ownFile("ssr")] }) },
               optimizeDeps: {
                 ...optimizeDeps("ssr"),
                 // Its entries: see `vitest-plugin-rsc:next-scan`.
