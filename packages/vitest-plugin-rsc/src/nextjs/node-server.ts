@@ -7,7 +7,6 @@ import {
   toNodeOutgoingHttpHeaders,
   type RequestMeta,
 } from "./compat/ssr/node-server.ts";
-import type { Served, ServerHttp, Writing } from "../page-host.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its
@@ -15,10 +14,8 @@ import { registry, type RequestHandler, type ServerRequest } from "./registry.ts
 // takes the branches of `process.env.NEXT_RUNTIME === "nodejs"`, with web
 // streams: `__NEXT_USE_NODE_STREAMS` is off. This file and build-output.ts are
 // what a Node.js server has around a request and a browser does not:
-//   - `http.IncomingMessage` and `http.ServerResponse`: in a worker of
-//     Node.js Node's own, the host's (`serverHttp` of page-host.ts); in a
-//     browser here, Next's stand-in of a response, with the body the browser
-//     reads of it, when it is written and how it stops.
+//   - `http.IncomingMessage` and `http.ServerResponse`: here, with the body
+//     the browser reads of a response, when it is written and how it stops.
 //   - The files of a build, which Next reads from `.next/`: build-output.ts.
 // The request handlers are Next's own, the ones its build makes for a page
 // and for a route handler and `next start` calls: `handler(req, res, ctx)`.
@@ -47,20 +44,27 @@ function createNodeRequest(request: ServerRequest) {
   });
 }
 
+/**
+ * How the body of a response of `handleRequest()` is written: `written`
+ * resolves once it ends, whole or not, and `stop` ends it as a page that is
+ * left does. The server writes on whether it is read or not: nothing waits
+ * for a reader.
+ */
+export type Writing = { written: Promise<void>; stop: () => void };
 const writings = new WeakMap<Response, Writing>();
-/** How the body of a response of `handleRequest()` is written, if it has one. */
+/** The `Writing` of a response of `handleRequest()` with a body. */
 export const writingOf = (response: Response): Writing | undefined => writings.get(response);
 
 /**
- * The `http` of a browser, which has none: Next's own stand-in for an
- * `http.ServerResponse`, and the `Response` the browser gets of it, once its
- * head is there, while Next goes on to write the body.
+ * The `http.ServerResponse` of a request, which is Next's own stand-in for
+ * one, and the `Response` the browser gets of it: once its head is there, while
+ * Next goes on to write the body.
  *
  * A request that is left before its head has no response. It lasts until
  * Next's handler is done with it, which can be much later, when the data it
  * waited for comes: its stores have to be there until then.
  */
-const standInHttp: ServerHttp = (request, respond) => {
+function createNodeResponse(request: ServerRequest) {
   let controller!: ReadableStreamDefaultController<Uint8Array>;
   let headSent = false;
   let wrote = false;
@@ -145,40 +149,44 @@ const standInHttp: ServerHttp = (request, respond) => {
   signal?.addEventListener("abort", leave, { once: true });
   res.once("close", () => signal?.removeEventListener("abort", leave));
 
-  const sent = head.then((): Served => {
-    // A status without a body, and an `end()` without a byte before it.
-    const empty = (finished && !wrote) || [101, 204, 205, 304].includes(res.statusCode);
-    const response = new registry.Response(empty ? null : body, {
-      status: res.statusCode,
-      statusText: res.statusMessage,
-      headers: fromNodeOutgoingHttpHeaders(res.getHeaders()),
+  const response = (written: Promise<unknown>): Promise<Response> => {
+    const sent = head.then(() => {
+      // A status without a body, and an `end()` without a byte before it.
+      const empty = (finished && !wrote) || [101, 204, 205, 304].includes(res.statusCode);
+      const answer = new registry.Response(empty ? null : body, {
+        status: res.statusCode,
+        statusText: res.statusMessage,
+        headers: fromNodeOutgoingHttpHeaders(res.getHeaders()),
+      });
+      if (!empty) writings.set(answer, { written: bodyWritten, stop });
+      return answer;
     });
-    return { response, writing: empty ? undefined : { written: bodyWritten, stop } };
-  });
-  // Next's handler is done with the request, often long after the head.
-  // With a head, the answer is the response of that head. Without one,
-  // the response is over, and closes as a socket would.
-  const settled = respond(createNodeRequest(request), res).then(
-    // Without a head: Next ended the response with an error before its
-    // first byte, or whoever asked has left.
-    () => {
-      if (headSent) return sent;
-      res.destroy();
-      throw failure ?? leftBeforeSent();
-    },
-    (error) => {
-      // What fails before the head is the failure of the request. After
-      // it, the body ends with the error.
-      if (!headSent) {
+    // Next's handler is done with the request, often long after the head.
+    // With a head, the answer is the response of that head. Without one,
+    // the response is over, and closes as a socket would.
+    const settled = written.then(
+      // Without a head: Next ended the response with an error before its
+      // first byte, or whoever asked has left.
+      () => {
+        if (headSent) return sent;
         res.destroy();
-        throw error;
-      }
-      res.destroy(error ?? new Error("The request handler failed."));
-      return sent;
-    },
-  );
-  return Promise.race([sent, settled]);
-};
+        throw failure ?? leftBeforeSent();
+      },
+      (error) => {
+        // What fails before the head is the failure of the request. After
+        // it, the body ends with the error.
+        if (!headSent) {
+          res.destroy();
+          throw error;
+        }
+        res.destroy(error ?? new Error("The request handler failed."));
+        return sent;
+      },
+    );
+    return Promise.race([sent, settled]);
+  };
+  return { res, response };
+}
 
 // What Next's handler throws as it prerenders a route that the build's
 // verdict on its config marked as prerendered, and that read the request: a
@@ -254,32 +262,24 @@ export async function handleRequest(
   routed?: RoutedRequestMeta,
   { statusCode, headers }: { statusCode?: number; headers?: Headers } = {},
 ): Promise<Response> {
+  const { res, response } = createNodeResponse(request);
+  // The status and the headers the server in front of the route has for the
+  // response, which `next start` sets the same way: `res.statusCode = 404`,
+  // `res.setHeader()`. The handler reads them, and can set others, or add to
+  // them, like React's `Link` of the stylesheets of a page. Not the cookies,
+  // which a route can set over: see `finishWithBody()` in ssr.ts.
+  if (statusCode !== undefined) res.statusCode = statusCode;
+  headers?.forEach((value, name) => {
+    if (name !== "set-cookie") res.setHeader(name, value);
+  });
   // Next's route module makes a cache of its own for every request, and
   // leaves it in the global of the server's: see cache.ts.
-  const requestMeta = {
-    ...requestMetaOf(request, routed),
-    incrementalCache: globalThis.__incrementalCache,
-  };
-  const respond = (req: unknown, res: unknown) => {
-    const response = res as OutgoingHead;
-    // The status and the headers the server in front of the route has for
-    // the response, which `next start` sets the same way: `res.statusCode =
-    // 404`, `res.setHeader()`. The handler reads them, and can set others, or
-    // add to them, like React's `Link` of the stylesheets of a page. Not the
-    // cookies, which a route can set over: see `finishWithBody()` in ssr.ts.
-    if (statusCode !== undefined) response.statusCode = statusCode;
-    headers?.forEach((value, name) => {
-      if (name !== "set-cookie") response.setHeader(name, value);
-    });
-    return handler(req, res, { waitUntil: context.waitUntil, requestMeta }).finally(
-      restoreIncrementalCache,
-    );
-  };
-  // The host's own `http`, or, in a browser, the stand-in.
-  const { response, writing } = await (registry.serverHttp ?? standInHttp)(request, respond);
-  if (writing) writings.set(response, writing);
-  return response;
+  const handled = handler(createNodeRequest(request), res, {
+    waitUntil: context.waitUntil,
+    requestMeta: {
+      ...requestMetaOf(request, routed),
+      incrementalCache: globalThis.__incrementalCache,
+    },
+  }).finally(restoreIncrementalCache);
+  return response(handled);
 }
-
-/** What `handleRequest()` sets of an `http.ServerResponse` before Next's handler has it. */
-type OutgoingHead = { statusCode: number; setHeader(name: string, value: string): void };
