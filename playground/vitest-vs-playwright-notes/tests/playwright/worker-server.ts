@@ -28,7 +28,7 @@ export const serverPerWorker: typeof base = base.extend<object, { server: string
     // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
     async ({}, use, workerInfo) => {
       if (command === "dev" && workerInfo.config.workers > 1) {
-        throw new Error("`next dev` runs on 1 worker: each `next dev` writes the one .next");
+        throw new Error("`next dev` runs on 1 worker: Next starts one `next dev` in a directory");
       }
       // The port of the config's baseURL, plus the worker's index.
       const origin = new URL(workerInfo.project.use.baseURL!);

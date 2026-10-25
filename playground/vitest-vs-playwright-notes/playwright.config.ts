@@ -28,8 +28,8 @@ export default defineConfig({
   globalSetup: perWorker ? undefined : "./tests/playwright/global-setup.ts",
   // One worker: the tests share one database, which each empties first, as
   // each Vitest test empties its own. With a database per worker, any number,
-  // and the tests of a file in parallel too; but one `next dev`, which writes
-  // .next.
+  // and the tests of a file in parallel too; but one with `next dev`, as Next
+  // starts one `next dev` in a directory.
   workers: perWorker && !dev ? undefined : 1,
   fullyParallel: perWorker,
   forbidOnly: Boolean(env.CI),
