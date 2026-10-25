@@ -1,6 +1,6 @@
 # Fast tests
 
-How to get the quickest feedback loop for the end-to-end scenarios of a Next.js App Router app: what a test costs, where the time goes, and what each way to make it cheaper gives up. Every number was measured, and comes with the conditions it was measured under. This assumes you've read the [quick start](../README.md#quick-start) and the [Next.js guide](nextjs-guide.md).
+How to get the quickest feedback loop for the end-to-end scenarios of a Next.js App Router app: what a test costs, where the time goes, and what each way to make it cheaper gives up. Every number was measured, and comes with the conditions it was measured under. This assumes you've read the [quick start](../README.md#quick-start) and the [Next.js guide](nextjs-guide.md). For the patterns alone, each with its code and what it gives up, read [Fast testing patterns](fast-testing-patterns.md) first: this page is the measurements behind it.
 
 > [!NOTE]
 > **Status, 25 October 2026.** None of this is released yet. Fast mode and its speed features are on [#251](https://github.com/storybookjs/vitest-plugin-rsc/pull/251), the pull request of fast mode, and so is everything below unless it names a draft pull request on top of it:

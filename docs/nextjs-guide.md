@@ -19,7 +19,7 @@ Everything you can do with `vitest-plugin-rsc/nextjs/testing-library`, one examp
 - [Test isolation](#test-isolation)
 - [Development or production](#development-or-production)
 - [Watch mode](#watch-mode)
-- [Fast tests](fast-tests.md): what a test costs, and the quickest feedback loop
+- [Fast testing patterns](fast-testing-patterns.md): what a test costs, and how to make a suite fast
 
 > [!TIP]
 > Got a Client Component that only takes props, like a button from your design system? You can test it without Next at all. See [Testing Client Components](use-client-test-files.md).
@@ -851,7 +851,7 @@ vitestPluginNext({ mode: "fidelity", skipPrefetch: true });
 
 A suite that passes in fast mode should pass in fidelity mode too. CI tells you when it doesn't.
 
-What each feature saves, and what else makes a test cheaper, is in [Fast tests](fast-tests.md).
+What each feature saves, and what else makes a test cheaper, is in [Fast testing patterns](fast-testing-patterns.md).
 
 ## Start sooner on Bun
 

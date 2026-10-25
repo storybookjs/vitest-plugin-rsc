@@ -162,7 +162,7 @@ Pretty much everything Next does. Your files go through Next's own compiler, so 
 
 Head to the **[Next.js guide](docs/nextjs-guide.md)** for an example of each.
 
-For a quicker feedback loop, `VITEST_PLUGIN_RSC_MODE=fast npx vitest` runs in [fast mode](docs/nextjs-guide.md#fast-mode): the pages of a test file render in one app, without HTML from the server, prefetching or page loads. Keep CI in fidelity mode, the default. [Fast tests](docs/fast-tests.md) has what each test costs, and what else makes it cheaper.
+For a quicker feedback loop, `VITEST_PLUGIN_RSC_MODE=fast npx vitest` runs in [fast mode](docs/nextjs-guide.md#fast-mode): the pages of a test file render in one app, without HTML from the server, prefetching or page loads. Keep CI in fidelity mode, the default. [Fast testing patterns](docs/fast-testing-patterns.md) has what each test costs, and what else makes it cheaper.
 
 ### Databases
 
@@ -202,7 +202,8 @@ The full list is in [Limitations](docs/limitations.md).
 - [Testing a Next.js app](docs/nextjs-guide.md): the main guide.
 - [Testing Client Components](docs/use-client-test-files.md) in a `"use client"` test file.
 - [Databases](docs/databases.md): Postgres, SQLite, MySQL and Redis in the tab.
-- [Fast tests](docs/fast-tests.md): what a test costs, and the quickest feedback loop.
+- [Fast testing patterns](docs/fast-testing-patterns.md): how to make a suite fast, and what each pattern costs and gives up.
+- [Fast tests](docs/fast-tests.md): the measurements behind them, and the quickest feedback loop.
 - [Node.js in the browser](docs/nodejs-in-the-browser.md): which Node APIs work, and the in-memory disk.
 - [Static builds](docs/static-build.md): `vite build`, and how to serve the result.
 - [RSC without Next.js](docs/rsc-without-nextjs.md).
