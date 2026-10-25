@@ -20,17 +20,18 @@
 // code that Vitest 5's locators run: roles, ARIA states, the accessible
 // name and what is hidden from ARIA. Changed: the imports; no content of
 // pseudo-elements in a DOM that does not render; shortcuts with the same
-// answers in `isElementHiddenForAria()` and `getAriaDisabled()`; added,
+// answers in `isElementHiddenForAria()`, by a visible box, and
+// `getAriaDisabled()`; added,
 // which ivya does not have: the role candidates of
 // `getAriaRoleCandidates()`, the name of text alone of
 // `getPlainTextAccessibleName()` and its text of `getPlainTextContent()`.
 // See NOTICE.
 
 import {
-  checksVisibility,
   closestCrossShadow,
   elementSafeTagName,
   enclosingShadowRootOrDocument,
+  hasVisibleBox,
   getElementComputedStyle,
   isElementStyleVisibilityVisible,
   isVisibleTextNode,
@@ -459,6 +460,12 @@ export function isElementHiddenForAria(element: Element): boolean {
   if (isElementIgnoredForAria(element)) {
     return true;
   }
+  // Not in Playwright: an element with a visible box is not hidden by its
+  // style, nor by one above it, and is in a slot, so of Playwright's checks
+  // `aria-hidden` on it or above it is left, and its style is not needed.
+  if (hasVisibleBox(element)) {
+    return !!closestCrossShadow(element, '[aria-hidden="true" i]');
+  }
   const style = getElementComputedStyle(element);
   const isSlot = element.nodeName === "SLOT";
   if (style?.display === "contents" && !isSlot) {
@@ -479,16 +486,8 @@ export function isElementHiddenForAria(element: Element): boolean {
   // Note: <option> inside <select> are not affected by visibility or content-visibility.
   // Same goes for <slot>.
   const isOptionInsideSelect = element.nodeName === "OPTION" && !!element.closest("select");
-  if (!isOptionInsideSelect && !isSlot) {
-    if (!isElementStyleVisibilityVisible(element, style)) {
-      return true;
-    }
-    // Not in Playwright: an element that `checkVisibility()` finds rendered
-    // has no `display: none` on it or above it and is in a slot, so of the
-    // walk up there is `aria-hidden` left to look for.
-    if (style && checksVisibility) {
-      return !!closestCrossShadow(element, '[aria-hidden="true" i]');
-    }
+  if (!isOptionInsideSelect && !isSlot && !isElementStyleVisibilityVisible(element, style)) {
+    return true;
   }
   return belongsToDisplayNoneOrAriaHiddenOrNonSlotted(element);
 }

@@ -68,19 +68,32 @@ function compare(fixture: string, table: Row[]): { mismatches: string[]; found: 
   return { mismatches, found };
 }
 
-test("every locator of the table finds what ivya finds, on the ARIA page", () => {
-  const { mismatches, found } = compare(ariaFixture, rows);
-  expect(mismatches.join("\n")).toBe("");
-  expect(found).toBeGreaterThan(rows.length / 3);
-});
+// jsdom takes seconds for the table, ivya's answers and the package's.
+test(
+  "every locator of the table finds what ivya finds, on the ARIA page",
+  { timeout: 60_000 },
+  () => {
+    const { mismatches, found } = compare(ariaFixture, rows);
+    expect(mismatches.join("\n")).toBe("");
+    expect(found).toBeGreaterThan(rows.length / 3);
+  },
+);
 
-test("every locator of the benchmark finds what ivya finds, on each route of the notes app", () => {
-  const results = Object.entries(notesFixtures).map(([route, html]) => ({
-    route,
-    ...compare(html, [...rows, ...notesRows]),
-  }));
-  expect(
-    results.flatMap(({ route, mismatches }) => mismatches.map((m) => `${route}: ${m}`)).join("\n"),
-  ).toBe("");
-  for (const { route, found } of results) expect(found, route).toBeGreaterThan(10);
-});
+test(
+  "every locator of the benchmark finds what ivya finds, on each route of the notes app",
+  {
+    timeout: 60_000,
+  },
+  () => {
+    const results = Object.entries(notesFixtures).map(([route, html]) => ({
+      route,
+      ...compare(html, [...rows, ...notesRows]),
+    }));
+    expect(
+      results
+        .flatMap(({ route, mismatches }) => mismatches.map((m) => `${route}: ${m}`))
+        .join("\n"),
+    ).toBe("");
+    for (const { route, found } of results) expect(found, route).toBeGreaterThan(10);
+  },
+);

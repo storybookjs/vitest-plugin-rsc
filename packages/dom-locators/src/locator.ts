@@ -8,9 +8,10 @@ import {
   checkActionOptions,
   followLabel,
   type ActionOptions,
+  type ForceOptions,
   type Target,
 } from "./actionability.ts";
-import { defaultTimeout, exactByDefault, testIdAttribute } from "./environment.ts";
+import { defaultTimeout, exactByDefault, isRendered, testIdAttribute } from "./environment.ts";
 import {
   UnsupportedError,
   deferred,
@@ -19,9 +20,10 @@ import {
   strictModeViolation,
 } from "./errors.ts";
 import { isInsideScope, sortInDOMOrder } from "./dom-utils.ts";
-import { fill, selectOptions, type SelectValue } from "./form-controls.ts";
-import { focusForPress, press, type Key } from "./keyboard.ts";
-import { click, dblClick, hover } from "./pointer.ts";
+import { fill, selectOptions, setInputFiles, type SelectValue } from "./form-controls.ts";
+import { focusForPress, press, pressSequentially, type Key } from "./keyboard.ts";
+import { holdOnly, isModifier, type Modifier } from "./modifiers.ts";
+import { click, drag, hover, wheel, type MouseButton, type Position } from "./pointer.ts";
 import { beginAriaCaches, endAriaCaches } from "./role-utils.ts";
 import {
   byAltText,
@@ -50,6 +52,111 @@ export interface FilterOptions {
   hasNotText?: string | RegExp;
   has?: DomLocator;
   hasNot?: DomLocator;
+}
+
+/** The options of `hover()` and `unhover()`, of Playwright's that the page models. */
+export interface HoverOptions extends ForceOptions {
+  /** The modifier keys held during the action. */
+  modifiers?: Modifier[];
+  /** Where in the element, from the top left corner of its padding box. Default: its middle. */
+  position?: Position;
+  /** Whether to wait for the element and its checks, and not to act. */
+  trial?: boolean;
+  /** No effect, as in Playwright. */
+  noWaitAfter?: boolean;
+}
+
+/** The options of `dblClick()` and `tripleClick()`, of Playwright's that the page models. */
+export interface DoubleClickOptions extends HoverOptions {
+  /** Default: "left". */
+  button?: MouseButton;
+}
+
+/** The options of `click()`, of Playwright's that the page models. */
+export interface ClickOptions extends DoubleClickOptions {
+  /** How many presses of the button in a row. Default: 1. */
+  clickCount?: number;
+}
+
+/** The options of `dropTo()`, of Playwright's `dragTo()` that the page models. */
+export interface DropOptions extends ForceOptions {
+  /** Where the mouse presses in the element, from the top left corner of its padding box. Default: its middle. */
+  sourcePosition?: Position;
+  /** Where it lets go in the target. Default: its middle. */
+  targetPosition?: Position;
+  /** Whether to wait for both elements and their checks, and not to act. */
+  trial?: boolean;
+  /** No effect, as in Playwright. */
+  noWaitAfter?: boolean;
+}
+
+const dropKeys = ["timeout", "force", "sourcePosition", "targetPosition", "trial", "noWaitAfter"];
+
+/** The options of `fill()`, `clear()` and `selectOptions()`, of Playwright's that the page models. */
+export interface FillOptions extends ForceOptions {
+  /** No effect, as in Playwright. */
+  noWaitAfter?: boolean;
+}
+
+/** The options of `upload()`, of Playwright's that the page models. */
+export interface UploadOptions extends ActionOptions {
+  /** No effect, as in Playwright. */
+  noWaitAfter?: boolean;
+}
+
+/** The options of `press()` and `pressSequentially()`, of Playwright's that the page models. */
+export interface PressOptions extends ActionOptions {
+  /** No effect, as in Playwright. */
+  noWaitAfter?: boolean;
+}
+
+/** The options of `wheel()`, as Vitest's: by `delta` in pixels, or by 100 pixels in a `direction`. */
+export type WheelOptions = { times?: number } & (
+  | { delta: { x: number; y?: number } | { x?: number; y: number }; direction?: undefined }
+  | { direction: "up" | "down" | "left" | "right"; delta?: undefined }
+);
+
+const wheelDirections = {
+  up: { x: 0, y: -100 },
+  down: { x: 0, y: 100 },
+  left: { x: -100, y: 0 },
+  right: { x: 100, y: 0 },
+};
+
+const hoverKeys = ["timeout", "force", "modifiers", "position", "trial", "noWaitAfter"];
+const doubleClickKeys = [...hoverKeys, "button"];
+const clickKeys = [...doubleClickKeys, "clickCount"];
+const fillKeys = ["timeout", "force", "noWaitAfter"];
+
+/** The values of a mouse action's options, which Playwright checks too. */
+function checkMouseOptions(action: string, options: ClickOptions): void {
+  const invalid = (option: string) =>
+    new TypeError(
+      `${action} has an invalid ${option}: ${JSON.stringify(options[option as never])}.`,
+    );
+  if (options.button !== undefined && !["left", "middle", "right"].includes(options.button)) {
+    throw invalid("button");
+  }
+  const count = options.clickCount;
+  if (count !== undefined && !(Number.isInteger(count) && count > 0)) throw invalid("clickCount");
+  if (options.modifiers !== undefined && !options.modifiers.every((key) => isModifier(key))) {
+    throw invalid("modifiers");
+  }
+  const position = options.position;
+  if (position !== undefined && !(Number.isFinite(position.x) && Number.isFinite(position.y))) {
+    throw invalid("position");
+  }
+}
+
+/** Runs `act` with `modifiers` held, as Playwright's action with them; with the keys as they were for none. */
+function withModifiers(modifiers: Modifier[] | undefined, act: () => void): void {
+  if (!modifiers) return act();
+  const restore = holdOnly(modifiers);
+  try {
+    act();
+  } finally {
+    restore();
+  }
 }
 
 /** The options of `findElement()`, as Vitest's `SelectorOptions`. */
@@ -383,51 +490,115 @@ export class DomLocator {
     };
   }
 
-  /** Clicks the element once it is visible and enabled, as Playwright's `click()`. */
-  async click(options?: ActionOptions): Promise<void> {
-    checkActionOptions("click()", options);
-    click(await actionable(this.#target(), "click()", ["visible", "enabled"], options));
+  /**
+   * Clicks the element once it is visible and enabled, as Playwright's
+   * `click()`: with `button`, `clickCount`, `modifiers`, `position`,
+   * `force` and `trial`.
+   */
+  click(options: ClickOptions = {}): Promise<void> {
+    return this.#click("click()", clickKeys, options, options.clickCount ?? 1);
   }
 
   /** Double-clicks the element once it is visible and enabled. */
-  async dblClick(options?: ActionOptions): Promise<void> {
-    checkActionOptions("dblClick()", options);
-    dblClick(await actionable(this.#target(), "dblClick()", ["visible", "enabled"], options));
+  dblClick(options: DoubleClickOptions = {}): Promise<void> {
+    return this.#click("dblClick()", doubleClickKeys, options, 2);
+  }
+
+  /** Triple-clicks the element once it is visible and enabled, as Vitest's: a click of three. */
+  tripleClick(options: DoubleClickOptions = {}): Promise<void> {
+    return this.#click("tripleClick()", doubleClickKeys, options, 3);
+  }
+
+  async #click(
+    action: string,
+    keys: readonly string[],
+    options: ClickOptions,
+    clickCount: number,
+  ): Promise<void> {
+    checkActionOptions(action, options, keys);
+    checkMouseOptions(action, options);
+    const element = await actionable(this.#target(), action, ["visible", "enabled"], options);
+    if (options.trial) return;
+    const { button, position } = options;
+    withModifiers(options.modifiers, () => click(element, { button, clickCount, position }));
   }
 
   /** Moves the mouse onto the element once it is visible. */
-  async hover(options?: ActionOptions): Promise<void> {
-    checkActionOptions("hover()", options);
-    hover(await actionable(this.#target(), "hover()", ["visible"], options));
+  async hover(options: HoverOptions = {}): Promise<void> {
+    checkActionOptions("hover()", options, hoverKeys);
+    checkMouseOptions("hover()", options);
+    const element = await actionable(this.#target(), "hover()", ["visible"], options);
+    if (options.trial) return;
+    withModifiers(options.modifiers, () => hover(element, options.position));
   }
 
   /** Moves the mouse onto the body, as Vitest's `unhover()`. */
-  async unhover(options?: ActionOptions): Promise<void> {
-    checkActionOptions("unhover()", options);
+  async unhover(options: HoverOptions = {}): Promise<void> {
+    checkActionOptions("unhover()", options, hoverKeys);
+    checkMouseOptions("unhover()", options);
     await actionable(this.#target(), "unhover()", [], options);
-    hover(document.body);
+    if (options.trial) return;
+    withModifiers(options.modifiers, () => hover(document.body, options.position));
   }
 
   /** Replaces the text of an input or a textarea once it is visible, enabled and editable. */
-  async fill(text: string, options?: ActionOptions): Promise<void> {
-    checkActionOptions("fill()", options);
+  async fill(text: string, options?: FillOptions): Promise<void> {
+    checkActionOptions("fill()", options, fillKeys);
     const checks = ["visible", "enabled", "editable"] as const;
     fill(await actionable(this.#target(), "fill()", [...checks], options, followLabel), text);
   }
 
   /** Empties an input or a textarea: `fill("")`. */
-  async clear(options?: ActionOptions): Promise<void> {
-    checkActionOptions("clear()", options);
+  async clear(options?: FillOptions): Promise<void> {
+    checkActionOptions("clear()", options, fillKeys);
     const checks = ["visible", "enabled", "editable"] as const;
     fill(await actionable(this.#target(), "clear()", [...checks], options, followLabel), "");
+  }
+
+  /**
+   * Sets the files of a file input, or of the one a label is of, as
+   * Vitest's `upload()` of `File`s, without the checks of its state: a file
+   * input is often hidden. A path throws: the page cannot read a file.
+   */
+  async upload(files: File | File[] | string | string[], options?: UploadOptions): Promise<void> {
+    checkActionOptions("upload()", options, ["timeout", "noWaitAfter"]);
+    const list = Array.isArray(files) ? files : [files];
+    if (list.some((file) => typeof file === "string")) {
+      throw new UnsupportedError(
+        `upload() of a path is not in dom-locators, as the page cannot read a file: give it a File, or ${escapeHatch}.`,
+      );
+    }
+    const element = await actionable(this.#target(), "upload()", [], options, followLabel);
+    setInputFiles(element, list as File[]);
+  }
+
+  /**
+   * Turns the wheel of the mouse over the element once it is visible, as
+   * Vitest's `wheel()`, then waits a frame, for the `scroll` it causes.
+   */
+  async wheel(options: WheelOptions): Promise<void> {
+    checkActionOptions("wheel()", options, ["delta", "direction", "times"]);
+    const delta = options.delta ?? wheelDirections[options.direction!];
+    const times = options.times ?? 1;
+    if (!delta || (options.delta && options.direction)) {
+      throw new TypeError("wheel() takes either a delta or a direction.");
+    }
+    if (!(Number.isInteger(times) && times >= 0)) {
+      throw new TypeError(`wheel() has an invalid times: ${times}.`);
+    }
+    const element = await actionable(this.#target(), "wheel()", ["visible"], {});
+    wheel(element, { x: delta.x ?? 0, y: delta.y ?? 0 }, times);
+    if (isRendered(element.ownerDocument)) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
   }
 
   /** Selects the options of a `<select>` by value, label, element or locator, every other one not. */
   async selectOptions(
     values: string | string[] | HTMLElement | HTMLElement[] | DomLocator | DomLocator[],
-    options?: ActionOptions,
+    options?: FillOptions,
   ): Promise<void> {
-    checkActionOptions("selectOptions()", options);
+    checkActionOptions("selectOptions()", options, fillKeys);
     const list = (Array.isArray(values) ? values : [values]) as (string | Element | DomLocator)[];
     const element = await actionable(
       this.#target(),
@@ -460,29 +631,59 @@ export class DomLocator {
   }
 
   /**
-   * Presses a key on the element, which gets the focus first: Enter, Escape,
-   * Tab, Backspace, Delete, Space, or one printable character. Not in
-   * Vitest's `Locator`, which presses keys with `userEvent.keyboard()`; as
-   * Playwright's `locator.press()`.
+   * Presses a key on the element, which gets the focus first, as
+   * Playwright's `locator.press()`: Enter, Escape, Tab, Backspace, Delete,
+   * Space, the arrows, Home, End, a modifier or one printable character,
+   * after the modifiers held for it, like "Shift+Tab". Not in Vitest's
+   * `Locator`, which presses keys with `userEvent.keyboard()`.
    */
-  async press(key: Key, options?: ActionOptions): Promise<void> {
-    checkActionOptions("press()", options);
+  async press(key: Key, options?: PressOptions): Promise<void> {
+    checkActionOptions("press()", options, ["timeout", "noWaitAfter"]);
     const element = (await actionable(this.#target(), "press()", [], options)) as HTMLElement;
     focusForPress(element);
     press(element, key);
   }
 
-  tripleClick(_options?: unknown): Promise<void> {
-    return deferred("tripleClick()");
+  /**
+   * Types `text` into the element, which gets the focus first, a press of a
+   * key for each character, as Playwright's `locator.pressSequentially()`.
+   * Not in Vitest's `Locator`, which types with `userEvent.type()`.
+   */
+  async pressSequentially(text: string, options?: PressOptions): Promise<void> {
+    checkActionOptions("pressSequentially()", options, ["timeout", "noWaitAfter"]);
+    const element = (await actionable(
+      this.#target(),
+      "pressSequentially()",
+      [],
+      options,
+    )) as HTMLElement;
+    focusForPress(element);
+    pressSequentially(element, text);
   }
-  wheel(_options: unknown): Promise<void> {
-    return deferred("wheel()");
-  }
-  dropTo(_target: unknown, _options?: unknown): Promise<void> {
-    return deferred("dropTo()");
-  }
-  upload(_files: unknown, _options?: unknown): Promise<void> {
-    return deferred("upload()");
+
+  /**
+   * Drags the element onto `target` once both are visible, as Playwright's
+   * `dragTo()`: the mouse presses on it, moves onto the target and lets go
+   * there. For what the page drags with the events of the mouse; an
+   * element the browser drags itself, `draggable`, throws.
+   */
+  async dropTo(target: DomLocator, options: DropOptions = {}): Promise<void> {
+    checkActionOptions("dropTo()", options, dropKeys);
+    if (!(target instanceof DomLocator)) {
+      throw new UnsupportedError(
+        `dropTo() takes a locator of dom-locators, not ${String(target)}: ${escapeHatch}.`,
+      );
+    }
+    for (const option of ["sourcePosition", "targetPosition"] as const) {
+      const position = options[option];
+      if (position !== undefined && !(Number.isFinite(position.x) && Number.isFinite(position.y))) {
+        throw new TypeError(`dropTo() has an invalid ${option}: ${JSON.stringify(position)}.`);
+      }
+    }
+    const source = await actionable(this.#target(), "dropTo()", ["visible"], options);
+    const element = await actionable(target.#target(), "dropTo()", ["visible"], options);
+    if (options.trial) return;
+    drag(source, element, options);
   }
   screenshot(_options?: unknown): Promise<never> {
     return deferred("screenshot()");
