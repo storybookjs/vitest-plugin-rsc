@@ -13,7 +13,9 @@ import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-li
 const screen = () => within(document.body);
 const happyDom = "happyDOM" in window;
 
-const answer = (text: string) => screen().findByText(`answer: ${text}`);
+// Long enough for the first request to a route handler, which compiles it:
+// on CI that takes longer than Testing Library's 1 s.
+const answer = (text: string) => screen().findByText(`answer: ${text}`, {}, { timeout: 10_000 });
 
 test("a fetch of a Client Component reaches a route handler, with the cookies the app set", async () => {
   await renderServer({ url: "/request-probe" });
