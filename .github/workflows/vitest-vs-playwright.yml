@@ -27,7 +27,7 @@ defaults:
 
 jobs:
   vitest:
-    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}${{ matrix.node && ', on Node.js' || '' }}
+    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}${{ matrix.node && ', on Node.js' || '' }}${{ matrix.dom && format(', {0}', matrix.dom) || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -41,6 +41,8 @@ jobs:
         # 2 to 3 s sooner than `pnpm exec vitest` on Node.js; the tests then
         # take the same time. See the playgrounds' README.md. `node` runs it on
         # Node.js instead, in production only: the same tests, to compare.
+        # `dom` runs them without a browser, in a worker of Node.js with the
+        # DOM of happy-dom or jsdom (`VITEST_DOM`), on Node.js.
         include:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
@@ -48,11 +50,26 @@ jobs:
           - { app: vitest-vs-playwright-notes, tests: dom-locators, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event, mode: fast, node: true }
+          - {
+              app: vitest-vs-playwright-notes,
+              tests: dom-locators,
+              mode: fast,
+              node: true,
+              dom: happy-dom,
+            }
+          - {
+              app: vitest-vs-playwright-notes,
+              tests: dom-locators,
+              mode: fast,
+              node: true,
+              dom: jsdom,
+            }
     defaults:
       run:
         working-directory: playground/${{ matrix.app }}
     env:
       VITEST_PLUGIN_RSC_MODE: ${{ matrix.mode || 'fidelity' }}
+      VITEST_DOM: ${{ matrix.dom }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -66,6 +83,7 @@ jobs:
           bun-version: 1.4.4
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
+        if: ${{ !matrix.dom }}
       - run: pnpm --filter vitest-plugin-rsc build
       - name: Run the tests, Next and React in production
         run: |
@@ -76,7 +94,7 @@ jobs:
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest on ${{ matrix.node && 'Node.js' || 'Bun' }}, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}"
+            echo "### Vitest on ${{ matrix.node && 'Node.js' || 'Bun' }}, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.mode == 'fast' && ', fast mode' || '' }}${{ matrix.dom && format(', {0}', matrix.dom) || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"

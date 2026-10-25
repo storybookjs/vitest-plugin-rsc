@@ -12,8 +12,12 @@ import type { db as appDb } from "../db.ts";
 // that Node.js made (test/pglite-files.ts), with its files fetched once. The
 // data dir has the tables already, so the page runs no DDL as it starts.
 
+// Made absolute, as on a server: the `fetch` of the server has no page to
+// resolve a path against. In a worker of Node.js a module has the URL of its
+// file, and the page the dev server's (`VITEST_DOM` of vitest.config.ts).
+const base = import.meta.url.startsWith("file:") ? location.href : import.meta.url;
 async function fetchFile(url: string): Promise<Response> {
-  const response = await fetch(new URL(url, import.meta.url));
+  const response = await fetch(new URL(url, base));
   if (!response.ok) throw new Error(`${url} of the database: ${response.status}`);
   return response;
 }

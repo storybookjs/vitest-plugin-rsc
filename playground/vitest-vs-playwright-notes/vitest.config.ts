@@ -9,12 +9,26 @@ import { writePgliteFiles } from "./test/pglite-files.ts";
 // The files of PGlite in the page: see test/pglite-files.ts.
 await writePgliteFiles();
 
+// The DOM of a run in a worker of Node.js, without a browser:
+// `VITEST_DOM=happy-dom` or `VITEST_DOM=jsdom`. For tests/dom-locators/
+// only, which acts in the page itself, where the other columns act through
+// the browser. Without it, Chromium in Vitest's Browser Mode.
+// oxlint-disable-next-line no-process-env
+const dom = (process.env.VITEST_DOM || undefined) as "happy-dom" | "jsdom" | undefined;
+if (dom !== undefined && dom !== "happy-dom" && dom !== "jsdom") {
+  throw new Error(`VITEST_DOM is happy-dom or jsdom, not ${String(dom)}`);
+}
+
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
   // On Bun, a dependency cache of its own: see ../test-helpers/vite-cache.ts.
   cacheDir,
   // What lib/__mocks__/db.ts imports, which no file that Vite scans imports.
-  optimizeDeps: { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
+  // In Node.js, PGlite runs as on Node.js, which imports it itself: a
+  // pre-bundle would have the stand-ins of a browser for Node's modules.
+  optimizeDeps: dom
+    ? { include: ["drizzle-orm/pglite"], exclude: ["@electric-sql/pglite"] }
+    : { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
   plugins: [
     vitestPluginRSC(),
     // Next and React in production, as `next start` runs them, unless
@@ -26,7 +40,14 @@ export default defineConfig({
       // library it drives, and dom-locators, of tests/dom-locators/: the
       // browser's, the page's own modules, as `vitest` is. Any other
       // package is server code in the page.
-      host: { packages: ["@testing-library/user-event", "@testing-library/dom", "dom-locators"] },
+      host: {
+        packages: [
+          "@testing-library/user-event",
+          "@testing-library/dom",
+          "dom-locators",
+          "@testing-library/jest-dom",
+        ],
+      },
     }),
   ],
   test: {
@@ -43,14 +64,20 @@ export default defineConfig({
       "tests/zz-*/*.test.tsx",
     ],
     browser: {
-      enabled: true,
+      enabled: !dom,
       headless: true,
       provider: playwright(),
       instances: [{ browser: "chromium" }],
     },
+    // In Node.js, the plugin is the page's host itself: see
+    // docs/internals/architecture.md of the plugin.
+    environment: dom,
+    // Browser Mode's timeout of a test, where Node.js has 5 s: a locator
+    // waits until just before it.
+    testTimeout: 15_000,
     isolate: false,
     // As long as Playwright's `expect` waits: see playwright.config.ts.
     expect: { poll: { timeout: 5_000 } },
-    setupFiles: ["./vitest.setup.ts"],
+    setupFiles: ["./vitest.setup.ts", ...(dom ? ["./vitest.setup.node.ts"] : [])],
   },
 });
