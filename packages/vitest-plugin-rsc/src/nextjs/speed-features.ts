@@ -45,8 +45,9 @@ const versions = new WeakMap<object, { of?: unknown; asked: Map<string, Promise<
  * time since `version` last changed, which is asked once per test file, else
  * a new one. For what the dev server reads off its modules alone, by the
  * version of those modules: a change of a file invalidates its modules, also
- * in a run without a watcher, where Vitest does. An answer that fails is
- * asked for again.
+ * on a server without a watcher of its own, a project's under Vitest, whose
+ * top-level watcher invalidates them. An answer that fails is asked for
+ * again.
  */
 export async function whileVersionStays<T>(
   cache: Map<string, Promise<T>>,
@@ -70,7 +71,8 @@ function keptIn<T>(cache: Map<string, Promise<T>>, key: string, ask: () => Promi
   if (!answer) {
     answer = ask();
     cache.set(key, answer);
-    answer.catch(() => cache.delete(key));
+    // Not a later answer, after the cache was emptied.
+    answer.catch(() => cache.get(key) === answer && cache.delete(key));
   }
   return answer;
 }
