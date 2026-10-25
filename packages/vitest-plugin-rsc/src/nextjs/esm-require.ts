@@ -7,8 +7,9 @@ import type { Plugin } from "vite";
 // so that was a copy of every export per call, on every request. Node.js
 // returns the same object every time, and so does this: one per module.
 
-// In Rolldown's runtime: the declaration, and in it the copy of a module
-// that has no `module.exports` of its own, which it reads as it is called.
+// In Rolldown's runtime: the declaration of `__toCommonJS`, and in it the
+// copy. Only the copy is kept: a module that exports a `module.exports` of
+// its own has it read at every call, as the binding it is.
 const declaration = /^(?:export )?var __toCommonJS = /m;
 const copy =
   /__copyProps\(\s*__defProp\(\s*\{\s*\}\s*,\s*(["'])__esModule\1\s*,\s*\{\s*value:\s*true\s*\}\s*\)\s*,\s*mod\s*\)/y;
