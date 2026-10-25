@@ -442,10 +442,11 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * every module of the pre-bundle, by its `transform.define`, natively and
      * in parallel. In the ssr layer every dependency is server code
      * (`isServerCode()`), and of this plugin's own files the pre-bundle has
-     * only its stand-ins of the modules of Node.js: those take the server's
-     * timers too, as Node's own modules do. The rsc layer pre-bundles the
-     * host's packages with the app's, so there it is `optimizerPlugin()`, file
-     * by file.
+     * only its stand-ins of the modules of Node.js and of `fastCrypto`: those
+     * take the server's timers too, as Node's own modules do. The bundler
+     * also reaches a dependency in TypeScript or JSX, which oxc does not take
+     * as JavaScript. The rsc layer pre-bundles the host's packages with the
+     * app's, so there it is `optimizerPlugin()`, file by file.
      */
     optimizerDefine(layer: NextLayer): Record<string, string> {
       return layer === "ssr" ? { ...serverGlobalsOf(registry), ...browserTypeofs } : {};

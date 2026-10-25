@@ -735,7 +735,7 @@ A browser has a `window`, and a `fetch` that Next has not patched. A browser can
 - `typeof window` is replaced by `"undefined"`. `next build` does the same to the code it compiles for a server, and libraries rely on it to tell a server from a browser. The same goes for `typeof document`, `typeof location`, `typeof localStorage` and `typeof sessionStorage`, which are `"undefined"` on a server without help.
 - `fetch`, `Request` and `Response` are the server's, even when they are written as `globalThis.fetch`. So a `fetch` in your server code is the one Next patches: two calls for the same URL in one render are one request. The browser still makes the request, so its rules for a request apply, like CORS.
 
-Apart from `setImmediate` and `clearImmediate`, which become the server's, nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the browser's `window` here.
+Apart from `setImmediate`, `clearImmediate`, `setTimeout` and `clearTimeout`, which become the server's, nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the browser's `window` here.
 
 The async functions in the source files of the `rsc` layer are compiled as well, to keep the stores of `AsyncLocalStorage` across an `await`: see [The Scope Of A Cached Function](#the-scope-of-a-cached-function).
 

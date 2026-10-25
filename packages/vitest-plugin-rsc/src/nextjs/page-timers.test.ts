@@ -51,6 +51,13 @@ test("leaves a pre-bundled dependency to the optimizer, whose define replaces th
   expect(
     await compile(`setTimeout(() => {}, 1);`, "/app/node_modules/.vite/deps/chunk.js"),
   ).toBeUndefined();
+  // A static build has no optimizer: there the plugin compiles a dependency.
+  const built = await handler.call(
+    { environment: { mode: "build" }, warn: () => {} } as never,
+    `setTimeout(() => {}, 1);`,
+    "/app/node_modules/.vite/deps/chunk.js",
+  );
+  expect(built?.code).toContain("__vitest_plugin_rsc_timers__.setTimeout(");
   const build = await rolldown({
     input: "/dependency.js",
     plugins: [

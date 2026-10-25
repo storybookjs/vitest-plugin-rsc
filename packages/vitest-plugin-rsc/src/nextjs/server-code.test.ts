@@ -186,9 +186,12 @@ test("has the bundler compile every module of the ssr layer's pre-bundle as serv
   const code = await prebundle({
     "/dependency/index.js": `
       import shim from "./shim.cjs";
+      import { response } from "./response.ts";
       const load = (fetch) => fetch();
-      globalThis.result = [fetch("/"), load(() => "own"), shim.width(), typeof Response];`,
+      globalThis.result = [fetch("/"), load(() => "own"), shim.width(), response()];`,
     "/dependency/shim.cjs": `module.exports = { width: () => (typeof window === "undefined" ? 0 : 1) };`,
+    // Which oxc would not compile as JavaScript, the bundler does.
+    "/dependency/response.ts": `export const response = (): string => new Response().constructor.name;`,
   });
 
   runInThisContext(code);
@@ -197,7 +200,7 @@ test("has the bundler compile every module of the ssr layer's pre-bundle as serv
     "server fetch",
     "own",
     0,
-    "function",
+    "ServerResponse",
   ]);
   const serverCode = createServerCode(registry);
   expect(serverCode.optimizerDefine("rsc")).toEqual({});

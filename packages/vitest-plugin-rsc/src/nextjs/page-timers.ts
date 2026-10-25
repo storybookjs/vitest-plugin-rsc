@@ -17,12 +17,12 @@ import { fileOfModule } from "./client-files.ts";
 // are the host's, which a spy of the test is on.
 
 /**
- * Those uses, to the module runner's. Also for the dependency optimizer of the
- * browser layer, by its `transform.define`: the bundler replaces them in every module of the
- * pre-bundle, natively and in parallel, and the result stays on disk, where
- * the plugin below would compile each pre-bundled file again in every run.
- * None of them is a file of the host, and the packages of the host are not
- * in it (`vitest-plugin-rsc:next-host-packages`).
+ * Those uses, to the module runner's. Also for the dependency optimizer of
+ * the browser layer, by its `transform.define`: the bundler replaces them in
+ * every module of the pre-bundle, natively and in parallel, and the result
+ * stays on disk, where the plugin below would compile each pre-bundled file
+ * again in every run. None of them is a file of the host, and the packages
+ * of the host are not in it (`vitest-plugin-rsc:next-host-packages`).
  */
 export const pageTimersDefine = Object.fromEntries(
   timerNames.map((name) => [name, `${ssrImportMetaKey}.${timersKey}.${name}`]),
