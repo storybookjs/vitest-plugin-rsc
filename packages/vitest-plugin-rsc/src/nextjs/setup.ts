@@ -1,11 +1,12 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
-import { forgetHeardVersions } from "../utils.ts";
+import { askDevServer, forgetHeardVersions } from "../utils.ts";
 import { pollOnEveryChange } from "./speed-features.ts";
 import { keepHostDocument } from "./host-document.ts";
 import { leaveKeptAppWithPage, noRouter } from "./page.ts";
 import { registry } from "./registry.ts";
+import { routesAheadEvent, type RoutesAheadNews } from "./routes-ahead-shared.ts";
 import { ssrLayer } from "./server-layers.ts";
 // With the speed feature `fastCrypto`, PBKDF2 of the page's `crypto.subtle` is
 // a stand-in that costs microseconds, for the app and the tests alike: see
@@ -59,6 +60,7 @@ export async function setUpTestFiles(setupFiles: readonly string[]): Promise<voi
     // Their stylesheets, which every test of the file uses, its `beforeAll`
     // hooks too.
     await linkStylesheetsOf(nodeFiles);
+    compileRoutesAhead(suite.file.filepath);
   });
   // The kept app of `keepApp` (page.ts) is one test file's: the next file
   // starts with its modules evaluated again, as it does its setup files. Also
@@ -91,4 +93,22 @@ export async function setUpTestFiles(setupFiles: readonly string[]): Promise<voi
   // The speed feature `watchDom` polls again on the next change of the
   // document, in any DOM: see speed-features.ts.
   pollOnEveryChange(expect, () => vi.isFakeTimers());
+}
+
+// The routes the test file opened in the run before: the dev server compiles
+// them while the hooks before its first page load run, like the app's
+// `beforeEach` that sets up its database, and keeps the routes it opens now.
+// Not as the setup files load, which the dev server serves meanwhile. See
+// routes-ahead.ts. Without an answer to wait for.
+function compileRoutesAhead(testFile: string) {
+  const tell = (news: RoutesAheadNews) => {
+    askDevServer(routesAheadEvent, news).catch(() => {});
+  };
+  tell({ testFile });
+  const opened = new Set<string>();
+  registry.routeOpened = (entry) => {
+    if (opened.has(entry)) return;
+    opened.add(entry);
+    tell({ testFile, opened: entry });
+  };
 }

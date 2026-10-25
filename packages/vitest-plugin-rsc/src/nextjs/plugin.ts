@@ -71,6 +71,7 @@ import { esmRequirePlugin } from "./esm-require.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { routeLookupPlugin } from "./route-lookup.ts";
+import { routesAheadPlugin } from "./routes-ahead.ts";
 import { pageTimersDefine, pageTimersPlugin } from "./page-timers.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
@@ -1623,6 +1624,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     pageTimersPlugin(environmentOf.browser, serverCode.isHostFile),
     ...styles.plugins,
+    routesAheadPlugin({ root: () => getProject().root, compile: styles.compileRoute }),
     serverCode.asyncFunctionsPlugin(environmentOf.rsc),
     createUseCachePlugin(
       getProject,
