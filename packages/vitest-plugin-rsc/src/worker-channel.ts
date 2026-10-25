@@ -48,7 +48,7 @@ export const askOverWorkerChannel: PageHost["request"] = (event, data) => {
     try {
       send({ [questionKey]: id, event, data } satisfies WorkerQuestion);
     } catch (error) {
-      // A question that the channel cannot carry, or a channel that closed.
+      // A question that the channel cannot carry.
       waiting.delete(id);
       if (waiting.size === 0) off("message", onAnswer);
       reject(error);

@@ -7,9 +7,13 @@ import { builtinsKey, workerRun, type ProvidedBuiltins, type WorkerRun } from ".
 // The modules of the page's layers in a worker of Node.js, like next_ssr and
 // react_client, from Vitest's own RPC: `fetch()` answers for any environment
 // of the project, as for the test's own modules, from Vitest's transform
-// cache on disk where it has them (`fsModuleCache`). One question a module,
-// in the order the runner asks. Their versions are the dev server's, which
-// the page asks on the worker's channel: see `versionOfModules()` in utils.ts.
+// cache on disk where it has them (`fsModuleCache`), in the order the runner
+// asks. Their versions are the dev server's, which the page asks on the
+// worker's channel: see `versionOfModules()` in utils.ts.
+
+// Where a module imports Vite's client from: see `runExternalModule()` in
+// utils.ts.
+const viteClientUrl = "/@vite/client";
 
 // Not imports, which the rsc layer would resolve as modules of the app's.
 const fs = process.getBuiltinModule("node:fs");
@@ -52,12 +56,17 @@ async function invoke(
     const builtin = nodeBuiltinOf(url);
     if (builtin) return { result: { externalize: builtin, type: "builtin" } };
     const fetched = await rpc.fetch(url, importer, environment, options);
-    // Vitest leaves a file of a dependency to Node.js, as `server.deps` of the
-    // project says for every environment: in a layer of the page that would
-    // be a second instance of the package next to the layer's, like a second
-    // React, without the layer's conditions. The dev server's environment
-    // answers it in the layer, as it does for a page in a browser.
-    if ("externalize" in fetched && fetched.externalize.includes("/node_modules/")) {
+    // Vitest leaves a module to Node.js, as `server.deps` and
+    // `deps.moduleDirectories` of the project say for every environment: in a
+    // layer of the page that would be a second instance of the package next
+    // to the layer's, like a second React, without the layer's conditions.
+    // The dev server's environment answers it in the layer, as it does for a
+    // page in a browser. Not Vite's client, which the runner has.
+    if (
+      "externalize" in fetched &&
+      fetched.type === "module" &&
+      fetched.externalize !== viteClientUrl
+    ) {
       return (await askOverWorkerChannel(invokeEvent, { environment, payload })) as InvokeResult;
     }
     return { result: answerOf(fetched) };

@@ -33,6 +33,7 @@ function runWith(answers: Record<string, object>, providedContext: Record<string
 }
 
 afterEach(() => {
+  vi.clearAllMocks();
   delete scope[workerRunKey];
 });
 
@@ -90,6 +91,30 @@ describe("a module of a layer of the page", () => {
       payload,
     });
     expect(answer).toEqual({ result: { code: "", id: "/dev-server" } });
+  });
+
+  test("is the dev server's too, where Vitest leaves a module out of node_modules to Node.js", async () => {
+    // A library of the monorepo, by `deps.moduleDirectories` of the project.
+    runWith({
+      "/packages/ui/index.js": { externalize: "/root/packages/ui/index.js", type: "module" },
+    });
+    const payload = fetchModule("/packages/ui/index.js");
+
+    await vitestModules().invoke("react_client", payload);
+
+    expect(askOverWorkerChannel).toHaveBeenCalledWith(invokeEvent, {
+      environment: "react_client",
+      payload,
+    });
+  });
+
+  test("is Node's own for a module of Node.js that a browser layer names by Vite's id", async () => {
+    const { asked } = runWith({});
+
+    expect(await vitestModules().invoke("react_client", fetchModule("/@id/node:fs"))).toEqual({
+      result: { externalize: "node:fs", type: "builtin" },
+    });
+    expect(asked).toEqual([]);
   });
 
   test("is left to the runner where it is no dependency, like Vite's client", async () => {

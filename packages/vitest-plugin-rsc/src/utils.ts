@@ -232,7 +232,7 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 // every module, also for a module it already has, which is hundreds of
 // requests for one page. They are answered here, for as long as the server
 // says that its modules are the ones that were fetched: see `versionOf()`
-// in index.ts.
+// in module-versions.ts.
 type FetchedModules = { version: number; results: Map<string, Promise<InvokeResult>> };
 
 const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
@@ -414,8 +414,9 @@ async function invokeForPageLoad(
 // each once the one before it has run: a round trip to the server for every
 // module of a page, in a row. The server says what a module imports (see
 // `describeModule()` in index.ts), so those are asked for right away, all at
-// once, and theirs when they arrive. Not in a worker of Node.js, whose host
-// asks Vitest's RPC, a fraction of a millisecond a module, one at a time.
+// once, and theirs when they arrive. In a worker of Node.js only for what the
+// dev server answers there (vitest-modules.ts): Vitest's RPC says nothing of
+// a module's imports, and answers in a fraction of a millisecond.
 function fetchOnce(
   environment: string,
   payload: InvokePayload,
