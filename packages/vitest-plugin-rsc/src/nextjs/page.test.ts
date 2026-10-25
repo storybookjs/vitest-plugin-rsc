@@ -122,18 +122,53 @@ test("stops waiting for a page that does not stop starting, and releases it once
 });
 
 test("has a redirect of a Flight payload go under the app's base path, as Next's 307 of a document does", async () => {
-  const { redirectOf } = await import("./page.ts");
-  // The URL of a `redirect()`, which its digest names: see `redirectURL()` of client.tsx.
-  const client = { redirectURL: (digest: string) => digest.split(";")[2] };
+  const { renderFailureOf } = await import("./page.ts");
+  // How Next's server answers the document, by the digest: see
+  // `shellErrorAnswer()` of ssr.ts.
+  const answerOf = (digest: string) => {
+    const [kind, , url, status] = digest.split(";");
+    if (kind === "NEXT_REDIRECT") return { status: Number(status), location: url };
+    if (kind === "NEXT_HTTP_ERROR_FALLBACK") return { status: Number(digest.split(";")[1]) };
+    return { status: 500 };
+  };
   const payload = (...rows: string[]) => new TextEncoder().encode(rows.join("\n"));
-  const redirect = (url: string) =>
-    `1:E${JSON.stringify({ digest: `NEXT_REDIRECT;replace;${url};307;` })}`;
+  const error = (id: number, digest: string) => `${id}:E${JSON.stringify({ digest })}`;
+  const redirect = (url: string) => error(1, `NEXT_REDIRECT;replace;${url};307;`);
 
-  expect(redirectOf(payload('0:"$L1"', redirect("/sign-in?next=%2Fnotes")), client)).toBe(
-    "/shop/sign-in?next=%2Fnotes",
+  expect(renderFailureOf(payload('0:"$L1"', redirect("/sign-in?next=%2Fnotes")), answerOf)).toEqual(
+    { status: 307, location: "/shop/sign-in?next=%2Fnotes" },
   );
-  expect(redirectOf(payload(redirect("https://example.com/out")), client)).toBe(
-    "https://example.com/out",
+  expect(renderFailureOf(payload(redirect("https://example.com/out")), answerOf)).toEqual({
+    status: 307,
+    location: "https://example.com/out",
+  });
+  // A redirect anywhere wins, else the first other error has the status.
+  expect(
+    renderFailureOf(
+      payload(error(2, "NEXT_HTTP_ERROR_FALLBACK;403"), error(3, "1234"), redirect("/")),
+      answerOf,
+    ),
+  ).toEqual({ status: 307, location: "/shop/" });
+  expect(
+    renderFailureOf(payload(error(2, "NEXT_HTTP_ERROR_FALLBACK;404"), error(3, "1234")), answerOf),
+  ).toEqual({ status: 404 });
+  expect(renderFailureOf(payload('2:E{"digest":"1234"}'), answerOf)).toEqual({ status: 500 });
+  // Text of the page that looks like an error row, without a digest.
+  expect(renderFailureOf(payload('0:"$L1"', '1:T10,a\n2:E{"x":1}'), answerOf)).toBeUndefined();
+});
+
+test("reads the Flight payload of a document of Next from its scripts", async () => {
+  const { payloadInDocument } = await import("./page.ts");
+  const script = (segment: unknown[]) =>
+    `<script>self.__next_f.push(${JSON.stringify(segment).replaceAll("<", "\\u003c")})</script>`;
+  const html =
+    '<!DOCTYPE html><html id="__next_error__"><head></head><body>' +
+    "<script>(self.__next_f=self.__next_f||[]).push([0])</script>" +
+    script([1, '0:"$L1"\n1:"<b>)</script>"\n']) +
+    script([3, btoa("2:E{}\n")]) +
+    "</body></html>";
+
+  expect(new TextDecoder().decode(payloadInDocument(html))).toBe(
+    '0:"$L1"\n1:"<b>)</script>"\n2:E{}\n',
   );
-  expect(redirectOf(payload('2:E{"digest":"1234"}'), client)).toBeUndefined();
 });
