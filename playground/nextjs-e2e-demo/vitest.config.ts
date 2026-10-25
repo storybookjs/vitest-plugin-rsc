@@ -7,6 +7,7 @@ import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { fileChangeService } from "../test-helpers/file-change-service.ts";
 
 // Stands in for a service the app's server calls: it answers with the number
 // of requests it has had for a key.
@@ -92,34 +93,6 @@ function headersService(): Plugin {
         response.end(request.method === "OPTIONS" ? "" : JSON.stringify(request.headers));
       });
     },
-  };
-}
-
-// Stands in for a change to a file of the app while the tests are watched:
-// the dev server invalidates the modules of the file, as it does for a change.
-// With `content`, that is what the file has from then on for the dev server,
-// which leaves the file as it is. Without, it has what is in the file again.
-function fileChangeService(): Plugin {
-  const contents = new Map<string, string>();
-  return {
-    name: "nextjs-e2e-demo:file-change-service",
-    enforce: "pre",
-    configureServer(server) {
-      server.middlewares.use("/service/file-change", (request, response) => {
-        const { searchParams } = new URL(request.url ?? "/", "http://localhost");
-        const changed = normalizePath(
-          path.join(server.config.root, searchParams.get("file") ?? ""),
-        );
-        const content = searchParams.get("content");
-        if (content === null) contents.delete(changed);
-        else contents.set(changed, content);
-        for (const environment of Object.values(server.environments)) {
-          environment.moduleGraph.onFileChange(changed);
-        }
-        response.end();
-      });
-    },
-    load: (id) => contents.get(id.split("?")[0]!),
   };
 }
 

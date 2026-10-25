@@ -10,10 +10,10 @@ import {
   createEnvironmentRunner,
   environmentModule,
   takeChangedModules,
+  versionsOfAnswers,
 } from "../utils.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
-import { oncePerTestFile } from "./speed-features.ts";
 import { loadsNothing, registry } from "./registry.ts";
 import {
   builtHostFileStylesheetsOf,
@@ -266,14 +266,26 @@ export async function linkStylesheetsOf(
 
 // The URLs of the stylesheets of files of the host by their paths: from the dev
 // server, see styles.ts, or from the files of a static build. Every test asks
-// for those of its files: with the speed feature `cacheDevServer` once per test
-// file.
+// for those of its files, which the page keeps for as long as the versions of
+// the modules they are read off stay, as the stylesheets of a route in rsc.ts.
 const hostStylesheets = new Map<string, Promise<string[]>>();
+let hostStylesheetsOf: string | undefined;
 async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
   if (hostFiles.length === 0) return [];
-  return oncePerTestFile(hostStylesheets, hostFiles.join("\n"), () =>
-    stylesheetsOfHostFilesUncached(hostFiles),
-  );
+  const versions = await versionsOfAnswers();
+  if (versions !== hostStylesheetsOf) {
+    hostStylesheets.clear();
+    hostStylesheetsOf = versions;
+  }
+  const key = hostFiles.join("\n");
+  let answer = hostStylesheets.get(key);
+  if (!answer) {
+    const asked = stylesheetsOfHostFilesUncached(hostFiles);
+    hostStylesheets.set(key, (answer = asked));
+    // Asked again, unless the cache has a later answer.
+    asked.catch(() => hostStylesheets.get(key) === asked && hostStylesheets.delete(key));
+  }
+  return answer;
 }
 async function stylesheetsOfHostFilesUncached(hostFiles: string[]): Promise<string[]> {
   if (!buildDirectory) {

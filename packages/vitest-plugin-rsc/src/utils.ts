@@ -26,10 +26,12 @@ import {
   answerEvent,
   changedEvent,
   invokeEvent,
+  modulesChangedEvent,
   versionEvent,
   webSocketInfoPath,
   webSocketQuery,
   type ChangedQuestion,
+  type ModulesChanged,
   type PageAnswer,
 } from "./websocket-bridge.ts";
 
@@ -59,14 +61,7 @@ type PendingInvoke = {
   reject: (error: unknown) => void;
   timeoutId: ReturnType<typeof setTimeout> | undefined;
 };
-type InvokeResultMessage = {
-  type?: string;
-  event?: string;
-  data?: {
-    id?: string;
-    result?: unknown;
-  };
-};
+type SocketMessage = { type?: string; event?: string; data?: unknown };
 
 // Before anything replaces it: this request is for the dev server, or for a
 // file of a static build.
@@ -271,12 +266,36 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
   return fetchedModulesOf.get(environment) ?? askForModules(environment);
 }
 
+// The versions of the modules of the environments as the page last heard of
+// them from the dev server, which tells the page of every change of them on
+// its socket, before any answer it makes after it: see `onInvalidation()` in
+// module-versions.ts. The socket brings both in the order the server sent
+// them, so the one that arrives last is the latest. Forgotten when the socket
+// closes, which may have missed a change, and as a test file ends: a change
+// can reach the server through another connection than the page's, like the
+// one that runs the test file again after it, and the first check of a file
+// asks the server, after the change.
+const heardVersions = new Map<string, number>();
+
+/** Has the page ask the dev server for the versions of its modules again: see `heardVersions`. */
+export function forgetHeardVersions(): void {
+  heardVersions.clear();
+}
+
 /**
  * The version of the modules of `environment` that the dev server has: when
  * Vite last invalidated one of them, see `versionOf()` in module-versions.ts.
+ * The one the page heard of, or else the server's answer.
  */
 export function versionOfModules(environment: string): Promise<number> {
-  return requestOverWebSocket(versionEvent, { environment }) as Promise<number>;
+  const heard = heardVersions.get(environment);
+  if (heard !== undefined) return Promise.resolve(heard);
+  const asked = requestOverWebSocket(versionEvent, { environment }) as Promise<number>;
+  return asked.then((version) => {
+    // Unless a change arrived after the answer.
+    if (!heardVersions.has(environment)) heardVersions.set(environment, version);
+    return version;
+  });
 }
 
 // The modules that were fetched, when the server still has that version of
@@ -306,17 +325,44 @@ function askForModules(environment: string, known?: FetchedModules): Promise<Fet
  * server, and whose modules do not change.
  */
 export const answeredEnvironments = builtLayers ? [] : ["client", "react_client"];
-// The versions of the modules of those, and of the runners' environments, as
-// the page last checked them: see `checkedVersions()`.
-let checked: Promise<string> | undefined;
 
 /**
- * Asks the server whether the modules that were fetched are still its modules,
- * for the runners of `createEnvironmentRunner()`, and for the answers about
- * its modules that the page keeps: see `checkedVersions()`. Before a page
- * load: a file can change while the tests run.
+ * The versions of the modules of `answeredEnvironments`, as one string: what
+ * the page keeps of an answer about them, like the stylesheets of a route,
+ * holds for as long as this stays. A change of a file invalidates its
+ * modules, on a server with a watcher of its own and on one whose host's
+ * watcher does it, a project's under Vitest.
  */
-export function checkFetchedModules(): Promise<void> {
+export function versionsOfAnswers(): Promise<string> {
+  return versionsOf(answeredEnvironments.map((environment) => [environment, undefined]));
+}
+
+function versionsOf(environments: [string, Promise<number> | undefined][]): Promise<string> {
+  return Promise.all(
+    environments.map(
+      async ([environment, version]) =>
+        `${environment}:${await (version ?? versionOfModules(environment))}`,
+    ),
+  ).then((all) => all.join(" "));
+}
+
+/**
+ * Whether the dev server has changed any of the modules of `checked`, an
+ * answer of `checkFetchedModules()`, by `now`, a later one.
+ */
+export function modulesChanged(checked: string, now: string): boolean {
+  const versions = new Set(now.split(" "));
+  return checked.split(" ").some((version) => !versions.has(version));
+}
+
+/**
+ * Checks whether the modules that were fetched are still the server's
+ * modules, for the runners of `createEnvironmentRunner()`, and starts the
+ * runners after it with new ones if not. Before a page load: a file can
+ * change while the tests run. Resolves with the versions of the modules of
+ * the environments of the page: see `modulesChanged()`.
+ */
+export function checkFetchedModules(): Promise<string> {
   const fetched = new Map(
     Array.from(fetchedModulesOf, ([environment, modules]) => [
       environment,
@@ -327,31 +373,7 @@ export function checkFetchedModules(): Promise<void> {
     ]),
   );
   const environments = [...new Set([...answeredEnvironments, ...fetched.keys()])].sort();
-  const versions = Promise.all(
-    environments.map(
-      async (environment) =>
-        `${environment}:${await (fetched.get(environment) ?? versionOfModules(environment))}`,
-    ),
-  ).then((all) => all.join(" "));
-  checked = versions;
-  // A check that failed is no version: the next asks again.
-  versions.catch(() => {
-    if (checked === versions) checked = undefined;
-  });
-  return versions.then(() => {});
-}
-
-/**
- * The versions of the dev server's modules as the page last checked them,
- * before its latest page load (`checkFetchedModules()`), or now when it has
- * not: what the page keeps of an answer about them, like the stylesheets of a
- * route, holds for as long as this stays. A change of a file invalidates its
- * modules, on a server with a watcher of its own and on one whose host's
- * watcher does it, a project's under Vitest.
- */
-export function checkedVersions(): Promise<string> {
-  if (!checked) void checkFetchedModules().catch(() => {});
-  return checked!;
+  return versionsOf(environments.map((environment) => [environment, fetched.get(environment)]));
 }
 
 type FetchModulePayload = { data: { name: string; data: [string?, string?, FetchOptions?] } };
@@ -673,6 +695,7 @@ async function openReactClientWebSocket() {
   socket.addEventListener("close", () => {
     if (webSocket === socket) {
       webSocket = undefined;
+      heardVersions.clear();
     }
     rejectPendingInvokes(new Error("React client websocket connection closed"));
   });
@@ -709,38 +732,43 @@ function waitForWebSocketOpen(socket: WebSocket) {
 }
 
 function handleWebSocketMessage(event: MessageEvent) {
-  const result = parseInvokeResultMessage(event.data);
-  if (!result) return;
+  const message = parseMessage(event.data);
+  if (message?.type !== "custom") return;
+  if (message.event === modulesChangedEvent) {
+    heardModulesChange(message.data as Partial<ModulesChanged> | undefined);
+    return;
+  }
+  const { id, result } = (message.data ?? {}) as { id?: unknown; result?: unknown };
+  if (message.event !== answerEvent || typeof id !== "string") return;
 
   lastAnswer = now();
-  const pending = pendingInvokes.get(result.id);
+  const pending = pendingInvokes.get(id);
   if (!pending) {
     return;
   }
 
   clearTimeout(pending.timeoutId);
-  pendingInvokes.delete(result.id);
-  pending.resolve(result.result);
+  pendingInvokes.delete(id);
+  pending.resolve(result);
 }
 
-function parseInvokeResultMessage(raw: unknown) {
-  if (typeof raw !== "string") {
-    return undefined;
-  }
-
+function parseMessage(raw: unknown): SocketMessage | undefined {
+  if (typeof raw !== "string") return undefined;
   try {
-    const message = JSON.parse(raw) as InvokeResultMessage;
-    if (
-      message.type !== "custom" ||
-      message.event !== answerEvent ||
-      typeof message.data?.id !== "string"
-    ) {
-      return undefined;
-    }
-    return { id: message.data.id, result: message.data.result };
+    return JSON.parse(raw) as SocketMessage;
   } catch {
     return undefined;
   }
+}
+
+// The page hears of a change of the modules of an environment, and so does
+// a test that changes a file itself, at `modulesChangedEvent` of the window,
+// to wait for the page to have heard of it.
+function heardModulesChange(changed: Partial<ModulesChanged> | undefined) {
+  const { environment, version } = changed ?? {};
+  if (typeof environment !== "string" || typeof version !== "number") return;
+  heardVersions.set(environment, version);
+  dispatchEvent(new CustomEvent(modulesChangedEvent, { detail: { environment, version } }));
 }
 
 function rejectPendingInvokes(error: unknown) {

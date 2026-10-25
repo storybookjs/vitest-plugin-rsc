@@ -6,12 +6,8 @@ export async function requestHits(key: string): Promise<number> {
   return hits;
 }
 
-// Tells the dev server in vitest.config.ts that a file of the app has changed,
-// and to what, if `content` says so.
-export async function fileChanged(file: string, content?: string): Promise<void> {
-  const query = new URLSearchParams({ file, ...(content === undefined ? {} : { content }) });
-  await fetch(`/service/file-change?${query}`);
-}
+// Tells the dev server that a file of the app has changed: see the file.
+export { fileChanged } from "../../test-helpers/file-changed.ts";
 
 // How often the dev server in vitest.config.ts compiled a file as a module, by
 // its path under the root of the app.

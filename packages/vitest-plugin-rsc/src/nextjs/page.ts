@@ -2,7 +2,12 @@
 // its document until it is left: a page load makes it part by part, and
 // leaving it takes those back, the last part first, one page at a time.
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
+import {
+  checkFetchedModules,
+  createEnvironmentRunner,
+  environmentModule,
+  modulesChanged,
+} from "../utils.ts";
 import {
   leftTheApp,
   setOpenPage,
@@ -19,7 +24,7 @@ import {
   type HistoryEntry,
 } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
-import { oncePerTestFile, speedFeature } from "./speed-features.ts";
+import { speedFeature } from "./speed-features.ts";
 import { noRouter } from "./host-document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
@@ -152,9 +157,10 @@ type Client = typeof import("./client.tsx");
 // own: see `renderAgain()` in client.tsx. A page that the app loads itself
 // from one of them, like after a `<form>` without JavaScript, renders in it
 // too. It is left with the first page that does not, like one of
-// `renderServer({ url, ssr: true })`, or as the test file ends: see
-// `leaveKeptApp()`.
-let kept: { client: Client; leave(): void } | undefined;
+// `renderServer({ url, ssr: true })`, with the first page after a change of
+// the modules it has, or as the test file ends: see `leaveKeptApp()`.
+// `modules` are the versions of those, see `checkFetchedModules()`.
+let kept: { client: Client; modules: string; leave(): void } | undefined;
 
 /**
  * Leaves the kept app, if any: its root, its module graph, what its modules
@@ -267,8 +273,12 @@ export async function loadPage(
     page.signal.throwIfAborted();
     // A page that is not one of the kept app starts an app of its own, and so
     // does one when there is none, like after a first page whose app did not
-    // start: what that app added to the `<head>` goes first.
-    if (!inKeptApp || !kept) leaveKeptApp();
+    // start, or when the dev server has changed modules that the app has:
+    // what that app added to the `<head>` goes first. The app would run the
+    // modules it has next to the new ones, like a second React.
+    if (!inKeptApp || !kept || modulesChanged(kept.modules, await checkFetchedModules())) {
+      leaveKeptApp();
+    }
 
     // Once the node that was in it is gone.
     if (opening?.container?.hasChildNodes()) {
@@ -388,6 +398,9 @@ async function openPage(
   // module graph of its own for the browser layer. A page that is left keeps
   // no module graph: what of it stays, like an error whose stack has the
   // frames that loaded a module, cannot reach its modules through the runner.
+  // The versions of the modules that it starts with, or older: see `kept`.
+  const modules = inKeptApp ? await checkFetchedModules() : "";
+  superseded();
   const runner = createEnvironmentRunner("react_client");
   deferForApp(() => void runner.close());
   // The browser's Flight client reads properties off `__webpack_require__`
@@ -441,6 +454,7 @@ async function openPage(
       leaveKeptApp();
       kept = {
         client,
+        modules,
         leave() {
           keepProperties(document);
           try {
@@ -496,10 +510,6 @@ async function startInKeptApp(page: Page, client: Client, payload?: Uint8Array):
   }
 }
 
-// Whether the dev server still has the modules that were fetched: before
-// every page load, with the speed feature `cacheDevServer` once per test file.
-const moduleChecks = new Map<string, Promise<void>>();
-
 // The request of a page load, with the modules of the server and of the
 // browser layer as the dev server has them now.
 async function sendPageLoad(
@@ -508,7 +518,7 @@ async function sendPageLoad(
   sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
-  await oncePerTestFile(moduleChecks, "", checkFetchedModules);
+  await checkFetchedModules();
   signal.throwIfAborted();
   // Not the browser's Request, which drops headers of the test's, like
   // `referer` and `origin`.

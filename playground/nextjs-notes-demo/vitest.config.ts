@@ -6,6 +6,7 @@ import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type Mode, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { fileChangeService } from "../test-helpers/file-change-service.ts";
 import { setup as buildStorybookFramework } from "../test-helpers/storybook-framework.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
@@ -73,6 +74,8 @@ const browserProject = (name: string, mode: Mode) =>
         build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
         mode,
       }),
+      // For components/changing-probe.test.tsx.
+      fileChangeService(),
     ],
     test: {
       name,

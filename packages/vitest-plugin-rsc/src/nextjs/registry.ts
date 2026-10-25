@@ -103,8 +103,6 @@ export type RequestTiming = {
 export type NextRegistry = {
   /** The speed features that are on, `mode` and the options of the features resolved: see speed-features.ts. */
   speedFeatures?: SpeedFeatures;
-  /** The caches of `oncePerTestFile()` in speed-features.ts, which a test file ends with. */
-  testFileCaches?: Set<Map<string, Promise<unknown>>>;
   /**
    * For a profile of a test run: set to an array, the server adds the timing
    * of each request of the page to it, in the order they reached it.

@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { page, server } from "vitest/browser";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
-import { findOnEveryChange, forgetTestFileAnswers, pollOnEveryChange } from "./speed-features.ts";
+import { forgetHeardVersions } from "../utils.ts";
+import { findOnEveryChange, pollOnEveryChange } from "./speed-features.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
 import { leaveKeptAppWithPage } from "./page.ts";
 import { registry } from "./registry.ts";
@@ -56,8 +57,9 @@ afterAll(async () => {
     await leaveKeptAppWithPage("the end of the test file");
   } finally {
     keptDocument?.();
-    // The next file asks the dev server again: see speed-features.ts.
-    forgetTestFileAnswers();
+    // The next file asks the dev server for the versions of its modules:
+    // see `heardVersions` in utils.ts.
+    forgetHeardVersions();
   }
 });
 
