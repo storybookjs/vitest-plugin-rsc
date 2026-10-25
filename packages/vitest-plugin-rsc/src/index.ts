@@ -111,13 +111,13 @@ export function vitestPluginRSC(): Plugin[] {
         );
       }) as unknown as () => void,
       resolveId(source) {
-        if (source === pageHostId) return `\0${pageHostId}`;
+        if (source !== pageHostId) return;
+        // In a browser the host's own file, with no module in between for
+        // the page to fetch.
+        return inNode && devServer ? `\0${pageHostId}` : ownFile("browser-host");
       },
       async load(id) {
-        if (id !== `\0${pageHostId}`) return;
-        if (!inNode || !devServer) {
-          return `export { default } from ${JSON.stringify(ownFile("browser-host"))};\n`;
-        }
+        if (id !== `\0${pageHostId}` || !devServer) return;
         const url = `${await listenForPage(devServer)}${pageRequestPath}`;
         return (
           `import { nodeHost } from ${JSON.stringify(ownFile("node-host"))};\n` +
