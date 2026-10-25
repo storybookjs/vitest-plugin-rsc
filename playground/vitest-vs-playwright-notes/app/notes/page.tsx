@@ -10,7 +10,12 @@ export default async function NotesPage({
   const user = await requireUser();
   const { q = "", welcome, deleted } = await searchParams;
   const query = q.trim();
-  const [notes, total] = await Promise.all([listNotes(user.id, query), countNotes(user.id)]);
+  const [notes, count] = await Promise.all([
+    listNotes(user.id, query),
+    // Without a search the list has every note of the user: its length is the count.
+    query ? countNotes(user.id) : undefined,
+  ]);
+  const total = count ?? notes.length;
   return (
     <>
       {welcome && <output>Welcome, {user.name}!</output>}
