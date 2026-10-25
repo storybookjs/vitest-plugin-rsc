@@ -1,10 +1,10 @@
 import { expect, test } from "./test.ts";
-import { createUser, grace, seedNotes } from "#test/db.ts";
+import { createUser, seedNotes } from "#test/db.ts";
 
 test("shows the title and the content", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk, bread" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk, bread" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await expect(page.getByRole("heading", { name: "Groceries" })).toBeVisible();
   await expect(page.getByText("Oat milk, bread")).toBeVisible();
@@ -12,15 +12,15 @@ test("shows the title and the content", async ({ page, signedIn }) => {
 
 test("shows a placeholder without content", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Ideas" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Ideas" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await expect(page.getByText("No content yet.")).toBeVisible();
 });
 
 test("shows a 404 for a note that does not exist", async ({ page, signedIn }) => {
   await signedIn();
-  await page.goto("/notes/42");
+  await page.goto("/notes/0");
 
   await expect(page.getByText("This page could not be found.")).toBeVisible();
 });
@@ -32,19 +32,19 @@ test("shows a 404 for an id that is not a number", async ({ page, signedIn }) =>
   await expect(page.getByText("This page could not be found.")).toBeVisible();
 });
 
-test("shows a 404 for the note of another user", async ({ page, signedIn }) => {
+test("shows a 404 for the note of another user", async ({ page, people, signedIn }) => {
   await signedIn();
-  const other = await createUser(grace);
-  await seedNotes(other.id, [{ title: "Grace's" }]);
-  await page.goto("/notes/1");
+  const other = await createUser(people.grace);
+  const [note] = await seedNotes(other.id, [{ title: "Grace's" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await expect(page.getByText("This page could not be found.")).toBeVisible();
 });
 
 test("offers to favorite a note", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await expect(page.getByRole("button", { name: "Favorite", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -54,8 +54,8 @@ test("offers to favorite a note", async ({ page, signedIn }) => {
 
 test("offers to unfavorite a favorite", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await expect(page.getByRole("button", { name: "Unfavorite" })).toHaveAttribute(
     "aria-pressed",
@@ -65,8 +65,8 @@ test("offers to unfavorite a favorite", async ({ page, signedIn }) => {
 
 test("opens the edit form", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("link", { name: "Edit" }).click();
 
@@ -75,8 +75,8 @@ test("opens the edit form", async ({ page, signedIn }) => {
 
 test("goes back to all notes", async ({ page, signedIn, expectTitles }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await page.getByRole("link", { name: "All notes" }).click();
 
@@ -85,8 +85,8 @@ test("goes back to all notes", async ({ page, signedIn, expectTitles }) => {
 
 test("shows no banner on a later visit", async ({ page, signedIn }) => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await page.goto("/notes/1");
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await page.goto(`/notes/${note!.id}`);
 
   await expect(page.getByRole("heading", { name: "Groceries" })).toBeVisible();
   await expect(page.getByText("Note created.")).toHaveCount(0);

@@ -19,7 +19,7 @@ for (let i = 0; i < 50; i++) {
     page,
     signedIn,
   }) => {
-    await signedIn();
+    const user = await signedIn();
     await page.goto("/notes/new");
 
     await page.getByLabel("Title").fill(first.title);
@@ -40,7 +40,7 @@ for (let i = 0; i < 50; i++) {
     await page.getByRole("button", { name: "Save note" }).click();
 
     await expect(page.getByText("Note saved.")).toBeVisible();
-    expect(await storedNotes()).toEqual([
+    expect(await storedNotes(user.id)).toEqual([
       { title: `${title}, edited`, content: "Fixed again", favorite: false },
     ]);
   });

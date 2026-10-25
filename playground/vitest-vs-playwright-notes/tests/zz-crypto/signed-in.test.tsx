@@ -1,5 +1,4 @@
 import { test } from "vitest";
-import { resetDb } from "#test/db.ts";
 import { signedIn } from "#test/vitest.ts";
 
 // What `signedIn()` costs, which most tests of tests/vitest/ start with: a
@@ -7,7 +6,6 @@ import { signedIn } from "#test/vitest.ts";
 test("signedIn()", async () => {
   const times: number[] = [];
   for (let run = 0; run < 21; run++) {
-    await resetDb();
     const start = performance.now();
     await signedIn();
     times.push(performance.now() - start);

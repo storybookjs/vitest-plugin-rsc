@@ -7,8 +7,8 @@ import { expectTitles, signedIn } from "#test/vitest.ts";
 
 test("favorites a note", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Favorite", exact: true }));
 
@@ -19,19 +19,19 @@ test("favorites a note", async () => {
 
 test("stores the favorite", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Favorite", exact: true }));
 
   await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
-  expect((await storedNotes())[0]?.favorite).toBe(true);
+  expect((await storedNotes(user.id))[0]?.favorite).toBe(true);
 });
 
 test("unfavorites a note", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Unfavorite" }));
 
@@ -42,8 +42,8 @@ test("unfavorites a note", async () => {
 
 test("moves a favorite to the top of the list", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Favorite", exact: true }));
   await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
@@ -54,8 +54,8 @@ test("moves a favorite to the top of the list", async () => {
 
 test("marks the favorite in the list", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Favorite", exact: true }));
   await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
@@ -66,8 +66,8 @@ test("marks the favorite in the list", async () => {
 
 test("toggles back after two clicks", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Favorite", exact: true }));
   await click(page.getByRole("button", { name: "Unfavorite" }));
@@ -75,24 +75,24 @@ test("toggles back after two clicks", async () => {
   await expect
     .element(page.getByRole("button", { name: "Favorite", exact: true }))
     .toBeInTheDocument();
-  await expect.poll(async () => (await storedNotes())[0]?.favorite).toBe(false);
+  await expect.poll(async () => (await storedNotes(user.id))[0]?.favorite).toBe(false);
 });
 
 test("leaves the other notes as they are", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
-  await renderServer({ url: "/notes/2" });
+  const [, note] = await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Favorite", exact: true }));
 
   await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
-  expect((await storedNotes()).map((note) => note.favorite)).toEqual([false, true]);
+  expect((await storedNotes(user.id)).map((note) => note.favorite)).toEqual([false, true]);
 });
 
 test("keeps the content when favoriting", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Favorite", exact: true }));
 
@@ -102,12 +102,12 @@ test("keeps the content when favoriting", async () => {
 
 test("keeps the favorite on the next visit", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("button", { name: "Favorite", exact: true }));
   await expect.element(page.getByRole("button", { name: "Unfavorite" })).toBeInTheDocument();
-  await renderServer({ url: "/notes/1" });
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await expect
     .element(page.getByRole("button", { name: "Unfavorite" }))

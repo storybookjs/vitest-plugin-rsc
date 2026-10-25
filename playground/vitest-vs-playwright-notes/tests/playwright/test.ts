@@ -1,13 +1,15 @@
 import { expect, test as base } from "@playwright/test";
-import { ada, createSession, createUser, resetDb } from "#test/db.ts";
+import { createSession, createUser } from "#test/db.ts";
+import { ada, grace, person, type Person } from "#test/people.ts";
 import type { User } from "#lib/schema.ts";
 import { sessionCookies } from "#lib/session-cookie.ts";
 
-// Playwright's `test` with the helpers of test/vitest.ts, and the database
-// emptied before each test, as vitest.setup.ts does for the Vitest tests.
+// Playwright's `test` with the helpers of test/vitest.ts. Each test signs in
+// and signs up as people of its own (test/people.ts), so the tests run in
+// parallel on one database, which nothing empties between them.
 export const test = base.extend<{
-  emptyDb: void;
-  signedIn: (person?: typeof ada) => Promise<User>;
+  people: { ada: Person; grace: Person };
+  signedIn: (who?: Person) => Promise<User>;
   expectTitles: (titles: string[]) => Promise<void>;
 }>({
   // `page.goto()` that waits until the page has hydrated, as `renderServer()`
@@ -21,17 +23,14 @@ export const test = base.extend<{
     };
     await use(page);
   },
-  emptyDb: [
-    // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
-    async ({}, use) => {
-      await resetDb();
-      await use();
-    },
-    { auto: true },
-  ],
+  // oxlint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a fixture uses from this pattern.
+  people: async ({}, use) => {
+    await use({ ada: person(ada), grace: person(grace) });
+  },
+  // `signedIn()` of test/sign-in.ts: `person(who)`, a person of the test's own.
   signedIn: async ({ context, baseURL }, use) => {
-    await use(async (person = ada) => {
-      const user = await createUser(person);
+    await use(async (who = ada) => {
+      const user = await createUser(person(who));
       const cookies = await sessionCookies(await createSession(user.id), user);
       await context.addCookies(
         cookies.map(({ name, value, maxAge }) => ({

@@ -231,7 +231,7 @@ The benchmark's config lists Testing Library in `host.packages` of `vitestPlugin
 
 The database runs in the tab, on the thread that also clicks and renders: a query is CPU time, not a round trip. In the profile of [Where the time goes](#where-the-time-goes), the app's code and its database take 3.31 ms of a test's 26.60; in the earlier profile, before #262 and the signed cookie of #276, the database alone took 5.1 of 30.9, about as much as all of Next. In a timings run of the `user-event` column on #251 before #268, with #262 and the signed cookie of #276, its queries take 1.9 s of the tests' 13.0 s, about 3.8 ms per test, measured otherwise than a profile; Postgres in WebAssembly is about half of a query's time. So what makes a data layer fast in production makes it fast here: fewer queries, and less work around each.
 
-The notes apps look the signed-in user up once per render, with React's `cache()`, and empty the tables before each test with one string of `DELETE`s. The benchmark also keeps the user in a signed cookie for a few minutes (#276), counts the notes only for a search, and prepares its queries. [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests) has the code of each, what it saved in the benchmark, and the database's time per kind of request.
+The notes apps look the signed-in user up once per render, with React's `cache()`. The notes demo empties the tables before each test with one string of `DELETE`s; the benchmark did too, until each of its tests had a user of its own, and the numbers on this page were measured with it. The benchmark also keeps the user in a signed cookie for a few minutes (#276), counts the notes only for a search, and prepares its queries. [A fast data layer in tests](databases.md#a-fast-data-layer-in-tests) has the code of each, what it saved in the benchmark, and the database's time per kind of request.
 
 Two that didn't pay in the benchmark: `TRUNCATE` instead of the `DELETE`s, which [the same section](databases.md#a-fast-data-layer-in-tests) explains, and PGlite without durability, with `synchronous_commit` and `full_page_writes` off, which changed nothing (15.26 and 15.34 s by the median of 5 interleaved rounds): PGlite doesn't sync to disk in the tests already.
 
@@ -321,7 +321,7 @@ npx vitest run --maxWorkers 4
 
 Each worker loads Next's runtime before its first test, so many workers on few cores can time out the first test. The notes demo sets `maxWorkers: 4`. Test files of about the same length, rather than one long one, let more workers help.
 
-The benchmark compares Vitest with Playwright on 1 worker. Playwright's tests share one database there, Postgres in Docker, so they can't run in parallel; every worker of Vitest has a database of its own. A run of Vitest with 4 workers is a different comparison, not the same benchmark faster.
+The benchmark compares Vitest with Playwright at 1 and at 4 workers. Each test has a user and notes of its own, so Playwright's workers share one `next start` and one Postgres, `fullyParallel`, as a project's suite runs; every worker of Vitest is a page with a database of its own. At 1 worker the two compare test by test; at 4, what each needs to run the suite on one machine. The [benchmark's README](../playground/vitest-vs-playwright-notes/README.md) has the numbers.
 
 ## Without a browser
 

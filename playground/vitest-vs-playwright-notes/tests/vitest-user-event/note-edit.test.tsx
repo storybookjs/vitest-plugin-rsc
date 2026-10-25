@@ -7,8 +7,8 @@ import { expectTitles, signedIn } from "#test/vitest.ts";
 
 test("fills the form in from the note", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await expect.element(page.getByRole("heading", { name: "Edit note" })).toBeInTheDocument();
   await expect.element(page.getByLabelText("Title")).toHaveValue("Groceries");
@@ -17,16 +17,16 @@ test("fills the form in from the note", async () => {
 
 test("counts the characters of the content there is", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await expect.element(page.getByText("8 / 2000")).toBeInTheDocument();
 });
 
 test("saves the note and opens it", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await fill(page.getByLabelText("Title"), "Shopping");
   await click(page.getByRole("button", { name: "Save note" }));
@@ -37,33 +37,35 @@ test("saves the note and opens it", async () => {
 
 test("stores the changes", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await fill(page.getByLabelText("Title"), "Shopping");
   await fill(page.getByLabelText("Content"), "Bread");
   await click(page.getByRole("button", { name: "Save note" }));
 
   await expect.element(page.getByText("Note saved.")).toBeInTheDocument();
-  expect(await storedNotes()).toEqual([{ title: "Shopping", content: "Bread", favorite: false }]);
+  expect(await storedNotes(user.id)).toEqual([
+    { title: "Shopping", content: "Bread", favorite: false },
+  ]);
 });
 
 test("trims the title", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await fill(page.getByLabelText("Title"), "  Shopping  ");
   await click(page.getByRole("button", { name: "Save note" }));
 
   await expect.element(page.getByRole("heading", { name: "Shopping" })).toBeInTheDocument();
-  expect((await storedNotes())[0]?.title).toBe("Shopping");
+  expect((await storedNotes(user.id))[0]?.title).toBe("Shopping");
 });
 
 test("empties the content", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await fill(page.getByLabelText("Content"), "");
   await click(page.getByRole("button", { name: "Save note" }));
@@ -73,20 +75,20 @@ test("empties the content", async () => {
 
 test("cancels without saving", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await fill(page.getByLabelText("Title"), "Shopping");
   await click(page.getByRole("main").getByRole("link", { name: "Cancel" }));
 
   await expect.element(page.getByRole("heading", { name: "Groceries" })).toBeInTheDocument();
-  expect((await storedNotes())[0]?.title).toBe("Groceries");
+  expect((await storedNotes(user.id))[0]?.title).toBe("Groceries");
 });
 
 test("edits a note from its page", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }]);
-  await renderServer({ url: "/notes/1" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }]);
+  await renderServer({ url: `/notes/${note!.id}` });
 
   await click(page.getByRole("link", { name: "Edit" }));
   await fill(page.getByLabelText("Title"), "Shopping");
@@ -97,8 +99,8 @@ test("edits a note from its page", async () => {
 
 test("lists the new title", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries" }, { title: "Ideas" }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await fill(page.getByLabelText("Title"), "Shopping");
   await click(page.getByRole("button", { name: "Save note" }));
@@ -110,8 +112,8 @@ test("lists the new title", async () => {
 
 test("keeps the favorite", async () => {
   const user = await signedIn();
-  await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
-  await renderServer({ url: "/notes/1/edit" });
+  const [note] = await seedNotes(user.id, [{ title: "Groceries", favorite: true }]);
+  await renderServer({ url: `/notes/${note!.id}/edit` });
 
   await fill(page.getByLabelText("Title"), "Shopping");
   await click(page.getByRole("button", { name: "Save note" }));
