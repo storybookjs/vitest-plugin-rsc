@@ -5,6 +5,7 @@
 // import it as `virtual:vitest-plugin-rsc/page-host`, and nothing else of the
 // page tells the two apart.
 
+import type { InvokePayload, InvokeResult } from "./built-layers.ts";
 import type { ServerRequest } from "./nextjs/registry.ts";
 
 export type PageHost = {
@@ -20,8 +21,16 @@ export type PageHost = {
    * of `request()`: an answer that the server sent after a piece of news
    * resolves after `news` heard it, and a piece of news that the server sent
    * after an answer comes after the answer resolved, or with `missed()`.
+   * None in a worker of Node.js, whose page asks for the versions of the
+   * modules as a page load starts (`versionOfModules()` of utils.ts).
    */
-  listen(news: PageNews): void;
+  listen?(news: PageNews): void;
+  /**
+   * Where the runners of the page get the modules of an environment, where
+   * not over `request()`: in a worker of Node.js from Vitest's own RPC, see
+   * vitest-modules.ts.
+   */
+  readonly modules?: PageModules;
   /**
    * What fires the `navigate` events of the Navigation API for the document:
    * the browser's `navigation`, or a stand-in for a DOM without one. None
@@ -73,6 +82,15 @@ export type PageHost = {
    * Next's stand-in of a response takes the request (nextjs/node-server.ts).
    */
   readonly serverHttp?: ServerHttp;
+};
+
+/**
+ * The modules of the environments that the page runs, from a source of the
+ * host's own: see `modules` of `PageHost`.
+ */
+export type PageModules = {
+  /** What the dev server answers an invoke of a runner of `environment`. */
+  invoke(environment: string, payload: InvokePayload): Promise<InvokeResult>;
 };
 
 /**

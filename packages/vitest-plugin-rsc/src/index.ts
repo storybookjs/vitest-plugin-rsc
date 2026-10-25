@@ -1,6 +1,5 @@
 import "./compile-cache.ts";
 import fs from "node:fs";
-import { isBuiltin } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,8 +12,11 @@ import { hostsPageInNode } from "./page-in-node.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
+import { builtinsKey, type ProvidedBuiltins } from "./worker-run.ts";
+import type { PageAnswers } from "./worker-pool.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 import {
+  answerOf,
   answerPage,
   answerPageOverWebSocket,
   answerPageWith,
@@ -134,12 +136,11 @@ export function vitestPluginRSC(): Plugin[] {
         // the page to fetch.
         return inNode && devServer ? `\0${pageHostId}` : ownFile("browser-host");
       },
-      async load(id) {
+      load(id) {
         if (id !== `\0${pageHostId}` || !devServer) return;
-        const origin = await listenForPage(devServer);
         return (
           `import { nodeHost } from ${JSON.stringify(ownFile("node-host"))};\n` +
-          `export default nodeHost(${JSON.stringify(origin)}, ${JSON.stringify(serverFiles)});\n`
+          `export default nodeHost(${JSON.stringify(serverFiles)});\n`
         );
       },
       configureServer(server) {
@@ -171,8 +172,6 @@ export function vitestPluginRSC(): Plugin[] {
           if (!environment || name === "client") {
             return { error: { message: `No environment "${name}" to run in the page` } };
           }
-          const builtin = inNode ? nodeBuiltinOf(invoke.payload) : undefined;
-          if (builtin) return { result: { externalize: builtin, type: "builtin" } };
           return describeModule(environment, await environment.hot.handleInvoke(invoke.payload));
         });
         answerPageWith(server, versionEvent, ({ environment }: { environment?: string }) =>
@@ -252,7 +251,9 @@ export function vitestPluginRSC(): Plugin[] {
         };
       },
     },
-    ...workerPlugins(),
+    // What the page in a worker asks, the plugin's own dev server answers:
+    // Vitest's project may have another object for it.
+    ...workerPlugins((event, data) => answerOf(devServer!, event, data)),
     dependencySourceMapPlugin(),
     dependencyTransformPlugin(),
     createReactClientCoveragePlugin(),
@@ -279,6 +280,7 @@ type VitestProject = {
     environmentOptions?: Record<string, Record<string, unknown> | undefined>;
   };
   vite: ViteDevServer;
+  provide(key: string, value: unknown): void;
 };
 // What Vitest gives `configureVitest`.
 type VitestPluginContext = {
@@ -309,6 +311,18 @@ async function startWorkerPage(project: VitestProject): Promise<void> {
     ...(settings.navigation as object | undefined),
   };
   await optimizersSettled(project.vite);
+  // What a runner of each environment leaves to Node.js, which the page's
+  // runners ask its environment for, and Vitest's RPC does not answer: see
+  // vitest-modules.ts. As Vite's environment answers `getBuiltins`.
+  const builtins: ProvidedBuiltins = {};
+  for (const [name, environment] of Object.entries(project.vite.environments)) {
+    builtins[name] = environment.config.resolve.builtins.map((builtin) =>
+      typeof builtin === "string"
+        ? { type: "string", value: builtin }
+        : { type: "RegExp", source: builtin.source, flags: builtin.flags },
+    );
+  }
+  project.provide(builtinsKey, builtins);
 }
 
 // A worker of Node.js imports a pre-bundled dependency by the version that
@@ -334,16 +348,38 @@ async function optimizersSettled(server: ViteDevServer): Promise<void> {
 
 type TestOptions = {
   browser?: { enabled?: boolean };
+  pool?: string | { name: string };
   environment?: string;
   include?: string[];
   setupFiles?: string | string[];
-  execArgv?: string[];
   server?: { deps?: { inline?: (string | RegExp)[] | true } };
 };
 
+// The pool of a page in a worker of Node.js: Vitest's forks, with the
+// plugin's entry of the worker (worker-pool.ts), which hands the page Vitest's
+// own RPC to the dev server, and answers its questions with the answers of
+// page-bridge.ts. Loaded by its path, as only Vitest loads a file that
+// imports Vitest: a host other than Vitest has the plugin without it.
+async function withNodeHostPool(
+  pool: TestOptions["pool"],
+  answers: PageAnswers,
+): Promise<{ name: string }> {
+  const { createNodeHostPool, nodeHostPoolName } = (await import(
+    pathToFileURL(ownFile("worker-pool")).href
+  )) as typeof import("./worker-pool.ts");
+  const ours = typeof pool === "object" && pool.name === nodeHostPoolName;
+  if (pool === undefined || pool === "forks" || ours) return createNodeHostPool(answers);
+  const name = typeof pool === "string" ? pool : pool.name;
+  throw new Error(
+    `vitest-plugin-rsc: a project whose page is in a worker of Node.js, without Browser Mode, ` +
+      `runs in the plugin's pool: Vitest's forks, with the plugin's entry of the worker. This ` +
+      `project sets \`test.pool\` to ${JSON.stringify(name)}: leave it out, or set it to "forks".`,
+  );
+}
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function workerPlugins(): Plugin[] {
+function workerPlugins(answers: PageAnswers): Plugin[] {
   // Whether the config is of a page in a worker: then only these do anything.
   let inWorker = false;
   const before = new Map<string, unknown>();
@@ -352,10 +388,11 @@ function workerPlugins(): Plugin[] {
       name: "rsc:page-in-worker",
       config: {
         order: "post",
-        handler(config) {
+        async handler(config) {
           const { test } = config as { test?: TestOptions };
           inWorker = hostsPageInNode(test);
           if (!test || !inWorker) return;
+          test.pool = await withNodeHostPool(test.pool, answers);
           // The pre-bundles of its own: the projects of a root that run in a
           // browser bundle the same dependencies, from other entries.
           const root = config.root ?? process.cwd();
@@ -369,10 +406,6 @@ function workerPlugins(): Plugin[] {
               /\/node_modules\/@vitejs\/plugin-rsc\//,
             ];
           }
-          // Node's own web APIs, kept for the server's layers before the DOM
-          // replaces them: see worker-web-apis.ts.
-          const webApis = pathToFileURL(ownFile("worker-web-apis")).href;
-          test.execArgv = [...(test.execArgv ?? []), "--import", webApis];
           // What the optimizer of the rsc layer scans: the test files and the
           // setup files, which Vitest names with Browser Mode only. Without
           // them it finds their dependencies as a test imports them, and
@@ -419,19 +452,6 @@ function workerPlugins(): Plugin[] {
       },
     },
   ];
-}
-
-// A module of Node.js that a layer leaves to the runner to import, which in a
-// worker of Node.js is Node's own (nextjs/node-builtins.ts). Vite's import
-// analysis names it `/@id/node:fs` in an environment of a browser, and its
-// `fetchModule()` takes that for a module of the environment. Vitest's runner
-// of the `client` environment takes it for Node's module itself, and so does
-// the runner of a page in a worker by this answer, which `import()`s it.
-function nodeBuiltinOf(payload: ReactClientInvokePayload): string | undefined {
-  const { name, data } = (payload as { data?: { name?: string; data?: unknown[] } }).data ?? {};
-  if (name !== "fetchModule" || typeof data?.[0] !== "string") return;
-  const id = data[0].replace(/^\/@id\//, "");
-  return id.startsWith("node:") && isBuiltin(id) ? id : undefined;
 }
 
 // With the answer for a module, what that module imports: the page asks for
