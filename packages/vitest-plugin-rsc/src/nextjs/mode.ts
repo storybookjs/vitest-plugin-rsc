@@ -113,7 +113,10 @@ export type SpeedOptions = {
   watchDom?: boolean;
   /**
    * Experimental. A page load does not ask the dev server for the versions
-   * of its modules: the page has the server's news of every change of them.
+   * of its modules: the page has the server's news of every change of them,
+   * and asks once as a test file starts. In a test run of Vitest only: the
+   * page of a dev server of another host, like `storybook dev`, asks at
+   * every page load.
    *
    * Gives up: a change that reaches the dev server through another
    * connection than the page's, like a request of the test that changes a

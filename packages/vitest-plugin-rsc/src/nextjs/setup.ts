@@ -21,8 +21,13 @@ import "virtual:vitest-plugin-rsc/next-fast-crypto";
 // Vitest evaluates a setup file again before every test file, also one whose
 // tests are all skipped. So the files with `"use client"` are evaluated again
 // for the next file, as Vitest evaluates them, and the CSS of a test file
-// goes once the next file starts.
+// goes once the next file starts. And the page asks the dev server for the
+// versions of its modules once more, also when an `afterAll` of the file
+// before failed before the one below: Vitest runs a file again after a
+// change on a connection of its own, which the answer orders before the
+// file's first page. See `heardVersions` in utils.ts.
 forgetClientFiles();
+forgetHeardVersions();
 
 // The node of a test has the stylesheets of the files that render it: the
 // setup files, in the order of the config, and the test file, which Vitest
@@ -57,9 +62,6 @@ afterAll(async () => {
     await leaveKeptAppWithPage("the end of the test file");
   } finally {
     keptDocument?.();
-    // The next file asks the dev server for the versions of its modules:
-    // see `heardVersions` in utils.ts.
-    forgetHeardVersions();
   }
 });
 

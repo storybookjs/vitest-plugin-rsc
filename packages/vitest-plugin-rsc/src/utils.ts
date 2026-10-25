@@ -274,7 +274,7 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 //
 // The page reads a version here once it has asked for it, in `asked`, and
 // asks again after `forgetHeardVersions()`: at a page load, as a test file
-// ends, and when its socket closes, which may have missed a change. A change
+// starts, and when its socket closes, which may have missed a change. A change
 // that reaches the server through another connection than the page's, like
 // Vitest's own or a request of HTTP, is ordered by such a question: its
 // answer comes after every change the server made before it. Within a page,
