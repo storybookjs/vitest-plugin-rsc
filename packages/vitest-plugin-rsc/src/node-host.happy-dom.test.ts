@@ -2,18 +2,13 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
+import vm from "node:vm";
+import { GlobalWindow } from "happy-dom";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 // The host of a page in a worker of Node.js with happy-dom: the page's fetch
 // API stays happy-dom's, and its interceptor hands the requests that happy-dom
 // sends itself, like those of `XMLHttpRequest`, to what answers them.
-
-// What worker-web-apis.ts keeps in the plugin's entry of a worker, which this
-// test has not: the server's web APIs are not what it is about.
-vi.hoisted(() => {
-  (globalThis as Record<PropertyKey, unknown>)[Symbol.for("vitest-plugin-rsc:worker-web-apis")] =
-    globalThis;
-});
 
 const { nodeHost } = await import("./node-host.ts");
 
@@ -103,4 +98,26 @@ test("ends happy-dom's task of a request that is aborted while the app answers i
   request.abort();
   await ended;
   await happyDOM.waitUntilComplete();
+});
+
+test("compiles the browser layer in the window's realm, a context of its own", async () => {
+  const page = new GlobalWindow({ url: "http://127.0.0.1:1/" });
+  page.document.title = "the page";
+  vm.createContext(page);
+  const host = nodeHost(os.tmpdir(), page as unknown as typeof window);
+  const run = host.compileInPage(
+    ["seen"],
+    '"use strict";\nseen(globalThis, document.title, fetch, Request);',
+  );
+  const seen = vi.fn();
+  await run(seen);
+  const [global, title, pageFetch, PageRequest] = seen.mock.calls[0]!;
+  expect(global).not.toBe(globalThis);
+  expect(title).toBe("the page");
+  expect(pageFetch).toBe(page.fetch);
+  expect(PageRequest).toBe(page.Request);
+  expect(PageRequest).not.toBe(Request);
+  // Laid out as `new AsyncFunction()` lays it out, for the source maps.
+  expect(String(run).split("\n").slice(0, 2)).toEqual(["async function anonymous(seen", ") {"]);
+  await page.happyDOM.close();
 });

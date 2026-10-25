@@ -13,6 +13,10 @@ type PendingInvoke = {
 };
 type SocketMessage = { type?: string; event?: string; data?: unknown };
 
+const AsyncFunction = async function () {}.constructor as new (
+  ...args: string[]
+) => (...args: unknown[]) => Promise<unknown>;
+
 // Before anything replaces it, like a mock of the network.
 const nativeFetch = globalThis.fetch;
 let webSocket: WebSocket | undefined;
@@ -34,6 +38,8 @@ const pendingInvokes = new Map<string, PendingInvoke>();
 // What the page listens to the server with: the socket brings the news and
 // the answers in the order the server sent them.
 const listeners = new Set<PageNews>();
+// The page's own, before a browser context of the plugin's replaces it.
+const pageFetch = globalThis.fetch;
 
 const browserHost: PageHost = {
   request: requestOverWebSocket,
@@ -42,11 +48,13 @@ const browserHost: PageHost = {
   },
   navigation: (window as { navigation?: EventTarget }).navigation,
   loadsStylesheets: true,
-  serverWebApis: globalThis,
+  serverFetch: (input, init) => pageFetch(input, init),
+  compileInPage: (params, body) => new AsyncFunction(...params, body),
   // No browser hands over what a page sends.
   interceptRequests: () => false,
   serverDir: "",
   serverImmediate,
+  immediatesOfRuntime: false,
 };
 export default browserHost;
 

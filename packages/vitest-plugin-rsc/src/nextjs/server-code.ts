@@ -13,9 +13,8 @@ import type { NextLayer } from "./project.ts";
 // The server layers run in a browser, which has a `window` and a `fetch`
 // of its own. A browser cannot lose its globals, but a module can be compiled
 // not to see them: `typeof window` becomes `"undefined"`, which is what Next's
-// build does to server code, and `fetch`, `Request`, `Response`, `Headers`,
-// `AbortController` and `AbortSignal` become the server's, which are in
-// `registry` (globals.ts). See docs/internals/next-routes.md.
+// build does to server code, and `fetch`, `Request` and `Response` become
+// the server's, which are in `registry` (globals.ts). See docs/internals/next-routes.md.
 
 /** Globals of a browser that a server does not have. */
 const browserGlobals = ["window", "document", "location", "localStorage", "sessionStorage"];
@@ -23,14 +22,7 @@ const browserGlobals = ["window", "document", "location", "localStorage", "sessi
 const serverGlobals = [
   "Request",
   "Response",
-  // Of the server's `Request` and `Response`: in a DOM of Node.js the global
-  // one is the DOM's, like happy-dom's, which reads none of another realm.
-  "Headers",
   "fetch",
-  // Those of the server's streams: in a DOM of Node.js the global ones are
-  // the DOM's, which Bun's native `pipeTo()` takes no signal of.
-  "AbortController",
-  "AbortSignal",
   // Node.js has these and a browser does not: see globals.ts.
   "setImmediate",
   "clearImmediate",

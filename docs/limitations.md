@@ -13,6 +13,13 @@ Looking for every edge case, with the reason behind it? See [Not Yet](internals/
 - **No `cookieStore`.** Code that uses the Cookie Store API without checking for it fails.
 - **Spy on `localStorage`, not `Storage.prototype`.** Your app's storage is the plugin's own object, so a spy on the prototype sees nothing.
 
+## Without Browser Mode
+
+In a project with `environment: "happy-dom"` or `"jsdom"` (see [Without Browser Mode](nextjs-guide.md#without-browser-mode)):
+
+- **With happy-dom, a test's web APIs are your server's.** The page has a realm of its own, as in a browser, and a test file gets the document as a global, but `fetch`, `File`, `Blob`, `FormData` and `Request` are Node's. Make an object for the page with the window's class, like `new window.File()`; spy on `window.fetch` for the page's requests.
+- **With jsdom, one realm.** The test, your server and the page share jsdom's window: MSW's `setupServer()` doesn't see your server's `fetch`, and a route handler's `new Response(new Blob(["…"]))` answers `"[object Blob]"`, as its `Blob` is jsdom's.
+
 ## One request at a time
 
 - **No `test.concurrent`.** Tests in a file run one after another, because concurrent tests would share Next's request context. Test files still run in parallel.

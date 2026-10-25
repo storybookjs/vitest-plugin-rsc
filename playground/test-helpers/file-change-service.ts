@@ -3,7 +3,11 @@ import { normalizePath, type Plugin } from "vite";
 import type { Vitest } from "vitest/node";
 
 // Vitest's hook of a plugin of a project.
-type VitestPlugin = { configureVitest(context: { vitest: Vitest }): void };
+type VitestContext = {
+  vitest: Vitest;
+  defineCacheKeyGenerator?: (generate: (context: { id: string }) => string | false) => void;
+};
+type VitestPlugin = { configureVitest(context: VitestContext): void };
 
 /**
  * Stands in for a change to a file of the app while the tests are watched:
@@ -18,8 +22,11 @@ export function fileChangeService(): Plugin & VitestPlugin {
   return {
     name: "playground:file-change-service",
     enforce: "pre",
-    configureVitest(context: { vitest: Vitest }) {
+    configureVitest(context: VitestContext) {
       vitest = context.vitest;
+      // Vitest keeps what it compiled on disk by the content of the file on
+      // disk, which a change here leaves as it is: a changed file is not kept.
+      context.defineCacheKeyGenerator?.(({ id }) => (contents.has(id.split("?")[0]!) ? false : ""));
     },
     configureServer(server) {
       server.middlewares.use("/service/file-change", (request, response) => {

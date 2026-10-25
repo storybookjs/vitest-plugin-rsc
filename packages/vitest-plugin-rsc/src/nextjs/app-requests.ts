@@ -1,6 +1,4 @@
 import "./globals.ts";
-import pageHost from "virtual:vitest-plugin-rsc/page-host";
-import { runtimeRequestInit } from "../runtime-request-init.ts";
 import { speedFeature } from "./speed-features.ts";
 import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
@@ -23,16 +21,14 @@ import { loadedSsrLayer, ssrLayer } from "./server-layers.ts";
 
 type SsrLayer = Awaited<ReturnType<typeof ssrLayer>>;
 
-// The headers of the requests to the app and of its answers are the server's
-// (page-host.ts): in a browser the page's own, in a DOM of Node.js Node's,
-// whatever the page's are by then, like a patch of a mock of the network.
-// And the requests of the server to the network are the server's: in a DOM of
-// Node.js the page's `Request` is the DOM's, like happy-dom's.
-const { Headers, Request: ServerNativeRequest } = pageHost.serverWebApis;
+// The requests to the app and its answers are the server's, of the global
+// this runs on: a request of the page is one of those once it is here
+// (from-page.ts), and the page gets a response of its own (`pageResponse()`).
+// The headers are those of the global as this module loads, whatever they
+// are by then, like a patch of a mock of the network.
+const { Headers, Request: ServerNativeRequest } = globalThis;
 
-// Whether `value` is a request, of the page's web APIs or of the server's.
-const isRequest = (value: unknown): value is Request =>
-  value instanceof Request || value instanceof ServerNativeRequest;
+const isRequest = (value: unknown): value is Request => value instanceof ServerNativeRequest;
 
 // What Next's server answers a request with, once the ssr layer is there.
 // As with `fetch`, a request whose signal has aborted is not sent: the
@@ -61,7 +57,7 @@ const nativeFetch = registry.network;
 // the page's own requests: a browser's `fetch` is what they have.
 async function networkFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (!init?.body && !(isRequest(input) && input.body)) return nativeFetch(input, init);
-  const request = new ServerNativeRequest(input, runtimeRequestInit(init, pageHost.serverWebApis));
+  const request = new ServerNativeRequest(input, init);
   // A request with a body, so not a GET.
   // oxlint-disable-next-line unicorn/no-invalid-fetch-options
   return nativeFetch(new ServerNativeRequest(request, { body: await request.arrayBuffer() }));
@@ -336,14 +332,16 @@ export async function sendRequest<Passed extends undefined = never>(
 // What client code gets of a response of the app: one of the page's own web
 // APIs, without its `Set-Cookie` headers. A browser never shows a script
 // those, a forbidden response header: they are the store's. `handleRequest()`
-// keeps them, for the test. In a DOM of Node.js the server's response is
-// Node's, where the page's are the DOM's, like happy-dom's.
+// keeps them, for the test. In a worker of Node.js with happy-dom the page's
+// are the window's, of another realm than the server's: see from-page.ts.
 function pageResponse(response: Response): Response {
-  if (response instanceof Response && !response.headers.has("set-cookie")) return response;
+  const { Response: PageResponse } = window;
+  if (response instanceof PageResponse && !response.headers.has("set-cookie")) return response;
   // As a list: the DOM's `Response` reads no `Headers` of another realm.
   const headers = [...response.headers].filter(([name]) => name !== "set-cookie");
   const { status, statusText, url, redirected } = response;
-  return Object.defineProperties(new Response(response.body, { status, statusText, headers }), {
+  const page = new PageResponse(response.body, { status, statusText, headers });
+  return Object.defineProperties(page, {
     url: { value: url },
     redirected: { value: redirected },
   });

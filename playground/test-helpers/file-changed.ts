@@ -6,5 +6,6 @@ export async function fileChanged(file: string, content?: string): Promise<void>
   const query = new URLSearchParams({ file, ...(content === undefined ? {} : { content }) });
   // At the origin of the page, which is the dev server's: an app that
   // imports this has it as server code, whose `fetch` is the server's.
-  await fetch(`${globalThis.location.origin}/service/file-change?${query}`);
+  const response = await fetch(`${globalThis.location.origin}/service/file-change?${query}`);
+  if (!response.ok) throw new Error(`The dev server took no change of ${file}: ${response.status}`);
 }
