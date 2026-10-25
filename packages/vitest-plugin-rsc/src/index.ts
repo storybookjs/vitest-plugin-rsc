@@ -310,6 +310,7 @@ async function optimizersSettled(server: ViteDevServer): Promise<void> {
 
 type TestOptions = {
   browser?: { enabled?: boolean };
+  pool?: string | { name: string };
   environment?: string;
   include?: string[];
   setupFiles?: string | string[];
@@ -330,6 +331,23 @@ function hostsPageInNode(test: TestOptions | undefined): boolean {
   return !test?.browser?.enabled && domEnvironments.has(test?.environment ?? "");
 }
 
+// The pool of a page in a worker of Node.js: Vitest's forks, with the
+// plugin's entry of the worker (worker-pool.ts), which hands the page Vitest's
+// own RPC to the dev server. Loaded by its path, as only Vitest loads a file
+// that imports Vitest: a host other than Vitest has the plugin without it.
+async function withNodeHostPool(pool: TestOptions["pool"]): Promise<{ name: string }> {
+  const { nodeHostPool } = (await import(pathToFileURL(ownFile("worker-pool")).href)) as {
+    nodeHostPool: { name: string };
+  };
+  if (pool === undefined || pool === "forks" || pool === nodeHostPool) return nodeHostPool;
+  const name = typeof pool === "string" ? pool : pool.name;
+  throw new Error(
+    `vitest-plugin-rsc: a project whose page is in a worker of Node.js, without Browser Mode, ` +
+      `runs in the plugin's pool: Vitest's forks, with the plugin's entry of the worker. This ` +
+      `project sets \`test.pool\` to ${JSON.stringify(name)}: leave it out, or set it to "forks".`,
+  );
+}
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function workerPlugins(): Plugin[] {
@@ -341,10 +359,11 @@ function workerPlugins(): Plugin[] {
       name: "rsc:page-in-worker",
       config: {
         order: "post",
-        handler(config) {
+        async handler(config) {
           const { test } = config as { test?: TestOptions };
           inWorker = hostsPageInNode(test);
           if (!test || !inWorker) return;
+          test.pool = await withNodeHostPool(test.pool);
           // The pre-bundles of its own: the projects of a root that run in a
           // browser bundle the same dependencies, from other entries.
           const root = config.root ?? process.cwd();

@@ -170,6 +170,16 @@ export default defineConfig([
     },
     dts,
   },
+  // Loaded by Vitest, by their paths: the pool of a page in a worker of
+  // Node.js and the entry of its worker, see src/worker-pool.ts. Files of
+  // their own, without types: no other file imports them.
+  {
+    entry: { "worker-pool": "src/worker-pool.ts", "workers/forks": "src/workers/forks.ts" },
+    format: ["esm" as const],
+    fixedExtension: false,
+    deps: { neverBundle: [/^vitest(\/|$)/] },
+    dts: false,
+  },
   // The stand-ins of the speed feature `fastCrypto`, src/nextjs/fast-crypto.ts:
   // one file, with the SHA-256 of @noble/hashes in it, which Vite serves as it
   // is, as the modules of Node.js below.
