@@ -5,8 +5,14 @@
 // `await locator.fill(text)` as `await fill(locator, text)`.
 // test/write-columns.ts writes it, and tests/zz-checks/ checks it.
 
-const importAfter = 'import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";\n';
-const action = /^(\s*)await (page\..+)\.(click|fill)\((.*)\);$/;
+// The import of test/user-event.ts goes after this one.
+const renderServerImport =
+  'import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";\n';
+const action = /^(\s*)await (page\..+)\.(click\(\)|fill\((.+)\));$/;
+// Any action of Vitest's locators or `userEvent`, which would stay Playwright's
+// in the column unless it is one that `action` turns into test/user-event.ts's.
+const anyAction =
+  /\.(click|dblClick|tripleClick|fill|clear|hover|unhover|selectOptions|upload|dropTo)\(|\buserEvent\./;
 
 /** A test of tests/vitest/ as the user-event column has it. */
 export function toUserEvent(source: string): string {
@@ -14,18 +20,23 @@ export function toUserEvent(source: string): string {
   const lines = source.split("\n").map((line) => {
     const match = action.exec(line);
     if (!match) {
-      // An action of another shape would stay Playwright's in the column.
-      if (/\.(click|fill)\(/.test(line)) throw new Error(`An action of an unknown shape: ${line}`);
+      if (anyAction.test(line)) throw new Error(`An action of an unknown shape: ${line}`);
       return line;
     }
-    const [, indent, locator, name, args] = match;
-    used.add(name!);
-    return `${indent}await ${name}(${[locator, args].filter(Boolean).join(", ")});`;
+    const [, indent, locator, call, text] = match;
+    const name = call!.startsWith("click") ? "click" : "fill";
+    used.add(name);
+    return `${indent}await ${name}(${[locator, text].filter(Boolean).join(", ")});`;
   });
   if (used.size === 0) return source;
-  if (!source.includes(importAfter)) throw new Error(`No import to follow: ${importAfter}`);
+  if (!source.includes(renderServerImport)) {
+    throw new Error(`No import of renderServer for the import of test/user-event.ts to follow`);
+  }
   const names = ["click", "fill"].filter((name) => used.has(name)).join(", ");
   return lines
     .join("\n")
-    .replace(importAfter, `${importAfter}import { ${names} } from "#test/user-event.ts";\n`);
+    .replace(
+      renderServerImport,
+      `${renderServerImport}import { ${names} } from "#test/user-event.ts";\n`,
+    );
 }
