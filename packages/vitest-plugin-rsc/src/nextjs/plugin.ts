@@ -7,6 +7,7 @@ import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import {
   createFilter,
+  defaultServerMainFields,
   normalizePath,
   parseAst,
   parseAstAsync,
@@ -988,11 +989,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const testRun = !isBuild && process.env.VITEST !== undefined;
         const fastCrypto = chosen.fastCrypto && testRun;
         speedFeatures = { ...chosen, fastCrypto };
-        nodeModules = hostsPageInNode(
+        // Whether the page, and with it the server, is in a worker of Node.js.
+        const pageInNode = hostsPageInNode(
           (config as { test?: Parameters<typeof hostsPageInNode>[0] }).test,
-        )
-          ? "native"
-          : "stand-ins";
+        );
+        nodeModules = pageInNode ? "native" : "stand-ins";
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
           static: isBuild,
@@ -1259,15 +1260,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...builtLayer("ssr"),
               consumer: "client",
               resolve: {
-                // Vite's conditions for a browser, which this is.
+                // Vite's conditions for the platform of the server: a
+                // browser's, or in a worker of Node.js Node's, with Vite's
+                // fields of a package for a server, as on `next start`.
                 conditions: [
                   ...(config.resolve?.conditions ?? []).filter(
                     (condition) => condition === "vitest-plugin-rsc-source",
                   ),
                   "module",
-                  "browser",
+                  pageInNode ? "node" : "browser",
                   "development|production",
                 ],
+                ...(pageInNode && { mainFields: [...defaultServerMainFields] }),
               },
               // The plugin's setup file loads the ssr layer, and the page asks
               // for its modules one after the other as it finds their

@@ -40,7 +40,10 @@ type Config = { environments: Record<string, { optimizeDeps: OptimizeDeps }> };
 type OptimizerPlugins = {
   environments: Record<
     string,
-    { optimizeDeps: { rolldownOptions: { plugins: { name?: string }[] } } }
+    {
+      optimizeDeps: { rolldownOptions: { plugins: { name?: string }[] } };
+      resolve?: { conditions: string[]; mainFields?: string[] };
+    }
   >;
 };
 
@@ -948,6 +951,11 @@ test("gives the server layers Node's own modules for a page in a worker of Node.
   expect(requireToImport("client")).toBe(true);
   expect(requireToImport("next_ssr")).toBe(true);
   expect(requireToImport("react_client")).toBe(false);
+  // Node's conditions, as on `next start`, and Vite's fields for a server.
+  expect(environments.next_ssr!.resolve).toEqual({
+    conditions: ["module", "node", "development|production"],
+    mainFields: ["module", "jsnext:main", "jsnext"],
+  });
   const resolverOf = (layer: string) => {
     const resolver = plugins.find(
       ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
