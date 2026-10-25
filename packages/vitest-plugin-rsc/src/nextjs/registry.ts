@@ -111,6 +111,8 @@ export type NextRegistry = {
   /** A `Request` and `Response` that keep the headers a browser drops. */
   Request: typeof Request;
   Response: typeof Response;
+  /** The `Headers` of those. */
+  Headers: typeof Headers;
   /** The server's `fetch`: its network, which is not the browser's. */
   fetch: typeof fetch;
   /** The network itself: no request of it is the app's, and Next caches none. */
@@ -164,8 +166,20 @@ export type NextRegistry = {
    * `hostFiles`; without it a node has no stylesheets of the host's files.
    */
   nodeFiles?(): string[];
+  /**
+   * Internal, not an API: tells the dev server that the test file of the
+   * tab opened a route, by the name of its modules, which it compiles ahead
+   * when the file runs again (routes-ahead.ts). Set by the plugin's setup
+   * file (setup.ts): another host has no test files.
+   */
+  routeOpened?(entry: string): void;
   /** The directory of the build on the server's disk, of this generation: see cache.ts. */
   buildDir(): string;
+  /**
+   * The directory of the server's own files, which the page's host has:
+   * `""` in a browser, a temporary directory in Node.js (page-host.ts).
+   */
+  serverDir(): string;
   /**
    * Next's build's verdict on a route of the app, by its page name and its
    * pathname, in the rsc layer: nothing for a route it renders at every

@@ -1,15 +1,14 @@
 import { expect, test, vi } from "vitest";
+import { invokeEvent, modulesChangedEvent, versionEvent } from "./page-protocol.ts";
+import type { PageNews } from "./page-host.ts";
 import { timersKey } from "./timers.ts";
-import { answerEvent, invokeEvent, modulesChangedEvent, versionEvent } from "./websocket-bridge.ts";
 
-// The page's runners of a dev server's environment, without a browser: a
-// socket whose server answers every module from `graph`, with what it
-// imports, as `describeModule()` in index.ts does, and counts what it is
-// asked for.
-
-vi.mock("virtual:vitest-plugin-rsc/host-modules", () => ({ default: undefined }));
-vi.mock("virtual:vitest-plugin-rsc/layers", () => ({ default: undefined }));
-vi.mock("virtual:vitest-plugin-rsc/vite-client", () => ({}));
+// The page's runners and checks of a dev server's modules, without a browser:
+// a host of the page whose server answers every module from `graph`, with what
+// it imports, as `describeModule()` in index.ts does, and the version of the
+// modules of each environment, as `versionOf()` in module-versions.ts does,
+// and tells the page of a change of them. The questions and the news go
+// through the host, so they are the same in a browser and in Node.js.
 
 const graph: Record<string, string[]> = {
   "/entry.js": ["/a.js", "/b.js"],
@@ -27,17 +26,14 @@ const versions = new Map<string, number>();
 // The environments the page asked the version of.
 const versionsAsked: string[] = [];
 
-type Message = {
-  event: string;
-  data: { id: string; environment?: string; payload?: { data: { name: string; data: [string] } } };
-};
-function answer({ event, data }: Message): unknown {
+type Question = { environment: string; payload?: { data: { name: string; data: [string] } } };
+function answer(event: string, { environment, payload }: Question): unknown {
   if (event === versionEvent) {
-    versionsAsked.push(data.environment!);
-    return versions.get(data.environment!) ?? 1;
+    versionsAsked.push(environment);
+    return versions.get(environment) ?? 1;
   }
   if (event !== invokeEvent) throw new Error(`no answer for ${event}`);
-  const { name, data: args } = data.payload!.data;
+  const { name, data: args } = payload!.data;
   if (name === "getBuiltins") return { result: [] };
   const [url] = args;
   asked.push(url);
@@ -51,46 +47,33 @@ function answer({ event, data }: Message): unknown {
   };
 }
 
-const sockets = new Set<Socket>();
-class Socket extends EventTarget {
-  static readonly OPEN = 1;
-  readyState = 0;
-  constructor() {
-    super();
-    sockets.add(this);
-    setTimeout(() => {
-      this.readyState = 1;
-      this.dispatchEvent(new Event("open"));
-    });
-  }
-  send(raw: string) {
-    const message = JSON.parse(raw) as Message;
-    const result = answer(message);
-    setTimeout(() => {
-      const data = JSON.stringify({
-        type: "custom",
-        event: answerEvent,
-        data: { id: message.data.id, result },
-      });
-      this.dispatchEvent(new MessageEvent("message", { data }));
-    });
-  }
-}
+// What the page listens to the host with.
+let news: PageNews | undefined;
 // The server changes the modules of an environment, and tells the page. The
 // tests share the page's state, in order: the versions it heard of.
 function change(environment: string, version: number) {
   versions.set(environment, version);
-  const data = JSON.stringify({
-    type: "custom",
-    event: modulesChangedEvent,
-    data: { environment, version },
-  });
-  for (const socket of sockets) socket.dispatchEvent(new MessageEvent("message", { data }));
+  news!.heard(modulesChangedEvent, { environment, version });
 }
 
-vi.stubGlobal("WebSocket", Socket);
-vi.stubGlobal("window", { location: new URL("http://localhost:63315/") });
-vi.stubGlobal("fetch", async () => Response.json({ token: "t", path: "/socket" }));
+vi.mock("virtual:vitest-plugin-rsc/host-modules", () => ({ default: undefined }));
+vi.mock("virtual:vitest-plugin-rsc/layers", () => ({ default: undefined }));
+vi.mock("virtual:vitest-plugin-rsc/vite-client", () => ({}));
+vi.mock("virtual:vitest-plugin-rsc/page-host", () => ({
+  default: {
+    // An answer comes in a task of its own, as over a socket: news can come
+    // while it is on its way.
+    request: (event: string, data: Question) => {
+      const result = answer(event, data);
+      return new Promise((resolve) => setTimeout(() => resolve(result)));
+    },
+    listen: (listener: PageNews) => (news = listener),
+    // One realm, as in a browser.
+    compileInPage: (params: string[], body: string) =>
+      new (async function () {}.constructor as FunctionConstructor)(...params, body),
+  },
+}));
+
 const {
   checkFetchedModules,
   createEnvironmentRunner,
@@ -138,10 +121,10 @@ test("asks once for an environment, however many ask meanwhile", async () => {
   expect(versionsAsked.sort()).toEqual(["client", "react_client"]);
 });
 
-test("asks again once its socket has closed, which may have missed a change", async () => {
+test("asks again once its host may have missed a change, like when its socket closed", async () => {
   await checkFetchedModules();
   versionsAsked.length = 0;
-  for (const socket of sockets) socket.dispatchEvent(new Event("close"));
+  news!.missed();
   await checkFetchedModules();
   expect(versionsAsked.sort()).toEqual(["client", "react_client"]);
 });

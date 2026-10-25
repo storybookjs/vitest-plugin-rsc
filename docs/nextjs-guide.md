@@ -418,7 +418,7 @@ See [Web Storage](internals/next-routes.md#web-storage) for the finer points.
 
 ## Caching and revalidation
 
-Cached `fetch`, tags, `revalidateTag()`, `updateTag()` and `refresh()` all work. Use [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) to answer the outgoing `fetch`. The [notes demo](../playground/nextjs-notes-demo) has a full setup.
+Cached `fetch`, tags, `revalidateTag()`, `updateTag()` and `refresh()` all work. Use [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode) to answer the outgoing `fetch`; [without Browser Mode](#without-browser-mode), with happy-dom, `setupServer()` of `msw/node` in the setup file. The [notes demo](../playground/nextjs-notes-demo) has a full setup.
 
 ```tsx
 import { refresh, revalidatePath, revalidateTag, updateTag } from "next/cache";
@@ -782,7 +782,7 @@ Vitest runs test files in parallel, each worker in its own browser tab, and each
 
 Before every test, the plugin:
 
-- empties the in-memory disk and Next's Data Cache,
+- empties the in-memory disk and Next's Data Cache (without Browser Mode the disk is your machine's, and only Next's cache is emptied: see [The disk without Browser Mode](#the-disk-without-browser-mode)),
 - opens a fresh browser context for your app: no cookies, empty storage.
 
 A database recipe's setup file also resets the database and fixes the clock with `vi.setSystemTime()`. On Postgres and MySQL, even `now()` follows that clock.
@@ -812,6 +812,82 @@ patchedDependencies:
 
 Then run `pnpm install --config.optimistic-repeat-install=false` once, so that pnpm installs the patched package. The patch is a small helper, `isOptimizedDepFile()`, and a check of it in the transform of both plugins, `vitest:browser:esm-injector` and `vitest:mocks`, in `dist/node.js`. It pins `@vitest/mocker` 5.0.5: on a bump of Vitest, redo it for the new version with `pnpm patch @vitest/mocker`, or drop it once Vitest has the change.
 
+## Without Browser Mode
+
+A Vitest project without Browser Mode, with `environment: "happy-dom"` or `"jsdom"`, runs the page in a worker of Node.js, and the plugin is its host there. Only Vitest's test run does: `vite build` and `storybook dev` of the same `vite.config.ts` have the page in a browser. Your server code then runs on Node.js itself, as with `next start`:
+
+- **Node's own modules**, not the browser's stand-ins of [Node.js in the browser](nodejs-in-the-browser.md): nothing throws because a browser can't do it. `node:crypto` has its ciphers and signatures, `node:zlib` its streams and Brotli, and `child_process`, `net` and `http` are there.
+- **Your packages' builds for Node.js**: the server code resolves a package with the `node` condition, as Next does, where a browser has `browser`. A package like `jose` or `ws` is its Node.js build.
+- **Node's own `AsyncLocalStorage`**: `cookies()`, `headers()` and the scope of a `"use cache"` function follow your code everywhere, also into a callback or a package, without the limits of [The Scope Of A Cached Function](internals/next-routes.md#the-scope-of-a-cached-function).
+- **A database over TCP**: a driver like `pg` reaches a real server, or one your setup file starts: Node's own `net` is there for any driver, and `pg` is the one this repository tests. The notes demo's TCP project runs the app's own `pg` module against PGlite served over TCP by [`@electric-sql/pglite-socket`](https://www.npmjs.com/package/@electric-sql/pglite-socket), in `vitest.setup.tcp.ts`.
+- **Native addons**, like `sharp`, `bcrypt` or `better-sqlite3`: list the package in `optimizeDeps.exclude` of the project, so that Node.js loads it itself rather than Vite bundling it.
+
+Next to a project in Browser Mode, with the plugins in the root config, such a project gets a Vite server of its own: the plugin sets `test.sharedViteServer: false` there, as each project's server is made for where its page runs. Vitest 5 would otherwise resolve a project that differs in `environment` only with the root's server.
+
+```ts
+export default defineConfig({
+  plugins: [vitestPluginRSC(), vitestPluginNext()],
+  test: {
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "browser",
+          browser: {
+            enabled: true,
+            provider: playwright(),
+            instances: [{ browser: "chromium" }],
+          },
+        },
+      },
+      {
+        extends: true,
+        test: { name: "node", environment: "happy-dom" },
+      },
+    ],
+  },
+});
+```
+
+What still differs from `next start`: the test, your server and the page share one process, with its globals, `process.env` and a test's fake timers; a request to your app is a call, not a request over a socket, so code that calls your app's own URL with `http` rather than `fetch` reaches Vite's dev server, not your app; MSW's `setupServer()` sees the page's `fetch`, and with happy-dom a `fetch` of your server code too, but not with jsdom, where it goes to the network; and the [disk](#the-disk-without-browser-mode) is your machine's.
+
+With happy-dom the page has a realm of its own, as in a browser: its `fetch`, `Request`, `Response`, `FormData`, `Blob` and `File` are the window's, and your server's are Node's own. A test file has the document as a global, as with Vitest's environment, so `screen`, `userEvent` and jest-dom's matchers work as in Browser Mode, but its `fetch`, `File`, `Blob`, `FormData` and `Request` are your server's:
+
+- make an object for the page with the window's class, like `new window.File(["…"], "note.txt")` for a file input;
+- a spy on `globalThis.fetch` sees your server's requests to the network, and one on `window.fetch` the page's.
+
+jsdom keeps one realm for the test, your server and the page, as Vitest's environment makes it: there a route handler's `new Response(new Blob(["…"]))` answers `"[object Blob]"`, as its `Blob` is jsdom's and its `Response` Node's.
+
+### The disk without Browser Mode
+
+`node:fs` is Node's own, so the disk is your machine's, as with `next start`:
+
+| What                       | In a browser (Browser Mode)                        | In Node.js (happy-dom or jsdom)                                                                     |
+| -------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `node:fs`                  | a disk in memory                                   | your machine's disk                                                                                 |
+| At the start of every test | empty, but for `/tmp`                              | as the last test left it                                                                            |
+| `process.cwd()`            | `/`                                                | Vitest's working directory, your project when you run Vitest there                                  |
+| Your project's files       | not on it                                          | there, so a Server Component can read `content/*.md`                                                |
+| Next's cache, `.next/`     | `/.next/<n>` on the disk, a new one for every test | a temporary directory of the worker, a new `.next/<n>` in it for every test, gone when the run ends |
+
+The plugin never writes to your project. What your code writes, it writes to your disk, as it would on a server. So a test that writes a file cleans it up itself. For a test that runs on both, make a directory of its own and tell the app where it is:
+
+```ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { beforeEach, vi } from "vitest";
+
+let dir: string;
+beforeEach(() => {
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "notes-"));
+  vi.stubEnv("NOTES_DIR", dir);
+  return () => fs.rmSync(dir, { recursive: true, force: true });
+});
+```
+
+In a browser that is a directory of the disk in memory, `/tmp/notes-…`, and in Node.js one of your machine's. A relative path, like `content/today.md`, reads your project's file in Node.js when Vitest runs in your project's directory, and in a browser only what the test wrote there.
+
 ## Development or production
 
 By default, Next and React run their development builds, like `next dev`. Set `vitestPluginNext({ build: "production" })` to run them like `next start`: faster, and without dev warnings. It's still experimental.
@@ -834,10 +910,10 @@ VITEST_PLUGIN_RSC_MODE=fast npx vitest
 
 Fast mode turns on every speed feature. Each is an option of its own, which defaults to `true` in fast mode and `false` in fidelity mode, but for `watchDom`, which gives up nothing and is on in both:
 
-- **One app per test file** (`keepApp`). The first page of a test file starts the app, and every `renderServer({ url })` after it renders its page in that app, from its Flight payload, without loading the page. Each page gets a React tree and a router of its own, so the state of a component doesn't carry over from one test to the next. The state of a module does, as in an app that never reloads: a module that keeps a value from the test before has it in the next one. So does what the code of the app added to the `<head>`, like the stylesheets of the pages before, as after a navigation of the app. The page renders on the client, as with `ssr: false`, and so does a page that the app loads itself from it, like after a `<form>` without a Server Action, so a test doesn't see the server's HTML or a hydration mismatch. A test that asserts on them passes `renderServer({ url, ssr: true })` and gets a page load of its own. The `response` has the status of the page's document, and a page that calls `redirect()` loads its target, as with `ssr: false`; only a page that fails under a Suspense boundary gets its error's status, not a 200. After a change of a module of the browser layer, the next `renderServer({ url })` starts a new app once the page has the dev server's news of it, with the browser layer's modules as they are now; the server's modules, as in fidelity mode, change when Vitest runs the file again. In development, the page has no dev overlay.
-- **Page loads without a document** (`flightLoads`). A page of the kept app loads with the request Next's router sends for a page, for its Flight payload alone, so the server renders no HTML for it. Its `response` in what `renderServer()` returns is that one: `text/x-component`, not the document. The head has no `<meta name="next-size-adjust">` of `next/font`, and a page that the test leaves while it loads stops rendering on the server: a test of a render that outlives its page passes `ssr: true`. The server handles each page once. The status and redirects are as with `keepApp` alone: the `response` of a page of `notFound()` has the 404 of its document, and a page whose render calls `redirect()` loads as its target, with the target's Flight response, `redirected` and the final URL. A redirect to another origin throws, as in fidelity mode.
-- **No prefetching** (`skipPrefetch`). Next's router doesn't prefetch: not for `<Link>` or `<Form>`, nor for `router.prefetch()`.
-- **No delay between the steps of a render** (`immediates`). The server doesn't wait the few milliseconds a browser adds to a timeout of `0` between the steps of a render, unless the test fakes the timers.
+- **One app per test file** (`keepApp`). The first page of a test file starts the app, and every `renderServer({ url })` after it renders its page in that app, from its Flight payload, without loading the page. Each page gets a React tree and a router of its own, so the state of a component doesn't carry over from one test to the next. The state of a module does, as in an app that never reloads: a module that keeps a value from the test before has it in the next one. So does what the code of the app added to the `<head>`, like the stylesheets of the pages before, as after a navigation of the app. The page renders on the client, as with `ssr: false`, and so does a page that the app loads itself from it, like after a `<form>` without a Server Action, so a test doesn't see the server's HTML, its preloads, like the fonts of `next/font`, or a hydration mismatch. A test that asserts on them passes `renderServer({ url, ssr: true })` and gets a page load of its own. The `response` has the status of the page's document, and a page that calls `redirect()` loads its target, as with `ssr: false`; only a page that fails under a Suspense boundary gets its error's status, not a 200. After a change of a module of the browser layer, the next `renderServer({ url })` starts a new app once the page has the dev server's news of it, with the browser layer's modules as they are now; the server's modules, as in fidelity mode, change when Vitest runs the file again. In development, the page has no dev overlay.
+- **Page loads without a document** (`flightLoads`). A page of the kept app loads with the request Next's router sends for a page, for its Flight payload alone, so the server renders no HTML for it. Its `response` in what `renderServer()` returns is that one: `text/x-component`, not the document. A page that the test leaves while it loads stops rendering on the server: a test of a render that outlives its page passes `ssr: true`. The server handles each page once. The status and redirects are as with `keepApp` alone: the `response` of a page of `notFound()` has the 404 of its document, and a page whose render calls `redirect()` loads as its target, with the target's Flight response, `redirected` and the final URL. A redirect to another origin throws, as in fidelity mode.
+- **No prefetching** (`skipPrefetch`). Next's router doesn't prefetch: not for `<Link>` or `<Form>`, nor for `router.prefetch()`. Next prefetches in production only, so in development this gives up nothing.
+- **No delay between the steps of a render** (`immediates`). The server doesn't wait the few milliseconds a browser adds to a timeout of `0` between the steps of a render, nor for a timeout of `0` of the app's own server code, unless the test fakes the timers.
 - **Less waiting for the DOM** (`watchDom`), in both modes. `expect.element()` and `expect.poll()` look again on the next change of the document, unless the poll has an interval of its own or the test's timers are fake, which poll at that interval or at `expect.poll.interval` of the config, 5 ms when your config sets none; otherwise that option doesn't count. A change is a mutation of the DOM or an event of what changes without one, like `input` or a stylesheet's `load`; what a script sets on a property, they look at again after 5 ms. It changes when an assertion looks at the DOM, not what it sees: without it, Vitest waits 20, 50, 100, 100 and then 500 ms between the looks, and a test sees most changes tens of milliseconds late. On an M1 Pro, the 500 tests took about 60 s without it and 26 s with it in fidelity mode, and 52 s and 17 s in fast mode. See [Fast tests](fast-tests.md#waiting-for-the-page). `watchDom: false` turns it off.
 - **No question to the dev server per page load** (`cacheDevServer`). The dev server tells the page of every change of its modules. In fidelity mode a page load asks too, along with its request, so a change that reaches the server through another connection, like a request of a test that changes a file, is seen by the next page load. With `cacheDevServer` the page takes the news, which can come after it, and asks once as a test file starts. In a test run of Vitest only: the page of `storybook dev` asks at every page load.
 - **Password hashes that cost microseconds** (`fastCrypto`). Password hashes and key derivation of `bcryptjs`, `node:crypto` and Web Crypto cost microseconds, with the same API, so a hash a test makes verifies in the app. See [Fast crypto](nodejs-in-the-browser.md#fast-crypto).

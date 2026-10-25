@@ -5,7 +5,7 @@ import { domLocatorsProjects } from "./packages/dom-locators/vitest.config.ts";
 import storybookNextjsViteRscProject from "./packages/storybook-nextjs-vite-rsc/vitest.config.ts";
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
 import nextjsCacheComponentsDemoBuildProject from "./playground/nextjs-cache-components-demo/vitest.build.config.ts";
-import nextjsCacheComponentsDemoProject from "./playground/nextjs-cache-components-demo/vitest.config.ts";
+import { nextjsCacheComponentsDemoProjects } from "./playground/nextjs-cache-components-demo/vitest.config.ts";
 import nextjsDbRecipesProject from "./playground/nextjs-db-recipes/vitest.config.ts";
 import nextjsE2eDemoBuildProject from "./playground/nextjs-e2e-demo/vitest.build.config.ts";
 import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
@@ -17,8 +17,10 @@ import rscVitestDemoBuildProject from "./playground/rsc-vitest-demo/vitest.build
 import rscVitestDemoProject from "./playground/rsc-vitest-demo/vitest.config.ts";
 
 // The projects that start a dev server, `storybook dev`, `storybook build` or
-// a static build: minutes, where the others take seconds together.
-const slowProject = /^(nextjs-host-demo|nextjs-notes-demo-storybook)|-build$/;
+// a static build: minutes, where the others take seconds together. And those
+// of the speed features: a browser each, for one file.
+const slowProject =
+  /^(nextjs-host-demo|nextjs-notes-demo-storybook|nextjs-notes-demo-speed-)|-build$/;
 
 // `pnpm test` runs the fast tier, `pnpm test:slow` the slow one, and
 // `pnpm test:all`, `pnpm test:dist` and CI every project. A file or a
@@ -69,7 +71,7 @@ export default defineConfig({
       rscVitestDemoProject,
       rscVitestDemoBuildProject,
       nextjsE2eDemoProject,
-      nextjsCacheComponentsDemoProject,
+      ...nextjsCacheComponentsDemoProjects,
       nextjsCacheComponentsDemoBuildProject,
       nextjsDbRecipesProject,
       nextjsE2eDemoBuildProject,

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isBuiltin } from "node:module";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import {
@@ -22,7 +23,7 @@ import { routeChunksOf } from "./route-chunks.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
 import { clientReferencesId } from "../built-layers.ts";
 import { cssBuildDirPlaceholder, toBuildDir } from "../static-build.ts";
-import { answerPage } from "../websocket-bridge.ts";
+import { answerPage } from "../page-bridge.ts";
 import {
   builtFilesPath,
   componentPagePath,
@@ -299,6 +300,12 @@ export type StylesOptions = {
 export type Styles = {
   plugins: Plugin[];
   /**
+   * Has the dev server compile a page route, by the name of its modules, as
+   * the first page load of it does: its modules in both layers, the CSS it
+   * links and the modules of that CSS. See routes-ahead.ts.
+   */
+  compileRoute(vite: ViteDevServer, entry: string): Promise<void>;
+  /**
    * What a static build has of the stylesheets, and the file that lists them
    * with the modules of every route, once it is built, by its path in the build.
    */
@@ -364,8 +371,11 @@ export function createStyles(options: StylesOptions): Styles {
   // rsc layer, takes the CSS it finds, and goes on from a Client Component in
   // the layer of the browser. A build has the whole graph. Vite's is there
   // for what was loaded, so the modules are transformed here first, which the
-  // browser asks for right after.
-  function reach(vite: ViteDevServer) {
+  // browser asks for right after. With `queue`, a walk ahead of the page
+  // (`compileRoute()`): each transform waits its turn in it, and the walk
+  // keeps no load of its own, so a question of the page meanwhile asks Vite
+  // itself, and does not wait in the queue.
+  function reach(vite: ViteDevServer, queue?: Queue) {
     const references = getPluginApi(vite.config)?.manager.clientReferenceMetaMap;
     if (!references) {
       throw new Error(
@@ -390,6 +400,9 @@ export function createStyles(options: StylesOptions): Styles {
       if (url.startsWith("/@id/")) url = url.slice("/@id/".length).replace("__x00__", "\0");
       const key = `${layer}:${url}`;
       const inGraph = () => graphs[layer].moduleGraph.getModuleByUrl(url).catch(() => undefined);
+      if (queue) {
+        return queue(() => graphs[layer].transformRequest(url)).then(inGraph, () => undefined);
+      }
       let loaded = loads.get(key);
       if (loaded) {
         const node = (await loaded.module) ?? (await inGraph());
@@ -437,8 +450,10 @@ export function createStyles(options: StylesOptions): Styles {
       }
       await Promise.all(
         Array.from(node.importedModules, async (imported) => {
-          // Without an id it is a file that is only watched.
-          if (!imported.id || isCSSRequest(imported.id)) return;
+          // Without an id it is a file that is only watched. A module of
+          // Node.js, which a package of the host imports in a worker of
+          // Node.js, is no file.
+          if (!imported.id || isCSSRequest(imported.id) || isBuiltin(imported.id)) return;
           // A file that is no code has no stylesheet to find, like an image
           // or the `.wasm` of a package that loads it with `new URL(…,
           // import.meta.url)`, which Vite adds to the imports of the module.
@@ -534,6 +549,27 @@ export function createStyles(options: StylesOptions): Styles {
             })),
           ),
         ]),
+      ),
+    );
+  }
+
+  async function compileRoute(vite: ViteDevServer, entry: string): Promise<void> {
+    const route = options.pageRoutes().get(entry);
+    if (!route) return;
+    const queue = oneAtATime();
+    const { load, follow, collect } = reach(vite, queue);
+    const starts = (
+      await Promise.all((await segmentsOf(route)).map(({ file }) => load("rsc", file)))
+    ).filter((node) => node !== undefined);
+    await Promise.all(starts.map((node) => follow("rsc", node)));
+    const rsc = vite.environments[environments.rsc]!;
+    await Promise.all(
+      collect(starts).map((path) =>
+        // The module of the stylesheet that the app imports, and its CSS.
+        Promise.all([
+          queue(() => rsc.transformRequest(stylesheetIds.get(path)!)),
+          queue(() => cssOf(vite, path)),
+        ]).catch(() => {}),
       ),
     );
   }
@@ -795,7 +831,23 @@ export function createStyles(options: StylesOptions): Styles {
     },
     ...built.plugins,
   ];
-  return { plugins, builtFiles: built.files };
+  return { plugins, compileRoute, builtFiles: built.files };
+}
+
+/** Runs a task once the ones before it have settled. */
+type Queue = <T>(task: () => Promise<T>) => Promise<T>;
+
+// The dev server compiles a module in one go, which holds up whatever else it
+// serves meanwhile, like a file that a page fetches as the walk runs. So a
+// walk ahead of the page compiles one module at a time, and lets the server
+// answer what came in before it starts the next.
+function oneAtATime(): Queue {
+  let last: Promise<unknown> = Promise.resolve();
+  return (task) => {
+    const run = last.then(() => new Promise((resolve) => setImmediate(resolve))).then(task);
+    last = run.catch(() => {});
+    return run;
+  };
 }
 
 type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];

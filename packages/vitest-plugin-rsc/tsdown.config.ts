@@ -107,14 +107,25 @@ export default defineConfig([
   {
     entry: [
       "src/index.ts",
+      // Imported by their files: see `pageHostId` of src/index.ts.
+      "src/browser-host.ts",
+      "src/node-host.ts",
+      // Vitest's environment of a project with happy-dom: see the file.
+      "src/happy-dom-environment.ts",
       "src/async-hooks.ts",
+      // Under the `node` condition of its export: see the file.
+      "src/async-hooks-node.ts",
       "src/testing-library.tsx",
       "src/testing-library-client.tsx",
       "src/nextjs/index.ts",
       "src/nextjs/client-components.ts",
       "src/nextjs/plugin.ts",
       "src/nextjs/adapter.ts",
-      "src/nextjs/setup.ts",
+      // The setup files: with what both of them run, setup.ts, in a chunk
+      // that only they import, the only files of the build that import
+      // Vitest.
+      "src/nextjs/setup-browser.ts",
+      "src/nextjs/setup-node.ts",
       "src/nextjs/rsc.ts",
       "src/nextjs/ssr.ts",
       "src/nextjs/client.tsx",
@@ -141,6 +152,7 @@ export default defineConfig([
         /^virtual:/,
         /^@vitejs\/plugin-rsc\/vendor\//,
         /^vitest(\/|$)/,
+        "happy-dom",
         // Left as this import in dist: it resolves to the entry of its own,
         // dist/nextjs/node-rendered.js, with its "use client". See rsc.ts.
         "vitest-plugin-rsc/nextjs/node-rendered",
@@ -160,6 +172,16 @@ export default defineConfig([
       },
     },
     dts,
+  },
+  // Loaded by Vitest, by their paths: the pool of a page in a worker of
+  // Node.js and the entry of its worker, see src/worker-pool.ts. Files of
+  // their own, without types: no other file imports them.
+  {
+    entry: { "worker-pool": "src/worker-pool.ts", "workers/forks": "src/workers/forks.ts" },
+    format: ["esm" as const],
+    fixedExtension: false,
+    deps: { neverBundle: [/^vitest(\/|$)/] },
+    dts: false,
   },
   // The stand-ins of the speed feature `fastCrypto`, src/nextjs/fast-crypto.ts:
   // one file, with the SHA-256 of @noble/hashes in it, which Vite serves as it
