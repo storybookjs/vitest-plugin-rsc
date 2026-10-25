@@ -4,7 +4,12 @@ import path from "node:path";
 import type { DevEnvironment } from "vite";
 import { expect, test, vi } from "vitest";
 import type { TestProject } from "vitest/node";
-import { answerFromTransformCache, invokeEnvironment, withLinesBefore } from "./transform-cache.ts";
+import {
+  answerFromTransformCache,
+  defineTransformCacheKey,
+  invokeEnvironment,
+  withLinesBefore,
+} from "./transform-cache.ts";
 
 // The page's runners get a module from Vitest's transform cache, and from
 // Vite what Vitest has not: Vitest's `fetch()` is a fake here, in a build of
@@ -29,9 +34,14 @@ function setUp({ fsModuleCache = true, invalidated = 0 } = {}) {
   const handleInvoke = vi.fn(async () => structuredClone(viteAnswer));
   const node = { lastInvalidationTimestamp: invalidated, lastHMRTimestamp: 0 };
   const moduleGraph = { ensureEntryFromUrl: vi.fn(async () => node), invalidateModule: vi.fn() };
+  // A package of the app resolves, from the page's importer.
+  const resolveId = vi.fn(async (url: string) =>
+    url.startsWith("vitest-plugin-rsc/") ? { id: `/node_modules/${url}.js` } : null,
+  );
   const environment = {
     name: "react_client",
     moduleGraph,
+    pluginContainer: { resolveId },
     hot: { handleInvoke },
   } as unknown as DevEnvironment;
   const project = {
@@ -120,18 +130,55 @@ test("leaves to Vite a module invalidated while Vitest read it, and forgets Vite
   expect(handleInvoke).toHaveBeenCalledOnce();
 });
 
-test("finds the module of a URL as Vite does, and leaves a bare specifier to Vite", async () => {
+test("finds the module of a URL or of a specifier as Vite does, and leaves to Vite what does not resolve", async () => {
   const { environment, handleInvoke, project, moduleGraph } = setUp();
   await answerFromTransformCache(project);
   fetch.mockResolvedValue({ cache: true });
 
   await invokeEnvironment(environment, fetchModule("/@id/__x00__virtual:a", { cached: true }));
   expect(moduleGraph.ensureEntryFromUrl).toHaveBeenCalledWith("\0virtual:a");
-  expect(await invokeEnvironment(environment, fetchModule("vitest-plugin-rsc/a"))).toEqual(
-    viteAnswer,
+  expect(await invokeEnvironment(environment, fetchModule("vitest-plugin-rsc/a"))).toEqual({
+    result: { cache: true },
+  });
+  expect(moduleGraph.ensureEntryFromUrl).toHaveBeenCalledWith(
+    "/node_modules/vitest-plugin-rsc/a.js",
   );
-  expect(fetch).toHaveBeenCalledOnce();
+  expect(fetch).toHaveBeenLastCalledWith(
+    "vitest-plugin-rsc/a",
+    "/importer.ts",
+    "react_client",
+    undefined,
+  );
+  expect(await invokeEnvironment(environment, fetchModule("missing/a"))).toEqual(viteAnswer);
+  expect(fetch).toHaveBeenCalledTimes(2);
   expect(handleInvoke).toHaveBeenCalledOnce();
+});
+
+test("keys a module of an instance of Browser Mode by the config of the project it is an instance of, or leaves it to Vite", async () => {
+  const parent = { config: {} };
+  const generate = () => "key";
+  const { project } = setUp();
+  const define = vi.fn();
+  const defineCacheKeyGenerator = vi.fn();
+  const instance = Object.assign(project, {
+    _parent: parent,
+    vitest: { distPath: dir, cache: { _modules: { defineCacheKeyGenerator } } },
+  });
+  defineTransformCacheKey(instance, define, generate);
+  expect(define).toHaveBeenCalledWith(generate);
+  expect(defineCacheKeyGenerator).toHaveBeenCalledWith(parent.config, generate);
+
+  // A Vitest without the place of its keys: the key would miss what the
+  // plugins add, so Vite answers.
+  const other = setUp();
+  const unreachable = Object.assign(other.project, {
+    _parent: parent,
+    vitest: { distPath: dir, cache: {} },
+  });
+  defineTransformCacheKey(unreachable, undefined, generate);
+  await answerFromTransformCache(unreachable);
+  expect(await invokeEnvironment(other.environment, fetchModule("/a.ts"))).toEqual(viteAnswer);
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 test("leaves to Vite what is not a module, and every module without the cache", async () => {

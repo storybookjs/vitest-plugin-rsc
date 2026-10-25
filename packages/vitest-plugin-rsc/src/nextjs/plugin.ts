@@ -19,9 +19,10 @@ import {
   type ViteDevServer,
 } from "vite";
 import { escapePath } from "tinyglobby";
-import type { TestProject, Vitest } from "vitest/node";
+import type { CacheKeyIdGenerator, TestProject, Vitest } from "vitest/node";
 import { hostsPageInNode } from "../page-in-node.ts";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
+import { defineTransformCacheKey } from "../transform-cache.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
@@ -1413,7 +1414,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       }: {
         vitest: Vitest;
         project: TestProject;
-        defineCacheKeyGenerator?: (generate: () => string) => void;
+        defineCacheKeyGenerator?: (generate: CacheKeyIdGenerator) => void;
       }) {
         underVitest = true;
         assertVitestVersion(vitest.version);
@@ -1426,7 +1427,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           [build, speedFeatures, options.browserModules, options.host],
           (_, value: unknown) => (value instanceof RegExp ? String(value) : value),
         );
-        defineCacheKeyGenerator?.(() => compileKey);
+        defineTransformCacheKey(testProject, defineCacheKeyGenerator, () => compileKey);
         const test = testProject.config;
         // Read as a file is asked about: a plugin of the host adds a setup
         // file in its own `configureVitest`, which may run after this one,

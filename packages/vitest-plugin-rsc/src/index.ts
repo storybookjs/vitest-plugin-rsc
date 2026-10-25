@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { normalizePath, type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
-import type { TestProject } from "vitest/node";
+import type { CacheKeyIdGenerator, TestProject } from "vitest/node";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
@@ -14,7 +14,11 @@ import { hostsPageInNode } from "./page-in-node.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { referencingTestFilesLast } from "./test-file-references.ts";
-import { answerFromTransformCache, invokeEnvironment } from "./transform-cache.ts";
+import {
+  answerFromTransformCache,
+  defineTransformCacheKey,
+  invokeEnvironment,
+} from "./transform-cache.ts";
 import { builtinsKey, type ProvidedBuiltins } from "./worker-run.ts";
 import type { PageAnswers } from "./worker-pool.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
@@ -122,7 +126,7 @@ export function vitestPluginRSC(): Plugin[] {
         // bundles again mid-run, as it finds a dependency, keeps the old
         // version in its URL until the next run; a page in a browser gets
         // Vite's in that run (transform-cache.ts).
-        defineCacheKeyGenerator?.(({ environment }) =>
+        defineTransformCacheKey(project, defineCacheKeyGenerator, ({ environment }) =>
           [
             environment.config.cacheDir,
             environment.depsOptimizer?.metadata.browserHash ?? "",
@@ -294,9 +298,7 @@ type VitestProject = TestProject & {
 type VitestPluginContext = {
   vitest: { onClose(close: () => void): void };
   project: VitestProject;
-  defineCacheKeyGenerator?: (
-    generate: (context: { environment: DevEnvironment }) => string,
-  ) => void;
+  defineCacheKeyGenerator?: (generate: CacheKeyIdGenerator) => void;
 };
 
 // What the page has from its host in a worker of Node.js, before the worker

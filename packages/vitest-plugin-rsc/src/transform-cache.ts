@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { DevEnvironment } from "vite";
-import type { TestProject } from "vitest/node";
+import type { CacheKeyIdGenerator, TestProject } from "vitest/node";
 import { invalidatedAt } from "./module-versions.ts";
 
 // What a runner of a page in a browser gets for a module of a layer, over
@@ -39,6 +39,48 @@ type CachedFetch = (
 // By the environment: the server that `configureServer` gets is another
 // object than the project's `vite`, of the same environments.
 const fetchOf = new WeakMap<DevEnvironment, CachedFetch>();
+// The environments of a project whose cache has a module by a key without
+// what a plugin adds: Vite answers for them.
+const unkeyed = new WeakSet<DevEnvironment>();
+
+// What of Vitest a project of an instance of Browser Mode needs for its key:
+// Vitest's own, not public.
+type InstanceInternals = {
+  _parent?: TestProject;
+  vitest: {
+    cache: {
+      _modules?: {
+        defineCacheKeyGenerator?: (config: object, generate: CacheKeyIdGenerator) => void;
+      };
+    };
+  };
+};
+
+/**
+ * Has Vitest's transform cache key what it compiles for `project` by
+ * `generate` too, where `define` is the `defineCacheKeyGenerator` that
+ * Vitest gives the project's `configureVitest`. A project of an instance of
+ * Browser Mode, like `chromium`, compiles through the transform service of
+ * the project it is an instance of, which keys a module by that project's
+ * config, where `define` adds to the instance's: so the key goes to that
+ * config too. Where it cannot, the page's runners get every module from
+ * Vite (`invokeEnvironment()`).
+ */
+export function defineTransformCacheKey(
+  project: TestProject,
+  define: ((generate: CacheKeyIdGenerator) => void) | undefined,
+  generate: CacheKeyIdGenerator,
+): void {
+  define?.(generate);
+  const { _parent: parent, vitest } = project as unknown as InstanceInternals;
+  if (!parent) return;
+  const cache = vitest.cache._modules;
+  if (cache?.defineCacheKeyGenerator) return cache.defineCacheKeyGenerator(parent.config, generate);
+  for (const environment of Object.values(project.vite.environments)) {
+    unkeyed.add(environment);
+    fetchOf.delete(environment);
+  }
+}
 
 /**
  * Answers the runners of a page in a browser from Vitest's transform cache,
@@ -46,15 +88,19 @@ const fetchOf = new WeakMap<DevEnvironment, CachedFetch>();
  * `invokeEnvironment()`. Nothing where the project has the cache off.
  */
 export async function answerFromTransformCache(project: TestProject): Promise<void> {
-  const environments = Object.values(project.vite.environments);
-  if (!project.config.fsModuleCache || environments.every((env) => fetchOf.has(env))) return;
+  const environments = Object.values(project.vite.environments).filter(
+    (environment) => !unkeyed.has(environment) && !fetchOf.has(environment),
+  );
+  if (!project.config.fsModuleCache || environments.length === 0) return;
   // Of the Vitest that runs the project, by the path of its build: the
   // plugin does not import Vitest, an optional peer dependency, but for
   // the setup files (optional-vitest.test.ts).
   const vitestNode = pathToFileURL(path.join(project.vitest.distPath, "node.js")).href;
   const { createMethodsRPC } = (await import(vitestNode)) as typeof import("vitest/node");
   const { fetch } = createMethodsRPC(project);
-  for (const environment of environments) fetchOf.set(environment, fetch as CachedFetch);
+  for (const environment of environments) {
+    if (!unkeyed.has(environment)) fetchOf.set(environment, fetch as CachedFetch);
+  }
 }
 
 /**
@@ -91,9 +137,12 @@ async function fromCache(
   importer: string | undefined,
   options: FetchOptions | undefined,
 ) {
-  // A specifier that Vite resolves from its importer, like a page's entry
-  // by its package, is Vite's to answer.
-  if (!url.startsWith("/")) return;
+  // A specifier like a page's entry by its package resolves from its
+  // importer, as Vitest's `fetch()` resolves it; Vite answers what does not.
+  const id = url.startsWith("/")
+    ? unwrapId(url)
+    : (await environment.pluginContainer.resolveId(url, importer))?.id;
+  if (!id) return;
   // Vitest keys a module by its file as it first read it in a run, and
   // forgets that key only for a change that its own watcher sees. Vite
   // compiles a module again after any invalidation: a change of its file, of
@@ -101,7 +150,7 @@ async function fromCache(
   // in the URLs that the code imports. Such a module is Vite's to answer, for
   // the rest of the run. The module as Vite and Vitest find it next.
   const graph = environment.moduleGraph;
-  const node = await graph.ensureEntryFromUrl(unwrapId(url));
+  const node = await graph.ensureEntryFromUrl(id);
   if (invalidatedAt(node) > 0) return;
   const result = await fetch(url, importer, environment.name, options);
   // An invalidation while Vitest read its file: Vitest gave the module the
@@ -115,11 +164,11 @@ async function fromCache(
   if ("externalize" in result) return;
   if ("cache" in result) return result;
   const code = "tmp" in result ? await readFile(result.tmp, "utf8") : result.code;
-  const { file, id, url: moduleUrl, invalidate } = result;
+  const { file, url: moduleUrl, invalidate } = result;
   return {
-    code: withLinesBefore(code, options?.startOffset ?? 0, id),
+    code: withLinesBefore(code, options?.startOffset ?? 0, result.id),
     file,
-    id,
+    id: result.id,
     url: moduleUrl,
     invalidate,
   };
