@@ -74,8 +74,13 @@ type FakeModule = {
   exports?: Promise<object>;
 };
 
+let versions = 0;
 vi.mock("../utils.ts", () => ({
   checkFetchedModules: async () => {},
+  forgetHeardVersions: () => {},
+  // Another version for every question: the tests change the stylesheets of
+  // the tab as they go.
+  versionsOfAnswers: async () => String(++versions),
   takeChangedModules: async () => {
     const { changed, answered } = tab;
     tab.changed = [];
