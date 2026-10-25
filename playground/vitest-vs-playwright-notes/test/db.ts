@@ -9,13 +9,7 @@ import { notes, sessions, users, type User } from "#lib/schema.ts";
 // The statements of `resetDb()`, sent at once: one round trip, where five
 // took one each. DELETE, not TRUNCATE, which rewrites the files of the tables
 // and their indexes. And setval for the ids.
-const emptyTables = [
-  "DELETE FROM sessions",
-  "DELETE FROM notes",
-  "DELETE FROM users",
-  "SELECT setval('users_id_seq', 1, false)",
-  "SELECT setval('notes_id_seq', 1, false)",
-].join(";\n");
+const emptyTables = "TRUNCATE sessions, notes, users RESTART IDENTITY";
 
 /**
  * Empties the tables, before each test. By the client of the driver: a query
