@@ -51,6 +51,17 @@ export const nextPatches = (registry: string): NextPatch[] => [
       ],
     ],
   },
+  // Next reports an error that no boundary of the app caught with
+  // `reportError()`, which it takes as its module loads. A test spies on it
+  // before it opens a page, with `vi.spyOn(window, "reportError")`: a page
+  // load has modules of its own, but the kept app of `keepApp` loaded them at
+  // the first page of the test file, before the spy, and Next would report to
+  // the `reportError()` of then. It looks the function up as it reports.
+  {
+    file: /\/next\/dist\/esm\/client\/react-client-callbacks\/report-global-error\.js$/,
+    lost: "with `keepApp`, a spy on `window.reportError` misses the errors of a page",
+    edits: [["reportError : (error)=>{", "(error)=>reportError(error) : (error)=>{"]],
+  },
   // React DOM, in development, warns once that a `<script>` it renders on the
   // client never runs. A page without HTML of the server, like every page of
   // `keepApp`, renders on the client what the server would have rendered as
