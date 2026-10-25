@@ -36,6 +36,10 @@ export const domLocatorsProjects = [
         ],
         environment,
         setupFiles: ["./test/node/setup.ts"],
+        // test/node/oracle.test.ts holds every locator of its tables to
+        // ivya's: in jsdom 2 to 6 s a test on a CI runner, where Vitest
+        // gives a test 5 s in Node.js.
+        testTimeout: 20_000,
       },
     }),
   ),
