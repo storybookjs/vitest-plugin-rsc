@@ -87,6 +87,11 @@ jobs:
       - run: pnpm exec playwright install --with-deps --only-shell chromium
         if: ${{ !matrix.dom }}
       - run: pnpm --filter vitest-plugin-rsc build
+      # The benchmark's own checks, outside the columns of 500: that the
+      # helpers of the tests do what the app does.
+      - name: Check the benchmark
+        if: ${{ matrix.app == 'vitest-vs-playwright-notes' && matrix.tests == 'vitest' }}
+        run: bun --bun vitest run --configLoader native --maxWorkers 1 tests/zz-checks/
       - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
