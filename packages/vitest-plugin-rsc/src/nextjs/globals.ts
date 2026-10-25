@@ -65,10 +65,8 @@ class ServerRequest extends NativeRequest {
     }
   }
 
-  // Also as the constructor of the class it extends reads them, before this
-  // one has its own: happy-dom's does.
   override get headers(): Headers {
-    return #headers in this ? this.#headers : super.headers;
+    return this.#headers;
   }
 
   override clone(): ServerRequest {
@@ -97,7 +95,7 @@ class ServerResponse extends NativeResponse {
   }
 
   override get headers(): Headers {
-    return #headers in this ? this.#headers : super.headers;
+    return this.#headers;
   }
 
   override clone(): ServerResponse {
