@@ -1,13 +1,16 @@
-import { expect, test as base } from "@playwright/test";
+import { expect, test as playwright } from "@playwright/test";
 import { createSession, createUser } from "#test/db.ts";
 import { ada, grace, person, type Person } from "#test/people.ts";
 import type { User } from "#lib/schema.ts";
 import { sessionCookies } from "#lib/session-cookie.ts";
+import { perWorker, serverPerWorker } from "./worker-server.ts";
 
 // Playwright's `test` with the helpers of test/vitest.ts. Each test signs in
 // and signs up as people of its own (test/people.ts), so the tests run in
-// parallel on one database, which nothing empties between them.
-export const test = base.extend<{
+// parallel on one database, which nothing empties between them. With
+// PLAYWRIGHT_ISOLATION=worker, on the worker's own server and database, which
+// it empties before each test: worker-server.ts.
+export const test = (perWorker ? serverPerWorker : playwright).extend<{
   people: { ada: Person; grace: Person };
   signedIn: (who?: Person) => Promise<User>;
   expectTitles: (titles: string[]) => Promise<void>;
