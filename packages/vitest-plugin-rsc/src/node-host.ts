@@ -1,5 +1,6 @@
 import type { Agent, IncomingMessage } from "node:http";
 import { createNavigation } from "./navigation-shim.ts";
+import "./node-dom.ts";
 import type { PageHost, WebApis } from "./page-host.ts";
 
 // The host of a page in a worker of Node.js, with a DOM of happy-dom or

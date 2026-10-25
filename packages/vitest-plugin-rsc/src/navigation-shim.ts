@@ -12,6 +12,9 @@
 // `assign()`, `replace()`, `reload()` and `href`, and `history`'s
 // `pushState()` and `replaceState()`, which stay in the document. Not
 // `form.submit()`, which fires no event, nor a traversal of the history.
+// Nor `location` in jsdom, whose members are unforgeable, as a browser's:
+// there a navigation by `location` is jsdom's, which keeps the document and
+// tells nobody.
 
 type NavigationType = "push" | "replace" | "reload";
 
@@ -123,40 +126,42 @@ export function createNavigation(window: Window): EventTarget {
       domTakes = false;
     }
   };
-  Object.defineProperties(location, {
-    assign: {
-      configurable: true,
-      writable: true,
-      value: (url: string | URL) => {
-        if (navigate({ url: at(url), navigationType: "push" })) {
-          byDom(() => assign.call(location, String(url)));
-        }
+  const forgeable = Object.getOwnPropertyDescriptor(location, "assign")?.configurable !== false;
+  if (forgeable)
+    Object.defineProperties(location, {
+      assign: {
+        configurable: true,
+        writable: true,
+        value: (url: string | URL) => {
+          if (navigate({ url: at(url), navigationType: "push" })) {
+            byDom(() => assign.call(location, String(url)));
+          }
+        },
       },
-    },
-    replace: {
-      configurable: true,
-      writable: true,
-      value: (url: string | URL) => {
-        if (navigate({ url: at(url), navigationType: "replace" }))
-          replace.call(location, String(url));
+      replace: {
+        configurable: true,
+        writable: true,
+        value: (url: string | URL) => {
+          if (navigate({ url: at(url), navigationType: "replace" }))
+            replace.call(location, String(url));
+        },
       },
-    },
-    reload: {
-      configurable: true,
-      writable: true,
-      value: () => void navigate({ url: at(location.href), navigationType: "reload" }),
-    },
-    href: {
-      configurable: true,
-      enumerable: true,
-      get: () => href?.get?.call(location) as string,
-      set: (url: string) => {
-        if (domTakes || navigate({ url: at(url), navigationType: "push" })) {
-          byDom(() => href?.set?.call(location, url));
-        }
+      reload: {
+        configurable: true,
+        writable: true,
+        value: () => void navigate({ url: at(location.href), navigationType: "reload" }),
       },
-    },
-  });
+      href: {
+        configurable: true,
+        enumerable: true,
+        get: () => href?.get?.call(location) as string,
+        set: (url: string) => {
+          if (domTakes || navigate({ url: at(url), navigationType: "push" })) {
+            byDom(() => href?.set?.call(location, url));
+          }
+        },
+      },
+    });
 
   // `history`: a navigation of the same document, which the browser fires
   // before the URL changes. Writable, as the DOM's: Next's router wraps
