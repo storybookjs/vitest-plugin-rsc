@@ -407,11 +407,6 @@ function workerPlugins(): Plugin[] {
   ];
 }
 
-// With the answer for a module, what that module imports: the page asks for
-// those right away, where Vite's module runner asks for each once the one
-// before it has run. Not what it imports with `import()`, which it may never
-// load. And whether it is a dependency, which has no source map to collect
-// coverage with.
 // A module of Node.js that a layer leaves to the runner to import, which in a
 // worker of Node.js is Node's own (nextjs/node-builtins.ts). Vite's import
 // analysis names it `/@id/node:fs` in an environment of a browser, and its
@@ -425,6 +420,11 @@ function nodeBuiltinOf(payload: ReactClientInvokePayload): string | undefined {
   return id.startsWith("node:") && isBuiltin(id) ? id : undefined;
 }
 
+// With the answer for a module, what that module imports: the page asks for
+// those right away, where Vite's module runner asks for each once the one
+// before it has run. Not what it imports with `import()`, which it may never
+// load. And whether it is a dependency, which has no source map to collect
+// coverage with.
 function describeModule<Result extends object>(
   environment: DevEnvironment,
   result: Result,
