@@ -173,9 +173,7 @@ export function createEnvironmentRunner(
     const since = first?.version;
     if (since !== undefined && since !== modules.version) {
       const question: ChangedQuestion = { environment, since };
-      const changed = pageHost.modules
-        ? modulesOfFiles(runner, pageHost.modules.changedAfter(since))
-        : await askDevServer<string[]>(changedEvent, question);
+      const changed = await askDevServer<string[]>(changedEvent, question);
       first = modules;
       return changed;
     }
@@ -186,13 +184,6 @@ export function createEnvironmentRunner(
 }
 
 const takes = new WeakMap<ModuleRunner, () => Promise<string[]>>();
-
-// The ids of the modules of `files` that the runner evaluated.
-function modulesOfFiles(runner: ModuleRunner, files: string[]): string[] {
-  return files.flatMap((file) =>
-    Array.from(runner.evaluatedModules.fileToModulesMap.get(file) ?? [], (node) => node.id),
-  );
-}
 
 /**
  * For a runner of `createEnvironmentRunner()` that outlives a page load: it
@@ -291,14 +282,11 @@ pageHost.listen?.({
 /**
  * The version of the modules of `environment` that the dev server has: when
  * Vite last invalidated one of them, see `versionOf()` in module-versions.ts.
- * The one the page heard of, or else the server's answer. In a worker of
- * Node.js the host's, which moves with a run of Vitest (`modules` of
- * page-host.ts).
+ * The one the page heard of, or else the server's answer.
  */
 export function versionOfModules(environment: string): Promise<number> {
   // The modules of a build do not change.
   if (builtLayers?.[environment]) return Promise.resolve(0);
-  if (pageHost.modules) return Promise.resolve(pageHost.modules.version());
   const heard = heardVersions.get(environment);
   if (heard !== undefined && asked.has(environment)) return Promise.resolve(heard);
   const known = asking.get(environment);

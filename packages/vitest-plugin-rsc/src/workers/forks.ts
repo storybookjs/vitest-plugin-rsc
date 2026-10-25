@@ -4,18 +4,15 @@ import "../worker-web-apis.ts";
 import type { WorkerGlobalState } from "vitest";
 import { init, runBaseTests, setupEnvironment } from "vitest/worker";
 import { isAnswer } from "../page-protocol.ts";
-import type { WorkerRun } from "../worker-run.ts";
+import { workerRunKey, type WorkerRun } from "../worker-run.ts";
 
 // The entry of a worker of Node.js whose page the plugin hosts: Vitest's own
 // entry of its forks pool, over the public `init()` of `vitest/worker`
 // (`@experimental`). And the page's: as a run starts, the page's runtime gets
-// Vitest's RPC and what the run says (worker-run.ts), and the answers to its
-// questions on the worker's channel are its own, which Vitest does not hear
-// (worker-channel.ts). Vitest's `ForksPoolWorker` forks it as
-// `<distPath>/workers/forks.js`: see worker-pool.ts.
-
-// `workerRunKey` of worker-run.ts, whose module is the page's.
-const workerRunKey = Symbol.for("vitest-plugin-rsc:worker-run");
+// Vitest's RPC and what the project provides (worker-run.ts), and the answers
+// to its questions on the worker's channel are its own, which Vitest does not
+// hear (worker-channel.ts). The plugin's pool forks it in place of Vitest's
+// entry: see worker-pool.ts.
 
 if (!process.send) {
   throw new Error("vitest-plugin-rsc: the worker's entry runs in a process that Vitest forked");
@@ -46,14 +43,11 @@ const onError = (error: NodeJS.ErrnoException) => {
 };
 processOn("error", onError);
 
-// One object for the worker: the files that changed are the worker's, also
-// those of a run without a page.
 const handOver = ({ rpc, ctx }: WorkerGlobalState) => {
-  const scope = globalThis as unknown as Record<PropertyKey, WorkerRun | undefined>;
-  const run = (scope[workerRunKey] ??= { rpc, providedContext: {}, changed: [] });
-  run.rpc = rpc;
-  run.providedContext = ctx.providedContext;
-  if (ctx.invalidates?.length) run.changed.push(ctx.invalidates);
+  (globalThis as unknown as Record<PropertyKey, WorkerRun>)[workerRunKey] = {
+    rpc,
+    providedContext: ctx.providedContext,
+  };
 };
 
 // Vitest's listeners of messages, as they hear them: without the answers to

@@ -3,8 +3,11 @@ import { answerKey, questionKey, type WorkerQuestion } from "./page-protocol.ts"
 
 // The worker's channel to Vitest's process, as the module finds it.
 const sent: WorkerQuestion[] = [];
+// What the channel cannot carry, as a function.
+let uncloneable = false;
 const send = process.send;
 process.send = ((message: WorkerQuestion) => {
+  if (uncloneable) throw new Error("could not be cloned");
   sent.push(message);
   return true;
 }) as typeof process.send;
@@ -44,5 +47,17 @@ test("listens only while a question waits", async () => {
   expect(listening()).toBe(before + 1);
   answer(sent.at(-1)![questionKey], { result: 1 });
   await asked;
+  expect(listening()).toBe(before);
+});
+
+test("rejects a question that the channel cannot carry, and waits for no answer to it", async () => {
+  const listening = () => process.listeners("message").length;
+  const before = listening();
+  uncloneable = true;
+  try {
+    await expect(askOverWorkerChannel("x", { f() {} })).rejects.toThrow("could not be cloned");
+  } finally {
+    uncloneable = false;
+  }
   expect(listening()).toBe(before);
 });

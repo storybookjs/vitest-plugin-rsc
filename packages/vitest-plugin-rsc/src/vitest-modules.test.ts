@@ -1,10 +1,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { InvokePayload } from "./built-layers.ts";
+import { invokeEvent } from "./page-protocol.ts";
 import { vitestModules } from "./vitest-modules.ts";
+import { askOverWorkerChannel } from "./worker-channel.ts";
 import { builtinsKey, workerRunKey, type WorkerRun } from "./worker-run.ts";
+
+// The dev server's answer on the worker's channel, as index.ts gives it.
+vi.mock("./worker-channel.ts", () => ({
+  askOverWorkerChannel: vi.fn(async () => ({ result: { code: "", id: "/dev-server" } })),
+}));
 
 const scope = globalThis as unknown as Record<PropertyKey, WorkerRun | undefined>;
 
@@ -20,7 +27,6 @@ function runWith(answers: Record<string, object>, providedContext: Record<string
       },
     },
     providedContext,
-    changed: [],
   };
   scope[workerRunKey] = run;
   return { run, asked };
@@ -67,25 +73,23 @@ describe("a module of a layer of the page", () => {
     });
   });
 
-  test("is an error that names the package, where Vitest leaves a dependency to Node.js", async () => {
+  test("is the dev server's, where Vitest leaves a file of a dependency to Node.js", async () => {
+    const url = "/@fs/root/node_modules/.pnpm/x@1/node_modules/@scope/lib/index.js";
     runWith({
-      "/@fs/root/node_modules/.pnpm/x@1/node_modules/@scope/lib/index.js": {
+      [url]: {
         externalize: "/root/node_modules/.pnpm/x@1/node_modules/@scope/lib/index.js",
         type: "module",
       },
     });
+    const payload = fetchModule(url);
 
-    const answer = await vitestModules().invoke(
-      "next_ssr",
-      fetchModule("/@fs/root/node_modules/.pnpm/x@1/node_modules/@scope/lib/index.js"),
-    );
+    const answer = await vitestModules().invoke("next_ssr", payload);
 
-    expect(String((answer as { error: unknown }).error)).toContain(
-      "the next_ssr layer of the page imports a file of @scope/lib, which Vitest leaves to Node.js",
-    );
-    expect(String((answer as { error: unknown }).error)).toContain(
-      '`environments.next_ssr.optimizeDeps.include: ["@scope/lib"]`',
-    );
+    expect(askOverWorkerChannel).toHaveBeenCalledWith(invokeEvent, {
+      environment: "next_ssr",
+      payload,
+    });
+    expect(answer).toEqual({ result: { code: "", id: "/dev-server" } });
   });
 
   test("is left to the runner where it is no dependency, like Vite's client", async () => {
@@ -114,23 +118,8 @@ test("the builtins of an environment are what the plugin provides for it", async
   });
 });
 
-test("the version of the modules moves with every run that names a changed file", () => {
-  const { run } = runWith({});
-  const modules = vitestModules();
-  expect(modules.version()).toBe(0);
-
-  run.changed.push(["/root/app/a.tsx"], ["/root/app/b.tsx", "/root/app/c.tsx"]);
-
-  expect(modules.version()).toBe(2);
-  expect(modules.changedAfter(0)).toEqual([
-    "/root/app/a.tsx",
-    "/root/app/b.tsx",
-    "/root/app/c.tsx",
-  ]);
-  expect(modules.changedAfter(1)).toEqual(["/root/app/b.tsx", "/root/app/c.tsx"]);
-  expect(modules.changedAfter(2)).toEqual([]);
-});
-
-test("says so in a worker without the plugin's entry", () => {
-  expect(() => vitestModules().version()).toThrow("runs in the plugin's pool");
+test("says so in a worker without the plugin's entry", async () => {
+  await expect(vitestModules().invoke("react_client", fetchModule("/app/a.tsx"))).rejects.toThrow(
+    "runs in the plugin's pool",
+  );
 });

@@ -35,13 +35,23 @@ function onAnswer(message: unknown): void {
 export const askOverWorkerChannel: PageHost["request"] = (event, data) => {
   if (!send) {
     return Promise.reject(
-      new Error("vitest-plugin-rsc: a page in Node.js asks in a worker that Vitest forked"),
+      new Error(
+        "vitest-plugin-rsc: a page in Node.js asks the dev server on the channel of a worker " +
+          "that Vitest forked, and this process has none",
+      ),
     );
   }
   const id = ++counter.last;
   return new Promise((resolve, reject) => {
     if (waiting.size === 0) on("message", onAnswer);
     waiting.set(id, { resolve, reject });
-    send({ [questionKey]: id, event, data } satisfies WorkerQuestion);
+    try {
+      send({ [questionKey]: id, event, data } satisfies WorkerQuestion);
+    } catch (error) {
+      // A question that the channel cannot carry, or a channel that closed.
+      waiting.delete(id);
+      if (waiting.size === 0) off("message", onAnswer);
+      reject(error);
+    }
   });
 };

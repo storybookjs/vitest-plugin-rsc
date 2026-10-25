@@ -106,8 +106,8 @@ const browserProject = (name: string, mode: Mode) =>
 // the benchmark's columns of a DOM of Node.js run in fast mode. The same plugins: without
 // Browser Mode the plugin is the page's host itself (SB-2419), in a pool of
 // its own, whose page gets its modules from Vitest's RPC and sees a change of
-// a file at the next run, as the test's own modules do: see
-// packages/vitest-plugin-rsc/src/utils.node-host.test.ts.
+// a file at its next page load, or with `cacheDevServer` at the next test
+// file: see packages/vitest-plugin-rsc/src/utils.node-host.test.ts.
 const nodeProject = (name: string, environment: "happy-dom" | "jsdom", cacheDevServer: boolean) =>
   defineProject({
     root,

@@ -331,7 +331,6 @@ type TestOptions = {
   environment?: string;
   include?: string[];
   setupFiles?: string | string[];
-  execArgv?: string[];
   server?: { deps?: { inline?: (string | RegExp)[] | true } };
 };
 

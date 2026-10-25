@@ -20,8 +20,8 @@ export type PageHost = {
    * of `request()`: an answer that the server sent after a piece of news
    * resolves after `news` heard it, and a piece of news that the server sent
    * after an answer comes after the answer resolved, or with `missed()`.
-   * None in a worker of Node.js, whose page hears of a change of the modules
-   * at the next run of Vitest (`modules`).
+   * None in a worker of Node.js, whose page asks for the versions of the
+   * modules as a page load starts (`versionOfModules()` of utils.ts).
    */
   listen?(news: PageNews): void;
   /**
@@ -56,16 +56,12 @@ export type PageHost = {
 };
 
 /**
- * The modules of the environments that the page runs, and their versions,
- * from a source of the host's own: see `modules` of `PageHost`.
+ * The modules of the environments that the page runs, from a source of the
+ * host's own: see `modules` of `PageHost`.
  */
 export type PageModules = {
   /** What the dev server answers an invoke of a runner of `environment`. */
   invoke(environment: string, payload: InvokePayload): Promise<InvokeResult>;
-  /** The version of the modules of every environment, which a change moves. */
-  version(): number;
-  /** The files that changed after `version`. */
-  changedAfter(version: number): string[];
 };
 
 /** What the page hears of the dev server unasked: see `listen()`. */

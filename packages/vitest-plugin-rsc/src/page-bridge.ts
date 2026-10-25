@@ -65,8 +65,8 @@ function sockets(server: ViteDevServer) {
 /**
  * Tells every page in a browser `data` at `event`, unasked, before any answer
  * that the server sends after it: the page hears it with `listen()` of its
- * host (page-host.ts). A page in Node.js hears of a change at the next run of
- * Vitest (vitest-modules.ts).
+ * host (page-host.ts). A page in Node.js asks for the versions as a page load
+ * starts (`versionOfModules()` of utils.ts).
  */
 export function tellPages(server: ViteDevServer, event: string, data: unknown): void {
   const message = JSON.stringify({ type: "custom", event, data });

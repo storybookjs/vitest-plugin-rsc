@@ -1,15 +1,15 @@
 import type { InvokePayload, InvokeResult } from "./built-layers.ts";
 import type { PageModules } from "./page-host.ts";
+import { invokeEvent } from "./page-protocol.ts";
+import { askOverWorkerChannel } from "./worker-channel.ts";
 import { builtinsKey, workerRun, type ProvidedBuiltins, type WorkerRun } from "./worker-run.ts";
 
 // The modules of the page's layers in a worker of Node.js, like next_ssr and
 // react_client, from Vitest's own RPC: `fetch()` answers for any environment
 // of the project, as for the test's own modules, from Vitest's transform
 // cache on disk where it has them (`fsModuleCache`). One question a module,
-// in the order the runner asks, without the dev server's news: a change of a
-// file reaches the page as it reaches the test's modules, at the next run,
-// which names the files that changed. The version of the modules is how
-// many runs of the worker named some.
+// in the order the runner asks. Their versions are the dev server's, which
+// the page asks on the worker's channel: see `versionOfModules()` in utils.ts.
 
 // Not an import, which the rsc layer would resolve as a module of the app's.
 const fs = process.getBuiltinModule("node:fs");
@@ -20,9 +20,7 @@ type Fetched = Awaited<ReturnType<WorkerRun["rpc"]["fetch"]>>;
 /** The modules of the page's layers, from the run of the worker's entry. */
 export function vitestModules(): PageModules {
   return {
-    invoke: (environment, payload) => invoke(run(), environment, payload),
-    version: () => run().changed.length,
-    changedAfter: (version) => run().changed.slice(version).flat(),
+    invoke: async (environment, payload) => invoke(run(), environment, payload),
   };
 }
 
@@ -50,7 +48,16 @@ async function invoke(
     }
     if (name !== "fetchModule") throw new Error(`no answer for ${name}`);
     const [url, importer, options] = data as FetchArgs;
-    return { result: answerOf(environment, await rpc.fetch(url, importer, environment, options)) };
+    const fetched = await rpc.fetch(url, importer, environment, options);
+    // Vitest leaves a file of a dependency to Node.js, as `server.deps` of the
+    // project says for every environment: in a layer of the page that would
+    // be a second instance of the package next to the layer's, like a second
+    // React, without the layer's conditions. The dev server's environment
+    // answers it in the layer, as it does for a page in a browser.
+    if ("externalize" in fetched && fetched.externalize.includes("/node_modules/")) {
+      return (await askOverWorkerChannel(invokeEvent, { environment, payload })) as InvokeResult;
+    }
+    return { result: answerOf(fetched) };
   } catch (error) {
     return { error };
   }
@@ -58,34 +65,10 @@ async function invoke(
 
 // What Vite's runner takes: the code of a module that Vitest has on disk,
 // read as Vitest's own runner reads it.
-function answerOf(environment: string, fetched: Fetched) {
+function answerOf(fetched: Fetched) {
   if ("cached" in fetched && fetched.cached) {
     const { tmp, cached: _, ...module } = fetched;
     return { ...module, code: fs.readFileSync(tmp, "utf8") };
   }
-  if ("externalize" in fetched && fetched.type === "module") {
-    const dependency = packageOf(fetched.externalize);
-    if (dependency) throw new Error(externalizedDependency(environment, dependency));
-  }
   return fetched;
-}
-
-// The package of a file in node_modules: the last `node_modules/<name>/` of
-// its path, where pnpm has `.pnpm/` first.
-function packageOf(file: string): string | undefined {
-  return [...file.matchAll(/\/node_modules\/((?:@[^/]+\/)?[^/.][^/]*)\//g)].at(-1)?.[1];
-}
-
-// Vitest leaves a file of a dependency to Node.js, as `server.deps` of the
-// project says, for every environment: in a layer of the page that would be
-// a second instance of the package next to the layer's, like a second React,
-// with the conditions of Node.js and not the layer's.
-function externalizedDependency(environment: string, dependency: string): string {
-  return (
-    `vitest-plugin-rsc: the ${environment} layer of the page imports a file of ${dependency}, ` +
-    `which Vitest leaves to Node.js by \`server.deps\` of the project: the page would have a ` +
-    `second instance of it, without the layer's conditions. Pre-bundle it for the layer with ` +
-    `\`environments.${environment}.optimizeDeps.include: [${JSON.stringify(dependency)}]\`, or ` +
-    `inline it with \`test.server.deps.inline: [${JSON.stringify(dependency)}]\`.`
-  );
 }

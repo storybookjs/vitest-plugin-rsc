@@ -1,13 +1,19 @@
-import type { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { expect, test, vi } from "vitest";
-import type { PoolOptions, PoolWorker, WorkerRequest } from "vitest/node";
+import {
+  ForksPoolWorker,
+  type PoolOptions,
+  type PoolWorker,
+  type WorkerRequest,
+} from "vitest/node";
 import { answerKey, questionKey } from "./page-protocol.ts";
 import { createNodeHostPool } from "./worker-pool.ts";
 
 // What `ForksPoolWorker` reads of the options: the logger's streams, which the
-// worker's output goes to.
+// worker's output goes to, and Vitest's own files, whose entry the pool's
+// worker does not fork.
 const options = {
+  distPath: "/vitest/dist",
   project: {
     vitest: { logger: { outputStream: new PassThrough(), errorStream: new PassThrough() } },
   },
@@ -25,12 +31,9 @@ async function started(): Promise<PoolWorker> {
   return worker;
 }
 
-// A message of the worker's process, as Vitest's process hears it.
-const fromWorker = (worker: PoolWorker, message: unknown) =>
-  (worker as unknown as { fork: EventEmitter }).fork.emit("message", message);
-
-test("names a pool of its own, which Vitest asks for its workers", () => {
+test("names its workers as the pool, which Vitest gives the next file without isolation", () => {
   expect(pool.name).toBe("vitest-plugin-rsc");
+  expect(pool.createPoolWorker(options).name).toBe(pool.name);
 });
 
 // The built entry, dist/workers/forks.js, which `pnpm test` builds first.
@@ -47,6 +50,26 @@ test("forks the plugin's entry, which answers Vitest's requests through Vitest's
 });
 
 test("answers the page's questions, which Vitest does not hear", async () => {
+  // The listeners of the worker's messages, as `ForksPoolWorker` adds them to
+  // its process, which a message of the worker's process reaches.
+  type Listener = (message: unknown) => void;
+  const listeners = new Set<Listener>();
+  const fromWorker = (message: unknown) => {
+    for (const listener of listeners) listener(message);
+  };
+  const { on, off } = ForksPoolWorker.prototype;
+  vi.spyOn(ForksPoolWorker.prototype, "on").mockImplementation(
+    function (this: ForksPoolWorker, event, listener) {
+      if (event === "message") listeners.add(listener);
+      else on.call(this, event, listener);
+    },
+  );
+  vi.spyOn(ForksPoolWorker.prototype, "off").mockImplementation(
+    function (this: ForksPoolWorker, event, listener) {
+      if (event === "message") listeners.delete(listener);
+      else off.call(this, event, listener);
+    },
+  );
   const worker = await started();
   try {
     const heardByVitest = vi.fn();
@@ -54,24 +77,28 @@ test("answers the page's questions, which Vitest does not hear", async () => {
     const sent = new Promise<unknown[]>((resolve) => {
       const answers: unknown[] = [];
       vi.spyOn(worker, "send").mockImplementation((message) => {
+        // A result that the channel cannot carry, as a function.
+        if (JSON.stringify(message).includes("uncloneable")) throw new Error("could not be cloned");
         answers.push(message);
-        if (answers.length === 2) resolve(answers);
+        if (answers.length === 3) resolve(answers);
       });
     });
 
-    fromWorker(worker, { [questionKey]: 1, event: "echo", data: { a: 1 } });
-    fromWorker(worker, { [questionKey]: 2, event: "other", data: {} });
-    fromWorker(worker, { __vitest_worker_response__: true, type: "started" });
+    fromWorker({ [questionKey]: 1, event: "echo", data: { a: 1 } });
+    fromWorker({ [questionKey]: 2, event: "other", data: {} });
+    fromWorker({ [questionKey]: 3, event: "echo", data: { uncloneable: true } });
+    fromWorker({ __vitest_worker_response__: true, type: "started" });
 
     expect(await sent).toEqual([
       { [answerKey]: 1, result: { asked: { a: 1 } } },
       { [answerKey]: 2, error: "no answer at other" },
+      { [answerKey]: 3, error: "Error: could not be cloned" },
     ]);
     expect(heardByVitest.mock.calls).toEqual([
       [{ __vitest_worker_response__: true, type: "started" }],
     ]);
     worker.off("message", heardByVitest);
-    fromWorker(worker, { __vitest_worker_response__: true, type: "started" });
+    fromWorker({ __vitest_worker_response__: true, type: "started" });
     expect(heardByVitest).toHaveBeenCalledTimes(1);
   } finally {
     vi.restoreAllMocks();
