@@ -1,0 +1,196 @@
+// What an action waits for before it acts, as Playwright's: one element, and
+// that it is visible, enabled and, for typing, editable. A check that fails
+// is looked at again, as the DOM changes, until the action's timeout.
+
+import { defaultTimeout, rendered } from "./environment.ts";
+import {
+  UnsupportedError,
+  elementNotFound,
+  escapeHatch,
+  notActionable,
+  strictModeViolation,
+} from "./errors.ts";
+import {
+  getElementComputedStyle,
+  hasVisibleBox,
+  isElementVisible,
+  parentElementOrShadowHost,
+} from "./dom-utils.ts";
+import { isContentEditable } from "./form-controls.ts";
+import { getAriaDisabled, getAriaRole } from "./role-utils.ts";
+import { waitUntil } from "./wait.ts";
+
+/** What an action acts on: a locator of the package, by what it finds and how it prints. */
+export interface Target {
+  elements(): Element[];
+  asLocator(): string;
+  /** Where "cannot find" shows the DOM of. */
+  container(): Element;
+}
+
+export type Check = "visible" | "enabled" | "editable";
+
+/** The options every action takes. */
+export interface ActionOptions {
+  /**
+   * How long to wait for the element, in milliseconds, 0 for no limit, as
+   * Playwright's. Default: until just before the test times out.
+   */
+  timeout?: number;
+}
+
+/** How long an action waits: its `timeout`, where 0 is no limit, as Playwright's, else the default. */
+export function actionTimeout(options: ActionOptions | undefined): number {
+  const timeout = options?.timeout;
+  return timeout === 0 ? Infinity : (timeout ?? defaultTimeout());
+}
+
+/** The options of an action that Playwright's takes with `force`. */
+export interface ForceOptions extends ActionOptions {
+  /**
+   * Whether to act on the element once it is there, without waiting for
+   * its state. One that is not visible, enabled or editable throws: where
+   * Playwright's acts on it, the browser's answer is not the page's.
+   */
+  force?: boolean;
+}
+
+/** An action's options, of which the package models `keys`: anything else throws. */
+export function checkActionOptions(
+  action: string,
+  options: object | undefined,
+  keys: readonly string[] = ["timeout"],
+): void {
+  for (const key of Object.keys(options ?? {})) {
+    if (!keys.includes(key)) {
+      throw new UnsupportedError(
+        `${action} has no option "${key}" in dom-locators, which takes ${keys.join(", ")}: use vitest/browser's locator for it.`,
+      );
+    }
+  }
+}
+
+/**
+ * The element of `target` once it passes `checks`, retargeted by
+ * `retarget`. Rejects at once for more than one element, with `force` at
+ * once for a check that fails, and after the timeout with "cannot find" or
+ * with the check that failed last.
+ */
+export function actionable(
+  target: Target,
+  action: string,
+  checks: Check[],
+  options: ForceOptions = {},
+  retarget: (element: Element) => Element = (element) => element,
+): Promise<Element> {
+  let reason: string | undefined;
+  return waitUntil(
+    () => {
+      const elements = target.elements();
+      if (elements.length > 1) throw strictModeViolation(target.asLocator(), elements);
+      if (elements.length === 0) {
+        reason = undefined;
+        return undefined;
+      }
+      const element = retarget(elements[0]!);
+      reason = failedCheck(element, checks);
+      if (reason !== undefined && options.force) {
+        throw new UnsupportedError(
+          `${action} with force of ${target.asLocator()}, which ${reason}, is not in dom-locators: ${escapeHatch}.`,
+        );
+      }
+      return reason === undefined ? { value: element } : undefined;
+    },
+    actionTimeout(options),
+    () =>
+      reason === undefined
+        ? elementNotFound(target.asLocator(), target.container())
+        : notActionable(action, target.asLocator(), reason),
+  );
+}
+
+// As Playwright's `elementState()`: the element is visible, and the control
+// it is a part of is enabled and editable.
+function failedCheck(element: Element, checks: Check[]): string | undefined {
+  if (!element.isConnected) return "is not attached to the document";
+  if (checks.includes("visible") && !isVisible(element)) return "is not visible";
+  const control = retarget(element);
+  if ((checks.includes("enabled") || checks.includes("editable")) && getAriaDisabled(control)) {
+    return "is disabled";
+  }
+  if (checks.includes("editable") && isReadonly(control)) return "is not editable";
+  return undefined;
+}
+
+/**
+ * Whether an element is visible, as Playwright's: a box of some size, and no
+ * `visibility: hidden`. In a DOM that does not render, jsdom's or
+ * happy-dom's, by its style alone: no `display: none` on it or above it,
+ * through the hosts of shadow roots, and no `visibility: hidden`.
+ */
+export function isVisible(element: Element): boolean {
+  if (rendered) {
+    // Playwright's answer, without the computed style where a visible box tells it.
+    if (!hasVisibleBox(element)) return isElementVisible(element);
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+  const style = getElementComputedStyle(element);
+  if (style && style.visibility !== "" && style.visibility !== "visible") return false;
+  for (let node: Element | undefined = element; node; node = parentElementOrShadowHost(node)) {
+    if (getElementComputedStyle(node)?.display === "none") return false;
+  }
+  return true;
+}
+
+const kAriaReadonlyRoles = [
+  "checkbox",
+  "combobox",
+  "grid",
+  "gridcell",
+  "listbox",
+  "radiogroup",
+  "slider",
+  "spinbutton",
+  "textbox",
+  "columnheader",
+  "rowheader",
+  "searchbox",
+  "switch",
+  "treegrid",
+];
+
+// As Playwright's `getReadonly()`.
+function isReadonly(element: Element): boolean {
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(element.nodeName)) {
+    return element.hasAttribute("readonly");
+  }
+  if (kAriaReadonlyRoles.includes(getAriaRole(element) || "")) {
+    return element.getAttribute("aria-readonly") === "true";
+  }
+  return false;
+}
+
+/**
+ * The control an element is a part of, as Playwright's
+ * `retarget(node, "follow-label")` (playwright-core 1.64.1): the button,
+ * checkbox or radio it is in, else the control of the label it is in. What
+ * the checks of an enabled and an editable element look at, and what
+ * `fill()`, `selectOption()` and `setInputFiles()` act on.
+ */
+export function retarget(element: Element): Element {
+  let target = element;
+  if (!target.matches("input, textarea, select") && !isContentEditable(target)) {
+    target = target.closest("button, [role=button], [role=checkbox], [role=radio]") ?? target;
+  }
+  if (
+    !target.matches(
+      "a, input, textarea, button, select, [role=link], [role=button], [role=checkbox], [role=radio]",
+    ) &&
+    !isContentEditable(target)
+  ) {
+    const label = target.closest("label");
+    if (label?.control) target = label.control;
+  }
+  return target;
+}

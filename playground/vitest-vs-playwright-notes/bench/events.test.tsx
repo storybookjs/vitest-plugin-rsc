@@ -1,4 +1,5 @@
 import { userEvent } from "@testing-library/user-event";
+import { page as domPage } from "dom-locators";
 import { beforeEach, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
@@ -13,7 +14,8 @@ import { measure, nextRequest, serverIdle, untilDom } from "./harness.ts";
 // `user-event` is Testing Library's user-event on the element (as the
 // helper sets it up, without delays); `dom` dispatches a prebuilt event, or
 // sets the value with the native setter and dispatches `input`; `playwright`
-// is the locator's own action, which Playwright carries out from Node.
+// is the locator's own action, which Playwright carries out from Node. And
+// `dom-locators`, the action of its locator, in the page.
 
 const user = userEvent.setup({ delay: null });
 const iterations = 100;
@@ -53,6 +55,12 @@ test("click on a button that sets state", async () => {
     await locator.click();
     await counted(before);
   });
+  const ours = domPage.getByRole("button", { name: "Increment" });
+  await measure("Event › click a button (setState) › dom-locators", async () => {
+    const before = state("count");
+    await ours.click();
+    await counted(before);
+  });
 });
 
 test("fill of a controlled input", async () => {
@@ -78,6 +86,11 @@ test("fill of a controlled input", async () => {
   });
   await measure("Event › fill an input › playwright", async ({ i }) => {
     await locator.fill(textOf(i));
+    await filled(textOf(i));
+  });
+  const ours = domPage.getByLabelText("Text");
+  await measure("Event › fill an input › dom-locators", async ({ i }) => {
+    await ours.fill(textOf(i));
     await filled(textOf(i));
   });
 });
