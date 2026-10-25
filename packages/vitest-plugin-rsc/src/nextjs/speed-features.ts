@@ -1,3 +1,4 @@
+import { forgetCheckedVersions } from "../utils.ts";
 import type { SpeedFeature } from "./mode.ts";
 import { registry } from "./registry.ts";
 
@@ -43,6 +44,7 @@ export function oncePerTestFile<T>(
 /** Forgets the answers of `oncePerTestFile()`, as a test file ends. */
 export function forgetTestFileAnswers(): void {
   for (const cache of caches()) cache.clear();
+  forgetCheckedVersions();
 }
 
 // Vitest's `expect.element()` looks for an element that is not there yet
