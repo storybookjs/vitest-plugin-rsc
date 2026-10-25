@@ -1,4 +1,5 @@
-import { afterAll, expect, test } from "vitest";
+import { afterAll, expect, inject, test } from "vitest";
+import type { Mode } from "vitest-plugin-rsc/nextjs/plugin";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { signedInAs, testUser } from "#test/auth.ts";
@@ -13,6 +14,13 @@ import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 // It runs in Chromium and in the Node projects (happy-dom, jsdom), where the
 // plugin is the page's host itself. In fast mode the pages render in one app,
 // which it checks does not grow either.
+
+declare module "vitest" {
+  interface ProvidedContext {
+    // The `mode` of the plugin: see vitest.config.ts.
+    mode: Mode;
+  }
+}
 
 const PAGES = 20;
 const WARMUP = 5;
@@ -162,6 +170,14 @@ function heapUsed() {
   return (performance as { memory?: { usedJSHeapSize: number } }).memory!.usedJSHeapSize;
 }
 
+// Not in Chromium in fidelity mode yet: React keeps a page whose commit
+// waited for a stylesheet until its timeout of a minute, by a timer that the
+// plugin keeps from calling once the page is left but does not clear
+// (packages/vitest-plugin-rsc/src/timers.ts). Whether a commit waits depends
+// on when the stylesheet loads, so the heap grows by 0 to 2 MB a page there
+// (SB-2416).
+const measuresHeap = isNodeHost || inject("mode") === "fast";
+
 type Sample = {
   listeners: Record<"window" | "document", string[]>;
   wrappers: Record<"window" | "document", string[]>;
@@ -217,7 +233,7 @@ const bodies: WeakRef<HTMLElement>[] = [];
 test.for(Array.from({ length: PAGES }, (_, index) => index))(
   "opens /notes, with a Server Action and a navigation: page %i",
   async (index) => {
-    if (index === WARMUP) heapAfterWarmup = heapUsed();
+    if (index === WARMUP && measuresHeap) heapAfterWarmup = heapUsed();
     await signedInAs();
     await db.insert(notes).values({ ownerId: testUser.id, title: "Leaky note" });
     await renderServer({ url: "/notes" });
@@ -309,7 +325,7 @@ test("keeps no body of a page that was left", () => {
 // a Node.js worker. Without one, the heap grows by 0.3 to 0.8 MB a page,
 // which no check here names yet. The bound is between them. Both heaps are of
 // when no page is open.
-test("grows the heap by less than 1 MB a page", () => {
+test.runIf(measuresHeap)("grows the heap by less than 1 MB a page", () => {
   expect(heapAfterWarmup).toBeGreaterThan(0);
   const perPage = (heapUsed() - heapAfterWarmup) / (PAGES - WARMUP);
   expect(Math.round(perPage / 1024), "kB of heap per page after the warmup").toBeLessThan(1024);

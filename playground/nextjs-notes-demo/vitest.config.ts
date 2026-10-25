@@ -98,6 +98,7 @@ const browserProject = (name: string, mode: Mode) =>
       // `expect.element()` waits until the test's own timeout.
       expect: { poll: { timeout: 10_000 } },
       setupFiles: ["./vitest.setup.ts"],
+      provide: { mode },
     },
   });
 
