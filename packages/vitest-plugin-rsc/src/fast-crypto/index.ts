@@ -62,6 +62,29 @@ export function derive(algorithm: string, inputs: Input[], length: number): Byte
   return output;
 }
 
+/**
+ * PBKDF2, by the name of its hash as Web Crypto spells it, like `SHA-256`.
+ * The real PBKDF2 derives one key for the same inputs through any API, so the
+ * stand-ins of each do too: a key that a test derives with `node:crypto`
+ * verifies in an app that derives it with Web Crypto or @noble/hashes.
+ */
+function pbkdf2Bytes(
+  password: Input,
+  salt: Input,
+  iterations: number,
+  hash: string,
+  length: number,
+): Bytes {
+  return derive("pbkdf2", [password, salt, iterations, hash], length);
+}
+
+/** The name of a digest of Node's, like `sha256` or `RSA-SHA256`, as Web Crypto spells it. */
+function webHashOf(digest: string): string {
+  const name = digest.toLowerCase().replace(/^rsa-|withrsaencryption$/g, "");
+  const sha = /^sha(?:2?-)?(1|224|256|384|512)$/.exec(name);
+  return sha ? `SHA-${sha[1]}` : name;
+}
+
 /** The error of a hash that the stand-in did not make. */
 export function notMadeHere(api: string, hash: string): Error {
   return new Error(
@@ -264,33 +287,42 @@ type Argon2Params = {
   associatedData?: Input;
 };
 
+// Argon2 takes no secret, or no associated data, as one of no bytes.
+const none = new Uint8Array();
+
 function argon2Raw(password: Input, salt: Input, params: Argon2Params): Bytes {
-  const { type, version, memory, passes, parallelism, length, secret, associatedData } = params;
+  const { type, version, memory, passes, parallelism, length } = params;
+  const { secret = none, associatedData = none } = params;
   const digest = derive(
     argon2Types[type] ?? "argon2",
     [password, salt, version, memory, passes, parallelism, secret, associatedData],
     length,
   );
   // The mark, where the hash is long enough to keep 16 bytes of the digest.
+  // In the bytes of every API, which the real Argon2 gives the same for the
+  // same inputs, and so in the hash of a PHC string, which is those bytes.
   if (length >= argon2Mark.length + 16) digest.set(argon2Mark);
   return digest;
 }
 
+// The associated data goes in the string as a parameter, `data=`, as the
+// argon2 package writes it, so that `verify()` has it.
 function argon2Encoded(salt: Uint8Array, hash: Uint8Array, params: Argon2Params): string {
-  const { type, version, memory, passes, parallelism } = params;
+  const { type, version, memory, passes, parallelism, associatedData } = params;
+  const data = associatedData === undefined ? none : bytesOf(associatedData);
   return (
     `$${argon2Types[type]}$v=${version}$m=${memory},t=${passes},p=${parallelism}` +
-    `$${base64(salt)}$${base64(hash)}`
+    `${data.length > 0 ? `,data=${base64(data)}` : ""}$${base64(salt)}$${base64(hash)}`
   );
 }
 
 const phc =
-  /^\$(argon2(?:d|i|id))\$v=(\d+)\$m=(\d+),t=(\d+),p=(\d+)\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
+  /^\$(argon2(?:d|i|id))\$v=(\d+)\$m=(\d+),t=(\d+),p=(\d+)(?:,data=([A-Za-z0-9+/]*))?\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
 
 function argon2Verify(api: string, encoded: string, password: Input, secret?: Input): boolean {
   const match = phc.exec(encoded);
   if (!match) throw new Error(`Invalid hash: ${encoded}`);
-  const [, name, version, memory, passes, parallelism, salt, hash] = match;
+  const [, name, version, memory, passes, parallelism, data, salt, hash] = match;
   const expected = fromBase64(hash!);
   if (expected.length < argon2Mark.length + 16) return false;
   if (!argon2Mark.every((byte, at) => expected[at] === byte)) throw notMadeHere(api, encoded);
@@ -302,6 +334,7 @@ function argon2Verify(api: string, encoded: string, password: Input, secret?: In
     parallelism: Number(parallelism),
     length: expected.length,
     secret,
+    associatedData: data === undefined ? undefined : fromBase64(data),
   };
   return base64(argon2Raw(password, fromBase64(salt!), params)) === hash;
 }
@@ -413,6 +446,17 @@ export function nodeRsArgon2() {
 
 type NobleHash = { outputLen: number; blockLen: number };
 
+// A hash function of @noble/hashes by its lengths, for PBKDF2: see `pbkdf2Bytes()`.
+const nobleHashes: Record<string, string> = {
+  "20/64": "SHA-1",
+  "28/64": "SHA-224",
+  "32/64": "SHA-256",
+  "48/128": "SHA-384",
+  "64/128": "SHA-512",
+};
+const nobleHashOf = ({ outputLen, blockLen }: NobleHash) =>
+  nobleHashes[`${outputLen}/${blockLen}`] ?? `${outputLen}/${blockLen}`;
+
 const positive = (name: string, value: unknown) => {
   if (!Number.isSafeInteger(value) || (value as number) < 1) {
     throw new Error(`"${name}" expected integer >= 1, got ${String(value)}`);
@@ -445,9 +489,11 @@ export function noblePbkdf2() {
     salt: Input,
     opts: { c: number; dkLen?: number },
   ) =>
-    derive(
-      "pbkdf2",
-      [password, salt, positive("c", opts.c), hash.outputLen, hash.blockLen],
+    pbkdf2Bytes(
+      password,
+      salt,
+      positive("c", opts.c),
+      nobleHashOf(hash),
       positive("dkLen", opts.dkLen ?? hash.outputLen),
     );
   return {
@@ -579,7 +625,7 @@ export function nodeCrypto(Buffer: { from(bytes: ArrayBuffer): Uint8Array }) {
     }
     // OpenSSL derives no key of no bytes, and Node.js says so.
     if (keylen === 0) throw new Error("Deriving bits failed");
-    return buffer(derive("pbkdf2", [password, salt, iterations, digest.toLowerCase()], keylen));
+    return buffer(pbkdf2Bytes(password, salt, iterations, webHashOf(digest), keylen));
   };
 
   const scryptSync = (
@@ -637,22 +683,18 @@ export function nodeCrypto(Buffer: { from(bytes: ArrayBuffer): Uint8Array }) {
     nodeInteger("parameters.tagLength", tagLength, 4);
     nodeInteger("parameters.memory", memory, 8 * parallelism);
     nodeInteger("parameters.passes", passes, 1);
-    // No mark: Node.js returns the bytes, and the app compares them.
+    // The bytes of the other APIs of Argon2, as the real ones give the same.
     return buffer(
-      derive(
-        algorithm,
-        [
-          message,
-          nonce,
-          0x13,
-          memory,
-          passes,
-          parallelism,
-          parameters.secret,
-          parameters.associatedData,
-        ],
-        tagLength,
-      ),
+      argon2Raw(message, nonce, {
+        type,
+        version: 0x13,
+        memory,
+        passes,
+        parallelism,
+        length: tagLength,
+        secret: parameters.secret,
+        associatedData: parameters.associatedData,
+      }),
     );
   };
 
@@ -728,7 +770,7 @@ export function installWebCrypto(subtle: SubtleCrypto = globalThis.crypto.subtle
     const { salt, iterations, hash } = params as Pbkdf2Params;
     if (!password || !key.usages.includes(usage) || !bits || bits % 8 !== 0) return;
     if (!Number.isInteger(iterations) || iterations < 1 || !salt) return;
-    return derive("PBKDF2", [password, salt as Input, iterations, nameOf(hash)], bits / 8);
+    return pbkdf2Bytes(password, salt as Input, iterations, nameOf(hash), bits / 8);
   }
 
   Object.assign(subtle, {

@@ -1,6 +1,7 @@
 // The page of the app that is open in this document, from the request of
 // its document until it is left: a page load makes it part by part, and
 // leaving it takes those back, the last part first, one page at a time.
+import { routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import {
   checkFetchedModules,
@@ -642,14 +643,23 @@ function redirectedResponse(response: Response, body: BodyInit | null): Response
   });
 }
 
-// Where the page of a Flight payload redirects to: the first error in it that
-// is a `redirect()`, which Next's router follows wherever it is in the tree
-// (its RedirectBoundary). React sends an error as a row of its own,
+// The errors of a Flight payload, the first `redirect()` of which is where the
+// page goes, wherever it is in the tree, as Next's router follows it (its
+// RedirectBoundary). React sends an error as a row of its own,
 // `<id>:E{"digest":...}`, on a line of its own, and Next reads the digest
 // (`redirectURL()` of client.tsx). Text of the page in a row of text, which
 // is not escaped, can look like a row too: its digest has to be a redirect.
 const errorRows = /(?:^|\n)[0-9a-f]+:E(\{.*)/g;
-function redirectOf(payload: Uint8Array, client: Client): string | undefined {
+/**
+ * Where the page of a Flight payload redirects to, if it does: see
+ * `followFlight()`. A path of the app's has the app's `basePath` before it,
+ * which `redirect()` takes without it, as Next's server puts it in the
+ * `Location` of the 307 of a document.
+ */
+export function redirectOf(
+  payload: Uint8Array,
+  client: Pick<Client, "redirectURL">,
+): string | undefined {
   for (const [, row] of new TextDecoder().decode(payload).matchAll(errorRows)) {
     let digest: unknown;
     try {
@@ -658,7 +668,7 @@ function redirectOf(payload: Uint8Array, client: Client): string | undefined {
       continue;
     }
     const url = typeof digest === "string" ? client.redirectURL(digest) : undefined;
-    if (url !== undefined) return url;
+    if (url !== undefined) return url.startsWith("/") ? routing.basePath + url : url;
   }
   return undefined;
 }
