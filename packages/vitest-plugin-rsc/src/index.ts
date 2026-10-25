@@ -104,16 +104,16 @@ export function vitestPluginRSC(): Plugin[] {
       configureVitest: (async ({ project, defineCacheKeyGenerator }: VitestPluginContext) => {
         inNode = hostsPageInNode(project.config);
         // Vitest keeps what it compiled on disk for the next run, by a key
-        // without the version of the optimizer's pre-bundles, which a module
-        // that imports one has in its URL, nor the plugin's code, which
-        // compiles the module. The key of a module is made once in a run: a
+        // without the place and the version of the optimizer's pre-bundles,
+        // which a module that imports one has in its URL, nor the plugin's
+        // code, which compiles the module. The key of a module is made once in a run: a
         // module that imports a pre-bundle that the optimizer bundles again
         // mid-run, as it finds a dependency, keeps the old version in its URL
         // until the next run; a page in a browser gets Vite's in that run
         // (transform-cache.ts).
         defineCacheKeyGenerator?.(
           ({ environment }) =>
-            `${environment.depsOptimizer?.metadata.browserHash ?? ""}:${ownCodeKey()}`,
+            `${environment.config.cacheDir}:${environment.depsOptimizer?.metadata.browserHash ?? ""}:${ownCodeKey()}`,
         );
         if (inNode) await startWorkerPage(project);
         else if (project.config.browser.enabled) await answerFromTransformCache(project);

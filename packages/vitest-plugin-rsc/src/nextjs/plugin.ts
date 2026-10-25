@@ -1357,9 +1357,27 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // Vitest's hook for a plugin of a project, which another host has not:
       // what its config says is a test file or a setup file is not server
       // code.
-      configureVitest({ vitest, project: testProject }: { vitest: Vitest; project: TestProject }) {
+      configureVitest({
+        vitest,
+        project: testProject,
+        defineCacheKeyGenerator,
+      }: {
+        vitest: Vitest;
+        project: TestProject;
+        defineCacheKeyGenerator?: (generate: () => string) => void;
+      }) {
         underVitest = true;
         assertVitestVersion(vitest.version);
+        // Vitest keys what it compiled by the file and the Vite config, not
+        // by the options of a plugin, and keeps it for every project of the
+        // root: one in fast mode and one in fidelity mode compile the same
+        // file otherwise, by the speed features and the options of the
+        // server code, and would each get the other's.
+        const compileKey = JSON.stringify(
+          [build, speedFeatures, options.browserModules, options.host],
+          (_, value: unknown) => (value instanceof RegExp ? String(value) : value),
+        );
+        defineCacheKeyGenerator?.(() => compileKey);
         const test = testProject.config;
         // Read as a file is asked about: a plugin of the host adds a setup
         // file in its own `configureVitest`, which may run after this one,
