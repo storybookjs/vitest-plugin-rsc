@@ -27,7 +27,7 @@ How to get the quickest feedback loop for the end-to-end scenarios of a Next.js 
 On the 500 tests of the notes benchmark, on an M1 Pro:
 
 - **Wait with `expect.element()` and `expect.poll()`, without an `interval`.** With `watchDom`, on in both modes, they look again on the next change of the page: a run of fidelity mode takes about 26 s instead of 60. See [Waiting for the page](#waiting-for-the-page).
-- **Fast mode for the loop, fidelity mode in CI.** Its features take about 16 ms off each test of fidelity mode: on an earlier build, a run of 24.5 s took about 16.6 s. See [The two modes](#the-two-modes).
+- **Fast mode for the loop, fidelity mode in CI.** Its features took about 16 ms off each test of fidelity mode before #284: on an earlier build, a run of 24.5 s took about 16.6 s. Since #284, fidelity mode is faster, and the gap is about 8–9 ms: see [Fast testing patterns](fast-testing-patterns.md#fast-mode-for-the-loop-fidelity-mode-in-ci). See [The two modes](#the-two-modes).
 - **4 workers.** 6.85 s instead of 14.21 s, with `dom-locators`. See [Workers](#workers).
 - **Clicks and queries in the page.** A click of Vitest's goes to Playwright and back, about 50 ms; one of `user-event` takes 0.1 ms. `dom-locators` (draft #255) takes another 2.0 ms off a test. See [The test's own code](#the-tests-own-code).
 - **Vitest on Bun.** A run of one test file starts its first test 0.88 s sooner than on Node.js with `pnpm exec`. See [The start of a run](#the-start-of-a-run).
