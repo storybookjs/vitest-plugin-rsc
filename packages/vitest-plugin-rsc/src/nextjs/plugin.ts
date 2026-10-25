@@ -1179,6 +1179,16 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // the app has no NODE_ENV of its own, and React's build follows it,
         // as the aliases of a layer do (project/layers.ts).
         const nodeEnv = JSON.stringify(build);
+        // The page asks for the modules of the ssr layer as the plugin's
+        // setup file runs, and for those of the browser layer as the first
+        // test loads a page, each one after the other as it finds their
+        // imports. Vite compiles the entry of a layer of `dev.warmup`, and
+        // what it imports, as its server starts to listen, which under
+        // Vitest is as the browser launches. Not the rsc layer: it is the
+        // `client` environment, which also serves Vitest's own pages, and
+        // with no cache of pre-bundled dependencies yet, Vite holds those
+        // back until no module of the environment is being compiled.
+        const warmup = (entry: string) => (testRun ? { warmup: [ownFile(entry)] } : {});
         const builtLayer = (layer: NextLayer) =>
           isBuild && {
             define: {
@@ -1228,17 +1238,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                   "development|production",
                 ],
               },
-              // Vitest compiles the test file as the browser starts, but not
-              // the setup files, so the page asked for the ssr layer's
-              // modules one after another once the plugin's setup file ran.
-              // Vite compiles a file of `dev.warmup`, and what it imports, as
-              // its server starts to listen, which under Vitest is as the
-              // browser launches. Not the rsc layer's: it is the `client`
-              // environment, which also serves Vitest's own pages, and with
-              // no cache of pre-bundled dependencies yet, Vite holds them
-              // back until no module of the environment is being compiled:
-              // the pages would wait for the warmup.
-              dev: { moduleRunnerTransform: true, ...(testRun && { warmup: [ownFile("ssr")] }) },
+              dev: { moduleRunnerTransform: true, ...warmup("ssr") },
               optimizeDeps: {
                 ...optimizeDeps("ssr"),
                 // Its entries: see `vitest-plugin-rsc:next-scan`.
@@ -1247,6 +1247,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             },
             [environmentOf.browser]: {
               ...builtLayer("browser"),
+              dev: warmup("client"),
               optimizeDeps: optimizeDeps("browser"),
             },
           },
