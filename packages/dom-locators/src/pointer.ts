@@ -41,6 +41,9 @@ function pointFor(element: Element): Point {
   }
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
+  // An element with no element in it is what the hit test would give, or
+  // what is on top of it, which gets no events: the element itself.
+  if (!element.firstElementChild && !element.shadowRoot) return { x, y, target: element };
   let hit = element.ownerDocument.elementFromPoint?.(x, y);
   // The document gives the host for what is in a shadow root: its own element.
   while (hit?.shadowRoot) {
