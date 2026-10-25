@@ -39,11 +39,11 @@ buildStorybookFramework();
 // oxlint-disable-next-line no-process-env
 process.env.STORYBOOK_DISABLE_TELEMETRY ??= "1";
 
-// A provider of its own for each project.
-const browserMode = () => ({
+// A provider of its own for each project, which starts Chromium with `args`.
+const browserMode = (args: string[] = []) => ({
   enabled: true,
   headless: true,
-  provider: playwright(),
+  provider: playwright({ launchOptions: { args } }),
   instances: [{ browser: "chromium" as const }],
 });
 
@@ -79,13 +79,18 @@ const browserProject = (name: string, mode: Mode) =>
     ],
     test: {
       name,
-      // For components/changing-probe.test.tsx.
+      // For components/changing-probe.test.tsx and test/page-leaks.test.tsx.
       provide: { mode },
       include: ["**/*.test.{ts,tsx}"],
       // e2e/ runs Storybook: see vitest.storybook.config.ts. A `.node.test`
       // file is the node project's.
       exclude: ["e2e/**", "node_modules", "**/*.node.test.{ts,tsx}"],
-      browser: { ...browserMode(), viewport: { width: 390, height: 844 } },
+      browser: {
+        // A collection of the heap and its precise size, which
+        // test/page-leaks.test.tsx asks for.
+        ...browserMode(["--js-flags=--expose-gc", "--enable-precise-memory-info"]),
+        viewport: { width: 390, height: 844 },
+      },
       // Browser workers each own their browser state and run in parallel.
       // Inside one worker, test files run sequentially with `isolate: false`,
       // so cleanup belongs in beforeEach. Do not disable file parallelism
@@ -161,7 +166,11 @@ const nodeProject = (
     test: {
       name,
       provide: { cacheDevServer },
-      include: files ?? [overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}"],
+      // test/page-leaks.test.tsx runs in Chromium and here alike.
+      include: files ?? [
+        overTcp ? "**/*.tcp.node.test.{ts,tsx}" : "**/*.node.test.{ts,tsx}",
+        ...(overTcp ? [] : ["test/page-leaks.test.tsx"]),
+      ],
       exclude: ["e2e/**", "node_modules", ...(overTcp ? [] : ["**/*.tcp.node.test.{ts,tsx}"])],
       environment,
       isolate: false,
