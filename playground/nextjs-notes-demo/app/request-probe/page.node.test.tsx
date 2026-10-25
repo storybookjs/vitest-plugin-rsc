@@ -24,11 +24,10 @@ test("a fetch of a Client Component reaches a route handler, with the cookies th
   expect(await answer("200 GET cookie=echo=seen; next=seen set-cookie=hidden")).toBeTruthy();
 });
 
-test("handleRequest() takes a Request of the page's, for a route that fetches the app with one of its own", async () => {
-  await renderServer({ url: "/request-probe" });
-  const response = await handleRequest(new Request(new URL("/api/echo/self", location.href)));
+test("handleRequest() takes a Request of the page's, for a route that fetches with one of its own", async () => {
+  const response = await handleRequest(new Request(new URL("/api/echo/network", location.href)));
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ method: "self GET" });
+  expect(await response.json()).toEqual({ network: "from the network" });
 });
 
 test("a fetch follows a redirect of the app", async () => {
