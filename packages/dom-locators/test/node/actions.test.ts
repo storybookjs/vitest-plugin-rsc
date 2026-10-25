@@ -235,3 +235,67 @@ test("wheel throws for a direction it has not", async () => {
     /invalid direction/,
   );
 });
+
+test("Backspace and Delete take a character as it is seen", async () => {
+  document.body.innerHTML = '<input aria-label="Name">';
+  const name = page.getByLabelText("Name");
+  await name.fill("hi😀");
+  await name.press("Backspace");
+  expect(name.element()).toHaveProperty("value", "hi");
+  await name.fill("😀x");
+  await name.press("Home");
+  await name.press("Delete");
+  expect(name.element()).toHaveProperty("value", "x");
+});
+
+test("a read-only input has the beforeinput of a typed character alone", async () => {
+  document.body.innerHTML = '<input aria-label="Locked" value="fixed" readonly>';
+  const inputs: string[] = [];
+  document.addEventListener("beforeinput", (event) => inputs.push((event as InputEvent).inputType));
+  await page.getByLabelText("Locked").press("x");
+  await page.getByLabelText("Locked").press("Backspace");
+  expect(inputs).toEqual(["insertText"]);
+  expect(page.getByLabelText("Locked").element()).toHaveProperty("value", "fixed");
+});
+
+test("pressSequentially throws before the focus for what it does not model", async () => {
+  document.body.innerHTML =
+    '<div contenteditable="true" aria-label="Rich">x</div><input type="email" aria-label="Email">';
+  const focused: string[] = [];
+  document.addEventListener("focusin", (event) =>
+    focused.push((event.target as Element).localName),
+  );
+  await expect(page.getByLabelText("Rich").pressSequentially("hi")).rejects.toThrow(
+    UnsupportedError,
+  );
+  const probe = document.createElement("input");
+  probe.type = "email";
+  probe.value = " a";
+  if (probe.value === " a") return;
+  // The space before a letter, which an email input drops as it is set.
+  await expect(page.getByLabelText("Email").pressSequentially(" a")).rejects.toThrow(
+    UnsupportedError,
+  );
+  expect(focused).toEqual([]);
+});
+
+test("select all outside a text control throws", async () => {
+  const isMac = /Mac/.test(navigator.platform);
+  await expect(
+    page.getByRole("button", { name: "Save" }).press(isMac ? "Meta+a" : "Control+a"),
+  ).rejects.toThrow(UnsupportedError);
+});
+
+test("the keys of press() go to what has the focus, when the element takes none", async () => {
+  document.body.innerHTML = '<input aria-label="Name"><p>Text</p>';
+  await page.getByLabelText("Name").fill("a");
+  const targets: string[] = [];
+  document.addEventListener("keydown", (event) =>
+    targets.push((event.target as Element).localName),
+  );
+  await page.getByText("Text").press("b");
+  // happy-dom's `focus()` focuses any element, a paragraph too.
+  if (navigator.userAgent.includes("HappyDOM")) return expect(targets).toEqual(["p"]);
+  expect(targets).toEqual(["input"]);
+  expect(page.getByLabelText("Name").element()).toHaveProperty("value", "ab");
+});

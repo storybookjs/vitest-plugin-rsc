@@ -20,7 +20,8 @@ const modifierKeys: Record<HeldModifier, { code: string; keyCode: number }> = {
 
 const held = new Set<HeldModifier>();
 
-const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
+/** Whether the keyboard is a Mac's, as Playwright's tells it: its editing keys are others. */
+export const isMac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 
 /** Whether `key` names a modifier. */
 export function isModifier(key: string): key is Modifier {

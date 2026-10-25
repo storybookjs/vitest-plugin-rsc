@@ -101,24 +101,39 @@ export const insertion = (text: string, inputType = "insertText"): Edit => ({
   range: (_value, start, end) => [start, end],
 });
 
-/** The selection, or what `range` takes when there is none. */
-const selectionOr =
-  (range: (start: number) => [number, number]) =>
-  (_value: string, start: number, end: number): [number, number] =>
-    start !== end ? [start, end] : range(start);
+const graphemes =
+  typeof Intl !== "undefined" && "Segmenter" in Intl
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : undefined;
 
-/** Backspace: the selection, else the character before the caret. */
+/** The boundary of the character as it is seen before (`-1`) or after (`1`) `index` in `value`. */
+export function characterBoundary(value: string, index: number, direction: -1 | 1): number {
+  if (direction < 0 ? index <= 0 : index >= value.length) return index;
+  if (!graphemes) return index + direction;
+  let boundary = direction < 0 ? 0 : value.length;
+  for (const { index: at } of graphemes.segment(value)) {
+    if (direction < 0 ? at < index : at > index) {
+      if (direction < 0) boundary = at;
+      else return at;
+    }
+  }
+  return boundary;
+}
+
+/** Backspace: the selection, else the character as it is seen before the caret. */
 export const backwardDeletion: Edit = {
   inputType: "deleteContentBackward",
   data: null,
-  range: selectionOr((start) => [Math.max(start - 1, 0), start]),
+  range: (value, start, end) =>
+    start !== end ? [start, end] : [characterBoundary(value, start, -1), start],
 };
 
-/** Delete: the selection, else the character after the caret. */
+/** Delete: the selection, else the character as it is seen after the caret. */
 export const forwardDeletion: Edit = {
   inputType: "deleteContentForward",
   data: null,
-  range: selectionOr((start) => [start, start + 1]),
+  range: (value, start, end) =>
+    start !== end ? [start, end] : [start, characterBoundary(value, start, 1)],
 };
 
 /** The value after `edit`, where it starts and what it inserts: `maxlength` cuts that, as typing does. */
@@ -160,15 +175,35 @@ export function keepsEdit(element: TextControl, edit: Edit): boolean {
 }
 
 /**
+ * Whether the control keeps each value that typing `text` makes, one
+ * character after the other, at its caret, or at the start of an input
+ * the focus comes to, as `keepsEdit()` of each.
+ */
+export function keepsTyping(element: TextControl, text: string, focused: boolean): boolean {
+  if (!(element instanceof HTMLInputElement) || !sanitized.has(element.type)) return true;
+  let value = element.value;
+  const caretOf = element.selectionStart;
+  let caret = caretOf === null ? value.length : focused ? caretOf : 0;
+  const probe = element.ownerDocument.createElement("input");
+  probe.type = element.type;
+  for (const char of text) {
+    if (char === "\n" || char === "\r") continue;
+    value = value.slice(0, caret) + char + value.slice(caret);
+    caret += char.length;
+    probe.value = value;
+    if (probe.value !== value) return false;
+  }
+  return true;
+}
+
+/**
  * `edit` of a text control: `beforeinput`, which may cancel it, then the
  * new value, the caret after what it inserted, and `input` if the value
- * changed; of a read-only control, `beforeinput` alone, as Chrome's.
- * `selection` is for a control without a selection of its own to read,
- * like an email input.
+ * changed. `selection` is for a control without a selection of its own to
+ * read, like an email input.
  */
 export function editText(element: TextControl, edit: Edit, selection?: [number, number]): void {
   if (!element.dispatchEvent(inputEvent(edit.inputType, edit.data, true))) return;
-  if (element.readOnly) return;
   const before = element.value;
   const { value, from, inserted } = apply(element, edit, selection);
   if (value === before) return;

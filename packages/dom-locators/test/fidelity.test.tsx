@@ -66,18 +66,25 @@ const expectedDifferences: Record<string, string[]> = {
 // Playwright's log of each step, in a DOM of Node.js the oracle.
 const recorded: Record<string, string[]> = {};
 
-test.each(steps)("$name: the log of the package's action is Playwright's", async (step) => {
-  const theirs = await logOf(step, vitest, rest);
-  recorded[step.name] = theirs;
-  const our = await logOf(step, ours, rest);
-  expect(theirs.length).toBeGreaterThan(0);
-  expect(
-    compareLogs(theirs, our),
-    `Playwright:\n${theirs.join("\n")}\n\ndom-locators:\n${our.join("\n")}`,
-  ).toEqual({ differences: expectedDifferences[step.name] ?? [], sameOrder: true });
-});
+// The logs are Chromium's on Linux, as CI runs it: Playwright's keys of
+// editing on a Mac are others.
+const onLinux = /Linux/.test(navigator.platform);
 
-test("Playwright's logs are the ones recorded in playwright-logs.json", () => {
+test.runIf(onLinux).each(steps)(
+  "$name: the log of the package's action is Playwright's",
+  async (step) => {
+    const theirs = await logOf(step, vitest, rest);
+    recorded[step.name] = theirs;
+    const our = await logOf(step, ours, rest);
+    expect(theirs.length).toBeGreaterThan(0);
+    expect(
+      compareLogs(theirs, our),
+      `Playwright:\n${theirs.join("\n")}\n\ndom-locators:\n${our.join("\n")}`,
+    ).toEqual({ differences: expectedDifferences[step.name] ?? [], sameOrder: true });
+  },
+);
+
+test.runIf(onLinux)("Playwright's logs are the ones recorded in playwright-logs.json", () => {
   expect(Object.keys(recorded)).toHaveLength(steps.length);
   // The entries whose place is the browser's, sorted, as their place is no answer.
   const sorted = (logs: Record<string, string[]>) =>

@@ -14,15 +14,25 @@ import {
   editText,
   forwardDeletion,
   inputEvent,
+  characterBoundary,
   insertion,
   isContentEditable,
   isTextControl,
   keepsEdit,
+  keepsTyping,
   setSelection,
   type Edit,
   type TextControl,
 } from "./form-controls.ts";
-import { holdDown, isModifier, isStateOf, letGo, stateOf, type Modifier } from "./modifiers.ts";
+import {
+  holdDown,
+  isMac,
+  isModifier,
+  isStateOf,
+  letGo,
+  stateOf,
+  type Modifier,
+} from "./modifiers.ts";
 import { pointerEventOf } from "./pointer.ts";
 
 /** A key of `press()`: a named key, or one printable character, after the modifiers held for it, like "Shift+Tab". */
@@ -194,10 +204,11 @@ function split(combination: string): string[] {
 
 /**
  * Presses `combination` on `element` as Playwright's `locator.press()`: the
- * focus first, then the modifiers before its last key held down, in order,
- * the key pressed, and the modifiers let go, the last first. What the
- * package does not model throws before any event, but for a typed text
- * that the control would not keep, which is told once the focus has put
+ * focus first, then, on what has the focus, which is another element if
+ * `element` takes none, the modifiers before its last key held down, in
+ * order, the key pressed, and the modifiers let go, the last first. What
+ * the package does not model throws before any event, but for a typed text
+ * that a URL input would not keep, which is told once the focus has put
  * the caret.
  */
 export function press(element: HTMLElement, combination: Key): void {
@@ -211,14 +222,16 @@ export function press(element: HTMLElement, combination: Key): void {
     }
     return modifier;
   });
-  const planned = () =>
-    isModifier(key) ? undefined : planOf(element, key, combination, modifiers);
-  planned();
+  const planned = (target: HTMLElement) =>
+    isModifier(key) ? undefined : planOf(target, key, combination, modifiers);
+  planned(element);
   focusForPress(element);
-  const plan = planned();
+  // The keys go to what has the focus, as Playwright's keyboard sends them.
+  const target = (activeElement() as HTMLElement | null) ?? document.body;
+  const plan = planned(target);
   for (const modifier of modifiers) holdDown(modifier);
   try {
-    if (plan) pressKey(element, plan);
+    if (plan) pressKey(target, plan);
     else {
       holdDown(key as Modifier);
       letGo(key as Modifier);
@@ -236,7 +249,7 @@ interface KeyPlan {
   shortcut: boolean;
   /** The text control the key is pressed on, whose caret it moves. */
   control: TextControl | undefined;
-  /** The edit of its text the key makes, which a read-only control refuses. */
+  /** The edit of its text the key makes: of a read-only control, its `beforeinput` alone. */
   edit: Edit | undefined;
 }
 
@@ -273,16 +286,24 @@ function planOf(
     throw unsupported(`on a ${element.localName}`);
   }
   if (control && /^Arrow(Up|Down)$/.test(named)) throw unsupported("in a text control");
+  // Playwright's Home and End of a Mac scroll the document, with Shift
+  // select to its ends.
+  if (control && isMac && (named === "Home" || named === "End")) {
+    throw unsupported("in a text control of a Mac");
+  }
   const selectAll = definition.code === "KeyA" && isStateOf(held, "ControlOrMeta");
   if (shortcut) {
     if (control && !selectAll && named !== "Escape") throw unsupported("in a text control");
     if (named === "Tab" || named === "Enter" || named === " ") throw unsupported("as a shortcut");
     if (/^Key[CVX]$/.test(definition.code)) throw unsupported("of the clipboard");
+    // Select all and undo of the document.
+    if (!control && /^Key[AYZ]$/.test(definition.code)) throw unsupported("outside a text control");
   }
   let edit: Edit | undefined;
   if (control && !control.disabled && !shortcut) {
-    if (named === "Backspace") edit = backwardDeletion;
-    else if (named === "Delete") edit = forwardDeletion;
+    // A read-only control has the `beforeinput` of a typed character alone.
+    if (named === "Backspace" && text) edit = backwardDeletion;
+    else if (named === "Delete" && text) edit = forwardDeletion;
     else if (definition.charCode !== undefined && named !== "Enter") edit = insertion(named);
     if (edit && text && !keepsEdit(text, edit)) {
       throw unsupported(`in an input of type ${text.type}, which would not keep it as typed,`);
@@ -332,7 +353,9 @@ function pressKey(
   }
   let clickAfterKeyup = false;
   if (act) {
-    if (edit && control) editText(control, edit);
+    if (edit && control?.readOnly)
+      control.dispatchEvent(inputEvent(edit.inputType, edit.data, true));
+    else if (edit && control) editText(control, edit);
     else if (definition.key === "Enter") onEnter(element);
     else if (definition.key === "Tab") focusNext(element, isVisible, !!held.shiftKey);
     else if (caretKeys.has(definition.key)) {
@@ -421,32 +444,23 @@ function moveCaret(
     );
 }
 
-const graphemes =
-  typeof Intl !== "undefined" && "Segmenter" in Intl
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : undefined;
-
-/** The boundary of the character as it is seen before (`-1`) or after (`1`) `index` in `value`. */
-function characterBoundary(value: string, index: number, direction: -1 | 1): number {
-  if (direction < 0 ? index <= 0 : index >= value.length) return index;
-  if (!graphemes) return index + direction;
-  let boundary = direction < 0 ? 0 : value.length;
-  for (const { index: at } of graphemes.segment(value)) {
-    if (direction < 0 ? at < index : at > index) {
-      if (direction < 0) boundary = at;
-      else return at;
-    }
-  }
-  return boundary;
-}
-
 /**
  * Playwright's `pressSequentially(text)`: a press of each character's key,
  * Enter for a line break, and for a character the keyboard has no key for,
- * like "é", its text alone, as `keyboard.insertText()`: into a text control,
- * nowhere else, and a `contenteditable` element throws.
+ * like "é", its text alone, as `keyboard.insertText()`: into a text control
+ * that is not read-only, nowhere else. A `contenteditable` element throws,
+ * and so does a text a number, an email or a URL input would not keep as
+ * it is typed, before any event.
  */
 export function pressSequentially(element: HTMLElement, text: string): void {
+  const unsupported = (why: string) =>
+    new UnsupportedError(`pressSequentially() ${why} is not in dom-locators yet: ${escapeHatch}.`);
+  if (isContentEditable(element) && !isTextControl(element)) {
+    throw unsupported("in a contenteditable element");
+  }
+  if (isTextControl(element) && !keepsTyping(element, text, activeElement() === element)) {
+    throw unsupported(`in an input of type ${element.type}, which would not keep it as typed,`);
+  }
   focusForPress(element);
   for (const char of text) {
     const target = (activeElement() as HTMLElement | null) ?? element;
@@ -454,17 +468,15 @@ export function pressSequentially(element: HTMLElement, text: string): void {
     else if (/^[\x20-\x7e]$/.test(char)) press(target, char);
     else if (isTextControl(target)) {
       const edit = insertion(char);
-      if (target.disabled) continue;
-      if (!target.readOnly && !keepsEdit(target, edit)) {
-        throw new UnsupportedError(
-          `pressSequentially() of "${char}" in an input of type ${target.type}, which would not keep it as typed, is not in dom-locators yet: ${escapeHatch}.`,
+      if (target.disabled || target.readOnly) continue;
+      if (!keepsEdit(target, edit)) {
+        throw unsupported(
+          `of "${char}" in an input of type ${target.type}, which would not keep it as typed,`,
         );
       }
       editText(target, edit);
     } else if (isContentEditable(target)) {
-      throw new UnsupportedError(
-        `pressSequentially() in a contenteditable element is not in dom-locators yet: ${escapeHatch}.`,
-      );
+      throw unsupported("in a contenteditable element");
     }
   }
 }

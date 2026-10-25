@@ -94,12 +94,26 @@ export function testIdAttribute(): string {
  * Whether the DOM is laid out and styled as a browser does it. A DOM of
  * Node.js, jsdom's or happy-dom's, lays nothing out, so every box is empty,
  * and has no styles of pseudo-elements: what is visible is told by the
- * style alone, and a click lands on the element itself. Told by Node.js
- * running the page, not by a box, which a test of jsdom may mock.
+ * style alone, and a click lands on the element itself. Such a DOM is
+ * Node.js running the page and jsdom or happy-dom by its user agent, or,
+ * for one of another agent, an empty root element; a browser's page with a
+ * `process` of Node.js, as a polyfill has it, renders.
  */
-export const rendered =
-  typeof (globalThis as { process?: { versions?: { node?: unknown } } }).process?.versions?.node !==
-  "string";
+export const rendered = !(isNodeJs() && (isNodeDomAgent() || isEmptyRoot()));
+
+function isNodeJs(): boolean {
+  const versions = (globalThis as { process?: { versions?: { node?: unknown } } }).process
+    ?.versions;
+  return typeof versions?.node === "string";
+}
+
+function isNodeDomAgent(): boolean {
+  return typeof navigator !== "undefined" && /\b(jsdom|HappyDOM)\//.test(navigator.userAgent);
+}
+
+function isEmptyRoot(): boolean {
+  return typeof document !== "undefined" && document.documentElement?.clientWidth === 0;
+}
 
 /**
  * The `view` of the events of `document`: its window, but none in a DOM
