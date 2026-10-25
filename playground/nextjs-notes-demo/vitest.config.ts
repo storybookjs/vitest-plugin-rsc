@@ -106,6 +106,11 @@ const browserProject = (name: string, mode: Mode, speed?: SpeedOptions) =>
         // test/page-leaks.test.tsx asks for.
         ...browserMode(["--js-flags=--expose-gc", "--enable-precise-memory-info"]),
         viewport: { width: 390, height: 844 },
+        // A page connects once the plugin has compiled Next's server layers
+        // for its project, which Vitest starts for every project of a run at
+        // once: the nine of the speed features, in one run, take longer than
+        // Vitest's 60 s for the last of them.
+        ...(speed && { connectTimeout: 240_000 }),
       },
       // Browser workers each own their browser state and run in parallel.
       // Inside one worker, test files run sequentially with `isolate: false`,
