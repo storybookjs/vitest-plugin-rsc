@@ -276,8 +276,12 @@ export async function loadPage(
     // A page load asks the dev server for the versions of its modules, as a
     // browser asks for a page: a change that reached the server through
     // another connection, like a request of the test, is ordered before
-    // it. Within the page, the page reads what the server told it since.
+    // it. Within the page, the page reads what the server told it since:
+    // the request of the page load too. One question for every environment,
+    // all at once.
     forgetHeardVersions();
+    await checkFetchedModules();
+    page.signal.throwIfAborted();
     // A page that is not one of the kept app starts an app of its own, and so
     // does one when there is none, like after a first page whose app did not
     // start, or when the dev server has changed modules of the browser layer

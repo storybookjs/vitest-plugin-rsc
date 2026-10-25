@@ -279,8 +279,10 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // Vitest's own or a request of HTTP, is ordered by such a question: its
 // answer comes after every change the server made before it. Within a page,
 // the page sees it once the server's news of it has arrived. That needs the
-// news and the answers on one connection: a page that asks another way, with
-// no news, has to ask every time.
+// news and the answers on one connection, in order: a host of the page that
+// asks another way, like over HTTP, has to subscribe to the news on its own
+// connection, or else the page asks for the versions before every request,
+// as before the news. See docs/internals/architecture.md.
 const heardVersions = new Map<string, number>();
 let asked = new Set<string>();
 
