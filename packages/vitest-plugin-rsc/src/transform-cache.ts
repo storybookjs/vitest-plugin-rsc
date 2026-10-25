@@ -68,12 +68,18 @@ export async function invokeEnvironment(
 ): Promise<InvokeResult> {
   const fetch = fetchOf.get(server);
   const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
-  if (fetch && name === "fetchModule") {
-    const [url, importer, options] = data as [string, string | undefined, FetchOptions?];
-    const result = await fromCache(fetch, environment, url, importer, options).catch(() => {});
-    if (result) return { result } as InvokeResult;
+  if (!fetch || name !== "fetchModule") return environment.hot.handleInvoke(payload);
+  const [url, importer, options] = data as [string, string | undefined, FetchOptions?];
+  const cached = await fromCache(fetch, environment, url, importer, options).catch(() => {});
+  if (cached) return { result: cached } as InvokeResult;
+  const answer = await environment.hot.handleInvoke(payload);
+  // Vite answers a module that Vitest compiled in the run with Vitest's
+  // code: its map, without the runner's lines.
+  const fetched = (answer as { result?: { code?: unknown } }).result;
+  if (typeof fetched?.code === "string") {
+    fetched.code = withLinesBefore(fetched.code, options?.startOffset ?? 0);
   }
-  return environment.hot.handleInvoke(payload);
+  return answer;
 }
 
 async function fromCache(
@@ -83,15 +89,25 @@ async function fromCache(
   importer: string | undefined,
   options: FetchOptions | undefined,
 ) {
+  // A specifier that Vite resolves from its importer, like a page's entry
+  // by its package, is Vite's to answer.
+  if (!url.startsWith("/")) return;
   // Vitest keys a module by its file as it first read it in a run, and
   // forgets that key only for a change that its own watcher sees. Vite
   // compiles a module again after any invalidation: a change of its file, of
   // a module it imports, or a new bundle of the optimizer, whose versions are
   // in the URLs that the code imports. Such a module is Vite's to answer, for
-  // the rest of the run.
-  const node = await environment.moduleGraph.getModuleByUrl(url);
-  if (node && invalidatedAt(node) > 0) return;
+  // the rest of the run. The module as Vite and Vitest find it next.
+  const graph = environment.moduleGraph;
+  const node = await graph.ensureEntryFromUrl(unwrapId(url));
+  if (invalidatedAt(node) > 0) return;
   const result = await fetch(url, importer, environment.name, options);
+  // An invalidation while Vitest read its file: Vitest gave the module the
+  // code of before it, which Vite would keep.
+  if (invalidatedAt(node) > 0) {
+    graph.invalidateModule(node);
+    return;
+  }
   // Vite answers it as it always did: a builtin, a URL of the network, or a
   // dependency that is not inlined, which Vitest would leave to Node.js.
   if ("externalize" in result) return;
@@ -107,20 +123,29 @@ async function fromCache(
   };
 }
 
-// The source map that Vite puts in the code of a module for a runner, last,
-// as Vitest keeps it too.
+// The id of a module by the URL that its importer's code has, as Vite's
+// `fetchModule()` reads it: import analysis writes a resolved id that is no
+// URL, like a virtual module's, as `/@id/`.
+const unwrapId = (url: string) =>
+  url.startsWith("/@id/") ? url.slice("/@id/".length).replace("__x00__", "\0") : url;
+
+// The source map that Vite and Vitest put in the code of a module for a
+// runner, last. Vite names the module on the line before it.
 const inlineMapRE =
-  /\n\/\/# sourceMappingSource=vite-generated\n\/\/# sourceMappingURL=data:application\/json;base64,([A-Za-z0-9+/=]+)\n/;
+  /\n\/\/# sourceMappingSource=vite-generated\n\/\/# sourceMappingURL=data:application\/json;base64,([A-Za-z0-9+/=]+)\n/g;
 
 /**
  * The code with its source map for a runner that puts `lines` lines before
  * the code, as Vite gives it with the runner's `startOffset`: Vitest's runner
- * puts none, so its cache has the map of the code as it is. A dependency
- * comes without a map, see `dependencySourceMapPlugin()` in index.ts.
+ * puts none, so its cache has the map of the code as it is. A map that Vite
+ * put in the code has the lines already. A dependency comes without a map,
+ * see `dependencySourceMapPlugin()` in index.ts.
  */
 export function withLinesBefore(code: string, lines: number): string {
-  const inline = lines > 0 ? inlineMapRE.exec(code) : null;
+  const inline = lines > 0 ? [...code.matchAll(inlineMapRE)].at(-1) : undefined;
   if (!inline) return code;
+  const lineBefore = code.slice(code.lastIndexOf("\n", inline.index - 1) + 1, inline.index);
+  if (lineBefore.startsWith("//# sourceURL=")) return code;
   const map = JSON.parse(Buffer.from(inline[1]!, "base64").toString("utf8")) as {
     mappings: string;
   };

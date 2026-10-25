@@ -28,12 +28,11 @@ function setUp({ fsModuleCache = true, invalidated = 0 } = {}) {
   fetch.mockReset();
   const server = {} as ViteDevServer;
   const handleInvoke = vi.fn(async () => viteAnswer);
+  const node = { lastInvalidationTimestamp: invalidated, lastHMRTimestamp: 0 };
+  const moduleGraph = { ensureEntryFromUrl: vi.fn(async () => node), invalidateModule: vi.fn() };
   const environment = {
     name: "react_client",
-    moduleGraph: {
-      getModuleByUrl: async () =>
-        invalidated ? { lastInvalidationTimestamp: invalidated, lastHMRTimestamp: 0 } : undefined,
-    },
+    moduleGraph,
     hot: { handleInvoke },
   } as unknown as DevEnvironment;
   const project = {
@@ -41,7 +40,7 @@ function setUp({ fsModuleCache = true, invalidated = 0 } = {}) {
     vite: server,
     vitest: { distPath: dir },
   } as unknown as TestProject;
-  return { server, environment, handleInvoke, project };
+  return { server, environment, handleInvoke, project, node, moduleGraph };
 }
 
 const fetchModule = (url: string, options?: object) =>
@@ -113,6 +112,37 @@ test("leaves to Vite a module that Vite invalidated in the run, which Vitest key
   expect(handleInvoke).toHaveBeenCalledOnce();
 });
 
+test("leaves to Vite a module invalidated while Vitest read it, and forgets Vitest's code of it", async () => {
+  const { server, environment, handleInvoke, project, node, moduleGraph } = setUp();
+  await answerFromTransformCache(project);
+  fetch.mockImplementation(async () => {
+    node.lastInvalidationTimestamp = 5;
+    return { cached: true, tmp, file: "/a.ts", id: "/a.ts", url: "/a.ts", invalidate: false };
+  });
+
+  expect(await invokeEnvironment(server, environment, fetchModule("/a.ts"))).toBe(viteAnswer);
+  expect(moduleGraph.invalidateModule).toHaveBeenCalledWith(node);
+  expect(handleInvoke).toHaveBeenCalledOnce();
+});
+
+test("finds the module of a URL as Vite does, and leaves a bare specifier to Vite", async () => {
+  const { server, environment, handleInvoke, project, moduleGraph } = setUp();
+  await answerFromTransformCache(project);
+  fetch.mockResolvedValue({ cache: true });
+
+  await invokeEnvironment(
+    server,
+    environment,
+    fetchModule("/@id/__x00__virtual:a", { cached: true }),
+  );
+  expect(moduleGraph.ensureEntryFromUrl).toHaveBeenCalledWith("\0virtual:a");
+  expect(await invokeEnvironment(server, environment, fetchModule("vitest-plugin-rsc/a"))).toBe(
+    viteAnswer,
+  );
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(handleInvoke).toHaveBeenCalledOnce();
+});
+
 test("leaves to Vite what is not a module, and every module without the cache", async () => {
   const { server, environment, handleInvoke, project } = setUp({ fsModuleCache: false });
   await answerFromTransformCache(project);
@@ -144,6 +174,12 @@ test("moves the source map down by the lines that the runner puts before the cod
 
   expect(withLinesBefore(code, 2)).toBe(withMap({ ...map, mappings: ";;AAAA;AACA" }));
   expect(withLinesBefore(code, 0)).toBe(code);
+  // Vite's own, which has the lines already.
+  const fromVite = code.replace(
+    "\n//# sourceMappingSource",
+    "\n//# sourceURL=/a.ts\n//# sourceMappingSource",
+  );
+  expect(withLinesBefore(fromVite, 2)).toBe(fromVite);
   // A dependency, which comes without a map.
   expect(withLinesBefore("export default 1;\n", 2)).toBe("export default 1;\n");
 });
