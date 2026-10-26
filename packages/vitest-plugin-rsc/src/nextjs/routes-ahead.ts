@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { normalizePath, type Plugin, type ViteDevServer } from "vite";
 import { answerPage } from "../page-bridge.ts";
-import { routesAheadEvent, type RoutesAheadNews } from "./routes-ahead-shared.ts";
+import {
+  modulesAheadEvent,
+  routesAheadEvent,
+  type ModulesAheadQuestion,
+  type RoutesAheadNews,
+} from "./routes-ahead-shared.ts";
 
 // The first page load of a tab waits for the dev server to compile its route:
 // the modules of the app in the rsc layer, its Client Components in the layer
@@ -16,45 +21,80 @@ import { routesAheadEvent, type RoutesAheadNews } from "./routes-ahead-shared.ts
 // stylesheet; it finds them compiled. Which routes is the last run's: a test
 // can open a route by any URL, through any helper. A file that runs for the
 // first time compiles nothing ahead.
+//
+// The modules that the page's server layers import natively, over HTTP: the
+// rsc layer's and the external modules of the runners. The browser finds the
+// imports of a module once it has it, so the first page load of a tab waits
+// for a round trip to the dev server per level of imports, some twenty for
+// Next's server. So the dev server keeps which modules each test file loaded
+// as the first file of its tab, and the next run's tabs preload those of
+// every such file at once, as the hooks of their first file start: see
+// `preloadModulesAhead()` in setup.ts.
 
 export type RoutesAheadOptions = {
   /** The root of the project, under whose `node_modules/.cache/` the routes are kept. */
   root(): string;
   /** Has the dev server compile a route, by the name of its modules: see `compileRoute()` in styles.ts. */
   compile(vite: ViteDevServer, entry: string): Promise<unknown>;
+  /** The environment whose modules the page imports natively: the rsc layer's. */
+  environment: string;
 };
 
-// The routes of every test file, by its path from the root, in the order the
-// file first opened them. The version of the format is in the name.
-const cacheFile = "node_modules/.cache/vitest-plugin-rsc/routes-ahead-1.json";
+// By the path of each test file from the root: the routes in the order the
+// file first opened them, and the modules it loaded. The version of the
+// format is in the name.
+const cacheFile = "node_modules/.cache/vitest-plugin-rsc/routes-ahead-2.json";
+type Kept = { files: Map<string, string[]>; modules: Map<string, string[]> };
 
 export function routesAheadPlugin(options: RoutesAheadOptions): Plugin {
-  let kept: Map<string, string[]> | undefined;
+  let kept: Kept | undefined;
   // The routes each file opened in this run, which replace those of the run
   // before once it opens one: a route the file no longer opens goes.
   const opened = new Map<string, string[]>();
 
-  function read(): Map<string, string[]> {
+  function read(): Kept {
     if (kept) return kept;
     try {
-      const { files } = JSON.parse(fs.readFileSync(path.join(options.root(), cacheFile), "utf8"));
-      kept = new Map(Object.entries(files as Record<string, string[]>));
+      const { files, modules } = JSON.parse(
+        fs.readFileSync(path.join(options.root(), cacheFile), "utf8"),
+      );
+      kept = {
+        files: new Map(Object.entries(files as Record<string, string[]>)),
+        modules: new Map(Object.entries(modules as Record<string, string[]>)),
+      };
     } catch {
-      kept = new Map();
+      kept = { files: new Map(), modules: new Map() };
     }
     return kept;
   }
 
   // By a rename, so that a run that reads it at the same time reads all of
   // it. A disk that cannot be written to only means nothing ahead next time.
-  function write(routes: Map<string, string[]>): void {
+  function write({ files, modules }: Kept): void {
     const file = path.join(options.root(), cacheFile);
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       const written = `${file}.${process.pid}`;
-      fs.writeFileSync(written, JSON.stringify({ files: Object.fromEntries(routes) }));
+      fs.writeFileSync(
+        written,
+        JSON.stringify({
+          files: Object.fromEntries(files),
+          modules: Object.fromEntries(modules),
+        }),
+      );
       fs.renameSync(written, file);
     } catch {}
+  }
+
+  // Not a pre-bundled dependency of another version of the pre-bundle, which
+  // the page would fetch in vain: Vite puts the version in its URL.
+  function current(vite: ViteDevServer, modules: string[]): string[] {
+    const version = vite.environments?.[options.environment]?.depsOptimizer?.metadata.browserHash;
+    if (!version) return modules;
+    return modules.filter((url) => {
+      const asked = new URL(url, "http://n").searchParams.get("v");
+      return asked === null || asked === version;
+    });
   }
 
   return {
@@ -62,7 +102,7 @@ export function routesAheadPlugin(options: RoutesAheadOptions): Plugin {
     configureServer(vite) {
       answerPage(vite, routesAheadEvent, async ({ testFile, opened: entry }: RoutesAheadNews) => {
         const file = normalizePath(path.relative(options.root(), testFile));
-        const routes = read();
+        const routes = read().files;
         if (entry === undefined) {
           // One after the other, in the order the file opens them: its first
           // page load needs the first.
@@ -80,7 +120,15 @@ export function routesAheadPlugin(options: RoutesAheadOptions): Plugin {
           return null;
         }
         routes.set(file, [...now]);
-        write(routes);
+        write(read());
+        return null;
+      });
+      answerPage(vite, modulesAheadEvent, ({ loaded }: ModulesAheadQuestion) => {
+        const { modules } = read();
+        if (loaded === undefined) return current(vite, [...new Set([...modules.values()].flat())]);
+        // What the file loads now replaces what it loaded before.
+        modules.set(normalizePath(path.relative(options.root(), loaded.testFile)), loaded.modules);
+        write(read());
         return null;
       });
     },

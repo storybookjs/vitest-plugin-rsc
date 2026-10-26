@@ -1624,7 +1624,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     pageTimersPlugin(environmentOf.browser, serverCode.isHostFile),
     ...styles.plugins,
-    routesAheadPlugin({ root: () => getProject().root, compile: styles.compileRoute }),
+    routesAheadPlugin({
+      root: () => getProject().root,
+      compile: styles.compileRoute,
+      environment: environmentOf.rsc,
+    }),
     serverCode.asyncFunctionsPlugin(environmentOf.rsc),
     createUseCachePlugin(
       getProject,

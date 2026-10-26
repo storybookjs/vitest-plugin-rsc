@@ -1,3 +1,4 @@
+import pageHost from "virtual:vitest-plugin-rsc/page-host";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
@@ -6,7 +7,12 @@ import { pollOnEveryChange } from "./speed-features.ts";
 import { keepHostDocument } from "./host-document.ts";
 import { leaveKeptAppWithPage, noRouter } from "./page.ts";
 import { registry } from "./registry.ts";
-import { routesAheadEvent, type RoutesAheadNews } from "./routes-ahead-shared.ts";
+import {
+  modulesAheadEvent,
+  routesAheadEvent,
+  type ModulesAheadQuestion,
+  type RoutesAheadNews,
+} from "./routes-ahead-shared.ts";
 import { ssrLayer } from "./server-layers.ts";
 // With the speed feature `fastCrypto`, PBKDF2 of the page's `crypto.subtle` is
 // a stand-in that costs microseconds, for the app and the tests alike: see
@@ -52,8 +58,10 @@ export async function setUpTestFiles(setupFiles: readonly string[]): Promise<voi
   // own, which a `beforeEach` of the test file seeds before it renders.
   let clientFile = false;
   let keptDocument: (() => void) | undefined;
+  let modulesLoaded: (() => void) | undefined;
   // oxlint-disable-next-line no-empty-pattern
   beforeAll(async ({}, suite) => {
+    modulesLoaded = preloadModulesAhead(suite.file.filepath);
     nodeFiles = [...setupFiles, suite.file.filepath];
     clientFile = loadedAsClientFile(suite.file.filepath);
     if (clientFile) keptDocument = keepHostDocument((url) => reportError(noRouter(url)));
@@ -70,6 +78,7 @@ export async function setUpTestFiles(setupFiles: readonly string[]): Promise<voi
       await leaveKeptAppWithPage("the end of the test file");
     } finally {
       keptDocument?.();
+      modulesLoaded?.();
     }
   });
 
@@ -110,5 +119,65 @@ function compileRoutesAhead(testFile: string) {
     if (opened.has(entry)) return;
     opened.add(entry);
     tell({ testFile, opened: entry });
+  };
+}
+
+// Whether the tab has had its first test file: on the global of its realm,
+// which the modules a test file loads natively stay in.
+const modulesAheadOf = Symbol.for("vitest-plugin-rsc modules ahead");
+
+// The modules that the server layers of the page import natively in the first
+// test file of a tab, as the run before had them: preloaded at once as its
+// hooks start, with `modulepreload`, which fetches and compiles a module but
+// does not evaluate it, so the page imports each one as before, in its own
+// order. Not before: a module is what the page gets for its URL once the
+// mocks of the setup files and of the test file are in place, which they are
+// once Vitest has collected the file. And only what the file loads from then
+// on: not the test file and its imports, which are the page's own. Returns
+// what tells the dev server, once the file is done, which modules it loaded;
+// nothing for a later file of the tab, which has them. A DOM of Node.js loads
+// no link, and imports none of them over HTTP. See routes-ahead.ts. Without
+// an answer to wait for.
+function preloadModulesAhead(testFile: string): (() => void) | undefined {
+  const realm = globalThis as { [modulesAheadOf]?: true };
+  if (!pageHost.loadsStylesheets || realm[modulesAheadOf]) return;
+  realm[modulesAheadOf] = true;
+  const preloaded = new Set<string>();
+  // By path, as the port of the dev server is the run's.
+  const loaded = new Set<string>();
+  const record = (entries: PerformanceEntryList) => {
+    for (const entry of entries as PerformanceResourceTiming[]) {
+      const url = new URL(entry.name);
+      if (url.origin !== location.origin || entry.responseStatus >= 400) continue;
+      // A module that a module imports, or one preloaded: not a stylesheet,
+      // or what the page fetches.
+      if (entry.initiatorType === "script" || preloaded.has(entry.name)) {
+        loaded.add(url.pathname + url.search);
+      }
+    }
+  };
+  const observer = new PerformanceObserver((list) => record(list.getEntries()));
+  observer.observe({ type: "resource" });
+  askDevServer<string[]>(modulesAheadEvent, {} satisfies ModulesAheadQuestion).then(
+    (modules) => {
+      for (const path of modules) {
+        const link = document.createElement("link");
+        link.rel = "modulepreload";
+        link.href = new URL(path, location.origin).href;
+        preloaded.add(link.href);
+        // The module map has it from then on: the link has done its part.
+        const done = () => link.remove();
+        link.addEventListener("load", done, { once: true });
+        link.addEventListener("error", done, { once: true });
+        document.head.append(link);
+      }
+    },
+    () => {},
+  );
+  return () => {
+    record(observer.takeRecords());
+    observer.disconnect();
+    const news: ModulesAheadQuestion = { loaded: { testFile, modules: [...loaded] } };
+    askDevServer(modulesAheadEvent, news).catch(() => {});
   };
 }
