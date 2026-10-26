@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { isBuiltin } from "node:module";
 import path from "node:path";
 import type { Plugin } from "rolldown";
-import { defineConfig } from "tsdown";
+import { defineConfig, type UserConfig } from "tsdown";
 
 const dts = { sourcemap: process.argv.slice(2).includes("--sourcemap") };
 
@@ -103,75 +103,144 @@ const licenses: Plugin = {
   },
 };
 
+// What the two builds of the package's own modules have in common.
+const ownBuild = {
+  format: ["esm"],
+  fixedExtension: false,
+  deps: {
+    neverBundle: [
+      /^virtual:/,
+      /^@vitejs\/plugin-rsc\/vendor\//,
+      /^vitest(\/|$)/,
+      "happy-dom",
+      // Left as this import in dist: it resolves to the entry of its own,
+      // dist/nextjs/node-rendered.js, with its "use client". See rsc.ts.
+      "vitest-plugin-rsc/nextjs/node-rendered",
+    ],
+  },
+  inputOptions: {
+    onLog(level, log, handler) {
+      // The file of a directive is an entry of its own, so the directive
+      // stays at its top: dist/nextjs/server-action.js and node-rendered.js.
+      if (
+        log.code === "MODULE_LEVEL_DIRECTIVE" &&
+        /(server-action|node-rendered)\.tsx?$/.test(log.id ?? "")
+      ) {
+        return;
+      }
+      handler(level, log);
+    },
+  },
+  dts,
+} satisfies UserConfig;
+
+// What a page loads in its `client` environment, the page and the rsc layer,
+// is a build of its own, with a chunk per layer of the plugin: not one for
+// every set of entries that shares a module, which had the setup file load
+// 19 files from a dev server that serves every page at once, and 7 now. A
+// module goes in the chunk of the first layer whose entries reach it, so a
+// chunk imports only those of the layers before it, and an entry loads what
+// the entries of its own layer and those before it load. What one entry
+// alone has stays in its file, and so does setup.ts, which only the setup
+// files import (see the entries): no layer reaches it.
+const pageLayers = {
+  // What the page's own imports load back: its host, by
+  // `virtual:vitest-plugin-rsc/page-host`, and `node:async_hooks`.
+  "page-base": ["browser-host.ts", "node-host.ts", "async-hooks.ts"],
+  // Every page's, with Next.js or without.
+  page: ["testing-library.tsx"],
+  // The rsc layer's, which the testing library loads as it evaluates
+  // (`rscLayer()`), so not in its chunk, which would wait for itself.
+  "next-server": ["nextjs/rsc.ts", "nextjs/server-action.ts", "nextjs/prerender-verdict.ts"],
+  // A host's, which renders its own files, without a layer of Next's server.
+  "next-host": ["nextjs/client-components.ts", "nextjs/internal.ts"],
+  // An app's: the testing library.
+  "next-app": ["nextjs/index.ts"],
+};
+const pageLayerOf = new Map<string, string>();
+const pageLayersPlugin: Plugin = {
+  name: "page-layers",
+  buildEnd() {
+    pageLayerOf.clear();
+    for (const [layer, entries] of Object.entries(pageLayers)) {
+      const ids = entries.map((entry) => path.join(import.meta.dirname, "src", entry));
+      for (let id = ids.pop(); id !== undefined; id = ids.pop()) {
+        if (pageLayerOf.has(id) || !path.isAbsolute(id)) continue;
+        pageLayerOf.set(id, layer);
+        ids.push(...(this.getModuleInfo(id)?.importedIds ?? []));
+      }
+    }
+  },
+};
+
 export default defineConfig([
+  // The plugin, and what the other environments of a page load: the ssr
+  // layer and the browser layer, which have modules of their own. What this
+  // build shares with the page's, like page-protocol.ts, is in both: the
+  // plugin's process and a page are realms of their own.
   {
+    ...ownBuild,
     entry: [
       "src/index.ts",
+      // Vitest's environment of a project with happy-dom: see the file.
+      "src/happy-dom-environment.ts",
+      // Under the `node` condition of its export: see the file.
+      "src/async-hooks-node.ts",
+      "src/testing-library-client.tsx",
+      "src/nextjs/plugin.ts",
+      "src/nextjs/adapter.ts",
+      "src/nextjs/ssr.ts",
+      "src/nextjs/client.tsx",
+      // A thread of its own: see src/nextjs/project/env.ts.
+      "src/nextjs/project/env-worker.ts",
+      // A file of its own: Vite RSC compiles the module of a "use client"
+      // directive.
+      "src/nextjs/node-rendered.tsx",
+    ],
+    // The page the tests run in, next to the plugin that names it.
+    copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],
+    // The package's own modules of Node.js stay imports by name, as in
+    // node-server.ts: see `ownModules`.
+    plugins: [ownModules],
+  },
+  // What a page loads in its `client` environment: see `pageLayers`.
+  {
+    ...ownBuild,
+    entry: [
       // Imported by their files: see `pageHostId` of src/index.ts.
       "src/browser-host.ts",
       "src/node-host.ts",
-      // Vitest's environment of a project with happy-dom: see the file.
-      "src/happy-dom-environment.ts",
       "src/async-hooks.ts",
-      // Under the `node` condition of its export: see the file.
-      "src/async-hooks-node.ts",
       "src/testing-library.tsx",
-      "src/testing-library-client.tsx",
       "src/nextjs/index.ts",
       "src/nextjs/client-components.ts",
-      "src/nextjs/plugin.ts",
-      "src/nextjs/adapter.ts",
       // The setup files: with what both of them run, setup.ts, in a chunk
       // that only they import, the only files of the build that import
       // Vitest.
       "src/nextjs/setup-browser.ts",
       "src/nextjs/setup-node.ts",
       "src/nextjs/rsc.ts",
-      "src/nextjs/ssr.ts",
-      "src/nextjs/client.tsx",
       // Imported by its file, with `build: "production"`: see `prerenderId`
       // of src/nextjs/plugin.ts.
       "src/nextjs/prerender-verdict.ts",
       "src/nextjs/internal.ts",
-      // A thread of its own: see src/nextjs/project/env.ts.
-      "src/nextjs/project/env-worker.ts",
-      // Files of their own: Vite RSC compiles the module of a "use server" or
-      // a "use client" directive.
+      // A file of its own: Vite RSC compiles the module of a "use server"
+      // directive.
       "src/nextjs/server-action.ts",
-      "src/nextjs/node-rendered.tsx",
     ],
-    // The page the tests run in, next to the plugin that names it.
-    copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],
-    format: ["esm"],
-    fixedExtension: false,
-    // The package's own modules of Node.js stay imports by name, as in
-    // node-server.ts: see `ownModules`.
-    plugins: [ownModules],
-    deps: {
-      neverBundle: [
-        /^virtual:/,
-        /^@vitejs\/plugin-rsc\/vendor\//,
-        /^vitest(\/|$)/,
-        "happy-dom",
-        // Left as this import in dist: it resolves to the entry of its own,
-        // dist/nextjs/node-rendered.js, with its "use client". See rsc.ts.
-        "vitest-plugin-rsc/nextjs/node-rendered",
-      ],
-    },
-    inputOptions: {
-      onLog(level, log, handler) {
-        // The file of a directive is an entry of its own, so the directive
-        // stays at its top: dist/nextjs/server-action.js and node-rendered.js.
-        if (
-          log.code === "MODULE_LEVEL_DIRECTIVE" &&
-          /(server-action|node-rendered)\.tsx?$/.test(log.id ?? "")
-        ) {
-          return;
-        }
-        handler(level, log);
+    plugins: [ownModules, pageLayersPlugin],
+    outputOptions: {
+      codeSplitting: {
+        // What one entry alone has stays in its file.
+        minShareCount: 2,
+        // The first layer first, before a later one takes what it imports.
+        groups: Object.keys(pageLayers).map((layer, index, layers) => ({
+          name: layer,
+          test: (id: string) => pageLayerOf.get(id) === layer,
+          priority: layers.length - index,
+        })),
       },
     },
-    dts,
   },
   // Loaded by Vitest, by their paths: the pool of a page in a worker of
   // Node.js and the entry of its worker, see src/worker-pool.ts. Files of
