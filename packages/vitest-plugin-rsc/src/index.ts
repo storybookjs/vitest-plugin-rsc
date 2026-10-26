@@ -522,7 +522,17 @@ function isDependency(environment: DevEnvironment, id: string): boolean {
 // code. They are also what takes Vite longest when it compiles a pre-bundled
 // dependency for a module runner. So a dependency goes without. An error in
 // one is reported at its place in the compiled dependency.
+//
+// The browser gets a module over HTTP with its source map in it too, which
+// Vite encodes again for every response, and every page asks for every
+// module. Without a source map there goes what has none to lose: a
+// pre-bundled dependency, which keeps the URL of its own map file, where
+// Vitest's `import()` of the page would give it one of the bundle itself;
+// and this package's built files and virtual modules, for each of which Vite
+// would make one of the module itself.
 function dependencySourceMapPlugin(): Plugin {
+  const builtDir = `${normalizePath(path.resolve(path.dirname(ownFile("index")), "../dist"))}/`;
+  const virtualPrefix = "\0virtual:vitest-plugin-rsc/";
   return {
     name: "rsc:dependency-source-map",
     // Before a plugin with a source map of its own, which Vite then drops
@@ -531,8 +541,13 @@ function dependencySourceMapPlugin(): Plugin {
     transform(code, id) {
       const { environment } = this;
       const { consumer, dev } = environment.config;
-      if (environment.mode !== "dev" || consumer !== "client" || !dev.moduleRunnerTransform) return;
-      if (!isDependency(environment, id)) return;
+      if (environment.mode !== "dev" || consumer !== "client") return;
+      const withoutSourceMap = dev.moduleRunnerTransform
+        ? isDependency(environment, id)
+        : !!environment.depsOptimizer?.isOptimizedDepFile(id) ||
+          id.startsWith(builtDir) ||
+          id.startsWith(virtualPrefix);
+      if (!withoutSourceMap) return;
       // What Rollup takes for a module without a source map. Vite keeps the
       // source map of the file when a module comes out of its plugins as it
       // went in, so it does not: a line more at the end moves nothing.

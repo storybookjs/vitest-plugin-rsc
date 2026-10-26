@@ -133,6 +133,45 @@ describe("node:async_hooks", () => {
   });
 });
 
+describe("the source maps of the page's modules", () => {
+  const transform = getHookHandler(getPlugin("rsc:dependency-source-map").transform);
+  const builtFile = normalizePath(
+    fileURLToPath(new URL("../dist/node/stream.js", import.meta.url)),
+  );
+  // A browser's environment, or one of a layer that a module runner runs.
+  const environmentOf = (moduleRunnerTransform: boolean) => ({
+    mode: "dev",
+    config: { consumer: "client", dev: { moduleRunnerTransform } },
+    depsOptimizer: { isOptimizedDepFile: (id: string) => id.includes("/.vite/deps/") },
+  });
+  const mapOf = (id: string, moduleRunnerTransform = false) =>
+    (
+      transform.call({ environment: environmentOf(moduleRunnerTransform) } as never, "x", id) as {
+        map?: unknown;
+      } | void
+    )?.map;
+
+  test("in a browser, are none for a pre-bundled dependency and this package's own", () => {
+    for (const id of [
+      "/app/node_modules/.vite/deps/react.js?v=1",
+      builtFile,
+      "\0virtual:vitest-plugin-rsc/next-manifest",
+    ]) {
+      expect(mapOf(id)).toEqual({ mappings: "" });
+    }
+  });
+
+  test("in a browser, stay for the app's modules and a dependency that is not bundled", () => {
+    expect(mapOf("/app/src/page.tsx")).toBeUndefined();
+    expect(mapOf("/app/node_modules/msw/lib/core/index.mjs")).toBeUndefined();
+  });
+
+  test("of a layer, are none for any dependency", () => {
+    expect(mapOf("/app/node_modules/msw/lib/core/index.mjs", true)).toEqual({ mappings: "" });
+    expect(mapOf("/app/src/page.tsx", true)).toBeUndefined();
+  });
+});
+
 function getPlugin(name: string): Plugin {
   const plugin = vitestPluginRSC().find((candidate) => candidate.name === name);
   if (!plugin) throw new Error(`Could not find ${name}.`);
