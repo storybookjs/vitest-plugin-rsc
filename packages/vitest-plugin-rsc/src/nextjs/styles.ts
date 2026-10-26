@@ -289,6 +289,8 @@ export type StylesOptions = {
    * file of another host.
    */
   isHostFile(file: string): boolean;
+  /** Whether a file is of a package of the host, like Vitest's runtime. */
+  isHostPackageFile(file: string): boolean;
   /** The page routes, by the name of their modules. */
   pageRoutes(): Map<string, PageRoute>;
   /** The id of the entry of a page route in the rsc layer, by the name of its modules. */
@@ -460,6 +462,12 @@ export function createStyles(options: StylesOptions): Styles {
           // Compiling one as a module, which can be megabytes of binary data,
           // holds up the dev server for seconds.
           if (!isCode(imported.id, pageExtensions)) return;
+          // The host's runtime, which a host file imports, like `vitest`,
+          // links no stylesheet of the app. In a worker of Node.js it is
+          // Node's, not a module of the layer: compiling it there would
+          // have Vite's optimizer find what it imports, like `chai`, and
+          // bundle again as a test runs.
+          if (options.isHostPackageFile(imported.id.split("?")[0]!)) return;
           const loaded = imported.transformResult ? imported : await load(layer, imported.url);
           if (loaded) await follow(layer, loaded);
         }),

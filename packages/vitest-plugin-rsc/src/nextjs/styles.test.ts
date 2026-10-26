@@ -231,6 +231,7 @@ async function buildStylesheets(root: string, real: string, graph: Graph) {
     environments: { rsc: "client", ssr: "ssr", browser: "react_client" },
     isServerCode: (file) => !file.startsWith(`${root}/host/`),
     isHostFile: (file) => file.startsWith(`${root}/host/`),
+    isHostPackageFile: () => false,
     pageRoutes: () => new Map([["/app/notes/page", route as never]]),
     entryIdOf: () => "\0virtual:vitest-plugin-rsc/next-route/0",
     lists: [list],
@@ -423,6 +424,7 @@ test("names a file of public/ with a query or a fragment in a stylesheet of a st
     environments: { rsc: "client", ssr: "next_ssr", browser: "react_client" },
     isServerCode: () => true,
     isHostFile: () => false,
+    isHostPackageFile: () => false,
     pageRoutes: () => new Map([["/page", route as never]]),
     entryIdOf: () => layout,
     lists: [],
@@ -491,6 +493,7 @@ test("lists the modules of every route in a static build, without what a segment
     environments: { rsc: "client", ssr: "next_ssr", browser: "react_client" },
     isServerCode: () => true,
     isHostFile: () => false,
+    isHostPackageFile: () => false,
     pageRoutes: () => new Map([["/page", { kind: "page", page: "/page" } as never]]),
     entryIdOf: () => entry,
     lists: [list],
@@ -522,4 +525,62 @@ test("lists the modules of every route in a static build, without what a segment
   for (const file of ["lazy.js", "shared.js", "list.js"]) {
     expect(listed).not.toContain(chunkOf(file));
   }
+});
+
+// The walk of a route compiles what its files import, for the stylesheets in
+// it: not the host's runtime, like the `vitest` of a test file or a setup
+// file. In a worker of Node.js that runtime is Node's, and compiling it in
+// the rsc layer has Vite's optimizer find what it imports, like `chai`, as a
+// test runs: it bundles again, and the page has two copies of a package.
+test("compiles no module of the host's runtime that a route reaches", async () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-host-")));
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  const files = {
+    "app/layout.js": `import "host-kit";\nimport "./shared.js";\nexport default function Layout() {}\n`,
+    "app/shared.js": `export const shared = 1;\n`,
+    "node_modules/host-kit/package.json": `{ "name": "host-kit", "type": "module", "main": "index.js" }`,
+    "node_modules/host-kit/index.js": `export const kit = 1;\n`,
+  };
+  for (const [name, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+    fs.writeFileSync(path.join(root, name), content);
+  }
+  const layout = path.join(root, "app/layout.js");
+  const styles = createStyles({
+    getProject: () =>
+      ({
+        root,
+        assetPath: "/_next/",
+        config: {},
+        loadRouteEntry: async () => ({
+          segments: [{ file: layout, stylesheetsKey: "app/layout" }],
+        }),
+      }) as unknown as NextProject,
+    environments: { rsc: "client", ssr: "next_ssr", browser: "react_client" },
+    isServerCode: () => true,
+    isHostFile: () => false,
+    isHostPackageFile: (file) => file.startsWith(`${root}/node_modules/host-kit/`),
+    pageRoutes: () => new Map([["/page", { kind: "page", page: "/page" } as never]]),
+    entryIdOf: () => layout,
+    lists: [],
+  });
+  const manager = { isScanBuild: false, clientReferenceMetaMap: {} };
+  const vite = await createServer({
+    root,
+    configFile: false,
+    logLevel: "silent",
+    server: { middlewareMode: true, ws: false },
+    optimizeDeps: { noDiscovery: true },
+    // As vitestPluginRSC() has it: only the walk compiles ahead.
+    environments: { client: { dev: { preTransformRequests: false } } },
+    plugins: [{ name: "rsc:minimal", api: { manager } }, ...styles.plugins],
+  });
+  onTestFinished(() => vite.close());
+
+  await styles.compileRoute(vite, "/page");
+
+  const graph = vite.environments.client!.moduleGraph;
+  expect(graph.getModuleById(path.join(root, "app/shared.js"))?.transformResult).toBeTruthy();
+  const kit = graph.getModuleById(path.join(root, "node_modules/host-kit/index.js"));
+  expect(kit?.transformResult ?? null).toBeNull();
 });
