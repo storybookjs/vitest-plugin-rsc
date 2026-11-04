@@ -412,13 +412,13 @@ Of the 1139 tests that apply, 968 pass: **85%**.
 
 </details>
 
-<details><summary>1 × A navigation while a Server Action is in flight, or a navigation to a page that renders for seconds, right after the router prefetched its loading state: the prefetch waits behind the navigation, and the router waits for the prefetch before it shows the loading state. The server handles one request at a time.</summary>
+<details><summary>1 × A navigation while a Server Action is in flight: the navigation waits behind the action. The server handles one request at a time.</summary>
 
 - `actions`: app-dir action handling › should not block navigation events while a server action is in flight
 
 </details>
 
-<details><summary>1 × A navigation to a page that the build would prerender, after the router prefetched it: a prefetch never prerenders a route, so the prefetch renders the page as a dynamic one, and the navigation, the route's first, prerenders it once more. The router keeps the metadata of the prefetch and shows the page of the navigation, two renders with a `cache()` and a `Math.random()` of their own. `next build` prerenders the page once, and the prefetch and the navigation get that one render.</summary>
+<details><summary>1 × A navigation to a page that the build would prerender, after the router prefetched its metadata: a prefetch never prerenders a route, so `generateMetadata` runs in a render of the prefetch, as for a dynamic route, and the navigation prerenders the page in another. The router keeps the metadata it prefetched and shows the page of the navigation: two renders, each with a `cache()` and a `Math.random()` of its own. `next start` serves the prefetch and the navigation from the build's one prerender.</summary>
 
 - `metadata`: app dir - metadata › react cache › should have same title and page value when navigating
 
@@ -691,17 +691,17 @@ Of the 1139 tests that apply, 968 pass: **85%**.
 
 ## What The Results Say
 
-Where the plugin runs something, it runs it as Next does: every one of the 956 tests that are neither a missing feature nor out of reach passes. What does not pass is something the plugin does not do at all, or something a test in a browser cannot see.
+Where the plugin runs something, it runs it as Next does: every one of the 968 tests that are neither a missing feature nor out of reach passes. What does not pass is something the plugin does not do at all, or something a test in a browser cannot see.
 
 **Bugs: none.** The new fixtures found 11 tests of 5 causes, all fixed in this round: two `Set-Cookie` headers of one rule of `headers()` in `next.config`, a promise of a Server Action passed to `after()` that reads a request API once the action is done, what the proxy hands to `waitUntil()`, which now has its request stores, and two modules that the ssr layer had as Next's edge runtime has them, `react-dom/server` for a Client Component that calls `renderToStaticMarkup()` and `next/router` in a Server Component. Underneath the `react-dom/server` fix was a second copy of the package's `AsyncLocalStorage` in the pre-bundled dependencies of the ssr layer, which lost the `Link` headers of `preload()`; a page now has one, for every layer. `conformance/expectations.json` has no test that fails for a bug in the plugin.
 
-**Not Yet: 191 tests.** The largest cause is more than half of them: **a page that a build prerenders**, 118 tests, 101 of them in the fixtures of `"use cache"` and Cache Components. `next build` renders such a page once and keeps it, and here every request renders its page: see "The Node.js Runtime" in `docs/next-routes.md`. Then **the Pages Router**, 31 tests: fixtures of the App Router have a `pages/` directory to test the two together, its pages and its API routes. Then `ImageResponse` of `next/og`, 12 tests.
+**Not Yet: 171 tests.** The largest cause is more than half of them: **a page that a build prerenders**, 103 tests, nearly all in the fixtures of `"use cache"` and Cache Components. `next build` prerenders such a page before the first request, and here it is prerendered at its first request: a test that reads what the build logged, or a page kept from an earlier test, which `cleanup()` forgets, sees the difference, and so does the static shell of a page with Cache Components, which Next prerenders in stages that the plugin does not run. See "The Node.js Runtime" in `docs/next-routes.md`. Then **the Pages Router**, 31 tests: fixtures of the App Router have a `pages/` directory to test the two together, its pages and its API routes. Then `ImageResponse` of `next/og`, 11 tests.
 
-Three causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the chunks and the minified CSS of a build (3 tests), and a path that `dynamicParams = false` leaves out, which Next answers 404 for from the paths its build prerendered (1).
+Three causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the chunks and the minified CSS of a build (3 tests), and the metadata of a page that the build would prerender, after the router prefetched it, which comes from another render than the page (1).
 
-**Not applicable: 164 tests.** The largest causes are the output of a build (37), another app than the fixture's, with files or a `next.config` of its own (32), a test that itself needs Node.js (16) or changes a file of the app (16), `createRouterAct()` of Next's test library (14), and JavaScript off (13).
+**Not applicable: 172 tests.** The largest causes are the output of a build (37), another app than the fixture's, with files or a `next.config` of its own (32), a test that itself needs Node.js (17), what the Next.js CLI prints (17), a test that changes a file of the app (16), `createRouterAct()` of Next's test library (14), and JavaScript off (13).
 
-**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 38 of their 48 tests pass. Of the 10 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, and 2 cannot run in a browser.
+**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 40 of their 48 tests pass. Of the 8 that do not, 6 ask for an API route of the Pages Router, and 2 cannot run in a browser.
 
 **CSS.** 23 fixtures are Next's own tests of CSS: global CSS and CSS modules, their order, client navigation, parallel routes, `next/dynamic`, inline CSS, the pure mode of a CSS module, Sass, Tailwind 3 and 4, a PostCSS config with plugins of its own, and an MDX page with `@next/mdx`. The runner installs the packages their tests install, and links Tailwind 4 into the copy of the one fixture that asks for it, as it has Tailwind 3 under the name. 66 of their 77 tests pass, and none fails for a bug of the plugin. Of the 11 that do not, 3 give each test a `next.config` of its own, for `experimental.lightningCssFeatures`, 2 count the stylesheets of a page, which Next's build puts in chunks and the run does not yet, 2 ask for the Pages Router, 1 reads a file with Node.js, 1 expects CSS that Next's build minified, which the run does not yet, 1 counts what Tailwind logs as the build compiles, and 1 expects the CSS of a component of `next/dynamic` from Next's manifest of dynamic imports. Of `scss`, a directory of 40 apps, only `scss-mixins` has an `app/`; the others are apps of the Pages Router and do not run here. Nor do three more of Next's fixtures for CSS: one builds its app out of files its test names, two only Turbopack runs. `conformance/src/fixtures.ts` says which.
 
