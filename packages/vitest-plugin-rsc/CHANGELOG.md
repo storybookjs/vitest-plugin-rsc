@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0-alpha.2](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.4.0-alpha.1...v0.4.0-alpha.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* a route handler that also takes a POST is not prerendered, as in next build ([#333](https://github.com/storybookjs/vitest-plugin-rsc/issues/333)) ([b36ed76](https://github.com/storybookjs/vitest-plugin-rsc/commit/b36ed76010500162a5515e0fb92b0ef7de2b58eb))
+
 ## [0.4.0-alpha.1](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.4.0-alpha.0...v0.4.0-alpha.1) (2026-11-04)
 
 
