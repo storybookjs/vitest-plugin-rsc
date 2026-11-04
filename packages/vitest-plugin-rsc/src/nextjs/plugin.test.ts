@@ -505,7 +505,7 @@ test("gives Next's module for the asset prefix of its dev server no prefix: ther
   const app = path.join(nextDir, "dist/esm/client/dev/hot-reloader/app");
   const bootstrap = path.join(nextDir, "dist/esm/client/app-bootstrap.js");
 
-  // Next 16.5 imports it from its WebSocket module, and its entry requires it.
+  // Next 16.4.4 imports it from its WebSocket module, and its entry requires it.
   // The module reads `document.currentScript`, which is null when Next's
   // router first imports it, on a navigation. The dependency optimizer names
   // a file by its path, and Next's CommonJS build has it too.
