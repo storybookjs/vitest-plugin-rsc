@@ -156,10 +156,32 @@ test("leaves a route handler without a `GET` to every request, also with Cache C
   Object.assign(nextConfig, { cacheComponents: true });
   try {
     expect(await verdict({ POST })).toBeUndefined();
-    expect(await verdict({ POST, GET: () => Response.json({}) })).toEqual({
+    expect(await verdict({ GET: () => Response.json({}) })).toEqual({
       pathnames: ["/api/revalidate"],
     });
   } finally {
     Object.assign(nextConfig, { cacheComponents: undefined });
   }
 });
+
+test.for(["POST", "PUT", "DELETE", "PATCH", "OPTIONS"])(
+  "leaves a route handler with a `GET` and a `%s` to every request, also with Cache Components",
+  async (method) => {
+    const GET = () => Response.json({});
+    const handler = () => new Response(null, { status: 204 });
+    const verdict = (userland: Module) =>
+      prerenderVerdictOf(routeEntry("/api/notes", userland) as never, "/api/notes", "route");
+    const { nextConfig } = await import("virtual:vitest-plugin-rsc/next-manifest");
+
+    // The build's prerender throws before it calls the `GET`, and `next
+    // start` runs every request, so the first one may be the `POST`.
+    expect(await verdict({ GET, [method]: handler, revalidate: 60 })).toBeUndefined();
+    expect(await verdict({ GET, [method]: handler, dynamic: "force-static" })).toBeUndefined();
+    Object.assign(nextConfig, { cacheComponents: true });
+    try {
+      expect(await verdict({ GET, [method]: handler })).toBeUndefined();
+    } finally {
+      Object.assign(nextConfig, { cacheComponents: undefined });
+    }
+  },
+);

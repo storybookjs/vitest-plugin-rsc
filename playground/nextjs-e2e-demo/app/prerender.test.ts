@@ -122,6 +122,19 @@ test("answers another method than GET with 405 for a kept route handler, as next
   }
 });
 
+test("runs every request of a route handler that also takes a POST, as next start does", async () => {
+  // The build does not prerender a route handler with a `POST`, so the first
+  // request, a `POST`, is not answered with 405, and its `GET` is never kept.
+  const posted = await request("/prerendered/posted", { method: "POST", body: "note" });
+  const first = await request("/prerendered/posted");
+  const second = await request("/prerendered/posted");
+
+  expect(posted.status).toBe(200);
+  expect(JSON.parse(posted.text)).toMatchObject({ posted: "note" });
+  expect(JSON.parse(second.text).random).not.toBe(JSON.parse(first.text).random);
+  expect([first.cache, second.cache]).toEqual([null, null]);
+});
+
 test("renders a route handler that reads the request at every request", async () => {
   const first = await request("/prerendered/time", { headers: { cookie: "theme=dark" } });
   const second = await request("/prerendered/time", { headers: { cookie: "theme=light" } });
