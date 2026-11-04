@@ -8,18 +8,18 @@ It is not a part of `pnpm test`. It fetches from GitHub, and a run takes minutes
 
 <!-- conformance:results:start -->
 
-Measured against `next@16.4.0`, with `pnpm conformance --docs`.
+Measured against `next@16.4.5`, with `pnpm conformance --docs`.
 
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |          1311 |
-| **Pass**                                            | **956** (73%) |
+| **Pass**                                            | **968** (74%) |
 | Fail: a bug in the plugin                           |             0 |
-| Fail: Not Yet                                       |           191 |
-| Fail: not applicable                                |           164 |
+| Fail: Not Yet                                       |           171 |
+| Fail: not applicable                                |           172 |
 | Skipped by the test itself, for a run like this one |            16 |
 
-Of the 1147 tests that apply, 956 pass: **83%**.
+Of the 1139 tests that apply, 968 pass: **85%**.
 
 ### Per Fixture
 
@@ -39,7 +39,7 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 | `navigation-redirect-import`                              |   1 of 1 |     |         |     |         |
 | `navigation-with-queued-actions`                          |   1 of 1 |     |         |     |         |
 | `router-autoscroll`                                       | 20 of 20 |     |         |     |       1 |
-| `root-layout`                                             |   7 of 8 |     |       1 |     |         |
+| `root-layout`                                             |   8 of 8 |     |         |     |         |
 | `root-layout-redirect`                                    |   1 of 1 |     |         |     |         |
 | `root-layout-render-once`                                 |   1 of 1 |     |         |     |         |
 | `app-edge-root-layout`                                    |   1 of 2 |     |         |   1 |         |
@@ -50,7 +50,7 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 | `rsc-redirect`                                            |   2 of 2 |     |         |     |         |
 | `search-params-react-key`                                 |   1 of 1 |     |         |     |         |
 | `searchparams-reuse-loading`                              |  5 of 12 |     |       2 |   5 |         |
-| `searchparams-static-bailout`                             |   3 of 5 |     |       2 |     |         |
+| `searchparams-static-bailout`                             |   5 of 5 |     |         |     |         |
 | `multi-value-search-params-stale`                         |   1 of 1 |     |         |     |         |
 | `rewrite-with-search-params`                              |   0 of 1 |     |         |   1 |         |
 | `app-client-cache/fixtures/regular`                       | 10 of 10 |     |         |     |         |
@@ -113,7 +113,7 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 | **Metadata**                                              |          |     |         |     |         |
 | `metadata`                                                | 44 of 49 |     |       2 |   3 |         |
 | `metadata-navigation`                                     |   7 of 7 |     |         |     |         |
-| `metadata-dynamic-routes`                                 | 15 of 27 |     |       6 |   6 |         |
+| `metadata-dynamic-routes`                                 | 15 of 27 |     |       5 |   7 |         |
 | `metadata-dynamic-routes-async-deps`                      |   1 of 2 |     |       1 |     |         |
 | `metadata-font`                                           |   0 of 1 |     |       1 |     |         |
 | `metadata-icons-parallel-routes`                          |   5 of 5 |     |         |     |         |
@@ -125,7 +125,7 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 | `metadata-svg-icon`                                       |   1 of 1 |     |         |     |         |
 | `sitemap-group`                                           |   2 of 2 |     |         |     |         |
 | **next/font**                                             |          |     |         |     |         |
-| `next-font`                                               | 12 of 16 |     |       4 |     |         |
+| `next-font`                                               | 16 of 16 |     |         |     |         |
 | `mdx-font-preload`                                        |   3 of 3 |     |         |     |         |
 | **next/image**                                            |          |     |         |     |         |
 | `next-image`                                              | 10 of 11 |     |         |   1 |         |
@@ -161,7 +161,7 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 | `cache-components`                                        | 16 of 75 |     |      58 |   1 |       5 |
 | `cache-components-bot-ua`                                 |   1 of 1 |     |         |     |         |
 | `cache-components-prerender-matrix`                       | 23 of 60 |     |      37 |     |         |
-| `use-cache`                                               | 42 of 59 |     |       9 |   8 |         |
+| `use-cache`                                               | 43 of 59 |     |       8 |   8 |         |
 | `use-cache-custom-handler`                                |  9 of 11 |     |       1 |   1 |         |
 | `use-cache-default-handler-expire-zero`                   |   1 of 1 |     |         |     |         |
 | `use-cache-default-profile-expire-zero`                   |   2 of 2 |     |         |     |         |
@@ -177,7 +177,7 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 | **The proxy, rewrites, redirects, trailingSlash**         |          |     |         |     |         |
 | `app-middleware`                                          | 15 of 22 |     |       6 |   1 |         |
 | `rewrites-redirects`                                      | 14 of 14 |     |         |     |         |
-| `trailingslash`                                           |   6 of 8 |     |       2 |     |         |
+| `trailingslash`                                           |   8 of 8 |     |         |     |         |
 | `app-routes-trailing-slash`                               |   2 of 2 |     |         |     |         |
 | `redirect-rewrite-dynamic`                                |   1 of 2 |     |         |   1 |         |
 | **Cookies, headers, draft mode and after()**              |          |     |         |     |         |
@@ -185,15 +185,15 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 | `draft-mode-middleware`                                   |   1 of 2 |     |       1 |     |         |
 | `set-cookies`                                             |   2 of 5 |     |       3 |     |         |
 | `dynamic-requests`                                        |   2 of 2 |     |         |     |         |
-| `headers-static-bailout`                                  |   1 of 3 |     |       1 |   1 |         |
+| `headers-static-bailout`                                  |   2 of 3 |     |         |   1 |         |
 | `x-forwarded-headers`                                     |   2 of 4 |     |         |   2 |         |
 | `server-action-headers-redirect`                          |   1 of 1 |     |         |     |         |
-| `custom-cache-control`                                    |   7 of 9 |     |       2 |     |         |
+| `custom-cache-control`                                    |   8 of 9 |     |       1 |     |         |
 | `react-max-headers-length`                                |   1 of 4 |     |         |   3 |         |
 | `next-after-app`                                          | 26 of 34 |     |         |   8 |         |
-| `next-after-app-api-usage`                                | 22 of 28 |     |       6 |     |         |
+| `next-after-app-api-usage`                                | 22 of 28 |     |         |   6 |         |
 | `revalidate-tag-in-after`                                 |   1 of 1 |     |         |     |         |
-| `dynamic-data/fixtures/main`                              |   3 of 5 |     |       2 |     |         |
+| `dynamic-data/fixtures/main`                              |   3 of 5 |     |       1 |   1 |         |
 | `dynamic-data/fixtures/require-static`                    |   0 of 1 |     |         |   1 |         |
 | `dynamic-data/fixtures/cache-scoped`                      |   0 of 1 |     |         |   1 |         |
 | **Partial Prerendering and the segment cache**            |          |     |         |     |         |
@@ -205,13 +205,10 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 | `segment-cache/prefetch-partial-rsc`                      |   1 of 1 |     |         |     |         |
 | `segment-cache/stale-search-params-on-replace-regression` |   1 of 1 |     |         |     |         |
 
-### Not Yet: 191 Tests
+### Not Yet: 171 Tests
 
-<details><summary>118 × A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page.</summary>
+<details><summary>103 × A page that a build prerenders, which here is prerendered at its first request: a test that reads what the build logged as it prerendered, or what `NEXT_PHASE` is during the prerender (`phase-production-build`), or a page kept from an earlier test, which `cleanup()` forgets. Or the static shell of a page with Cache Components, which is prerendered in stages that the plugin does not run.</summary>
 
-- `searchparams-static-bailout`: searchparams-static-bailout › server component › should not bailout when not using searchParams
-- `searchparams-static-bailout`: searchparams-static-bailout › client component › should not bailout when not using searchParams
-- `metadata`: app dir - metadata › react cache › should have same title and page value when navigating
 - `cache-components`: cache-components › should partially prerender pages that use connection
 - `cache-components`: cache-components › should be able to pass connection as a promise to another component and trigger an intermediate Suspense boundary
 - `cache-components`: cache-components › should partially prerender pages that use cookies
@@ -307,26 +304,14 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 - `cache-components-prerender-matrix`: cache-components-prerender-matrix › dynamic-param/without-root-param/non-empty-shell › shares the entry at lang=fresh category=fresh id=fresh with a fresh lang value (lang excluded from the cache key)
 - `cache-components-prerender-matrix`: cache-components-prerender-matrix › dynamic-param/without-root-param/non-empty-shell › shares the entry at lang=fresh category=fresh id=fresh with a fresh category value (category excluded from the cache key)
 - `cache-components-prerender-matrix`: cache-components-prerender-matrix › dynamic-param/without-root-param/non-empty-shell › shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)
-- `use-cache`: use-cache › should send an SWR cache-control header based on the revalidate and expire values
 - `use-cache-custom-handler`: use-cache-custom-handler › should save a short-lived cache during prerendering at buildtime
 - `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate sitemaps with a metadata route handler that uses "use cache"
 - `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate multiple sitemaps with a metadata route handler that uses "use cache"
 - `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate robots.txt with a metadata route handler that uses "use cache"
 - `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate manifest.json with a metadata route handler that uses "use cache"
-- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=true)
-- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=false)
 - `draft-mode`: app dir - draft mode › in nodejs runtime › should not generate rand when draft mode disabled during next start
-- `headers-static-bailout`: headers-static-bailout › should not bailout when not using headers
-- `custom-cache-control`: custom-cache-control › should have default cache-control for app-ssg another
-- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › cannot be called in a prerendered page › with `dynamic = "error"`
-- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › cannot be called in a prerendered page › with `dynamic = "force-static"`
-- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › can be called in a prerendered route handler with `dynamic = "force-static"`
-- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › can be called in a prerendered route handler with `dynamic = "error" (but throw, because dynamic should error)`
-- `next-after-app-api-usage`: nextjs APIs in after() › draftMode status is readable, but cannot be changed › static page
-- `next-after-app-api-usage`: nextjs APIs in after() › draftMode status is readable, but cannot be changed › static route handler
 - `ppr-root-param-fallback`: ppr-root-param-fallback › should have use-cache content in fallback shells for all pregenerated locales
 - `dynamic-data__main`: dynamic-data › should render empty objects for dynamic APIs when rendering with force-static
-- `dynamic-data__main`: dynamic-data › should track dynamic apis when rendering app routes
 
 </details>
 
@@ -366,11 +351,10 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 
 </details>
 
-<details><summary>12 × An image that `ImageResponse` of `next/og` renders. Next renders it with WebAssembly and a font of its own, which it reads from its own files with `node:fs`, and the server's disk here has no file of the project.</summary>
+<details><summary>11 × An image that `ImageResponse` of `next/og` renders. Next renders it with WebAssembly and a font of its own, which it reads from its own files with `node:fs`, and the server's disk here has no file of the project. A metadata image route is one that `next build` prerenders: its prerender fails, and the route answers 500, with that error, which names `Geist-Regular.ttf`, in the output of the server.</summary>
 
 - `metadata-dynamic-routes`: app dir - metadata dynamic routes › social image routes › should render og image with opengraph-image dynamic routes
 - `metadata-dynamic-routes`: app dir - metadata dynamic routes › social image routes › should render og image with twitter-image dynamic routes
-- `metadata-dynamic-routes`: app dir - metadata dynamic routes › social image routes › should support params as argument in dynamic routes
 - `metadata-dynamic-routes`: app dir - metadata dynamic routes › icon image routes › should render icon with dynamic routes
 - `metadata-dynamic-routes`: app dir - metadata dynamic routes › icon image routes › should render apple icon with dynamic routes
 - `metadata-dynamic-routes`: app dir - metadata dynamic routes › should generate unique path for image routes under group routes
@@ -405,15 +389,6 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 
 </details>
 
-<details><summary>4 × Expects the HTML of a page that Next's build prerenders. Here the page renders for the request, as `next start` renders a dynamic page: React sends the `<link rel="preconnect">` of a font in the `Link` header, and a client navigation commits before the metadata that Next streams after the page.</summary>
-
-- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in page
-- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in layout
-- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in component
-- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in template
-
-</details>
-
 <details><summary>4 × Two requests at once, which Next lets share the work of a cached function, or a request while an earlier one regenerates a stale entry in the background. The server handles one request at a time, and a request waits up to a second for the background work of the one before it.</summary>
 
 - `use-cache`: use-cache › should dedupe a streaming cache across concurrent requests
@@ -437,9 +412,15 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 
 </details>
 
-<details><summary>1 × A navigation while a Server Action is in flight. The server handles one request at a time.</summary>
+<details><summary>1 × A navigation while a Server Action is in flight, or a navigation to a page that renders for seconds, right after the router prefetched its loading state: the prefetch waits behind the navigation, and the router waits for the prefetch before it shows the loading state. The server handles one request at a time.</summary>
 
 - `actions`: app-dir action handling › should not block navigation events while a server action is in flight
+
+</details>
+
+<details><summary>1 × A navigation to a page that the build would prerender, after the router prefetched it: a prefetch never prerenders a route, so the prefetch renders the page as a dynamic one, and the navigation, the route's first, prerenders it once more. The router keeps the metadata of the prefetch and shows the page of the navigation, two renders with a `cache()` and a `Math.random()` of their own. `next build` prerenders the page once, and the prefetch and the navigation get that one render.</summary>
+
+- `metadata`: app dir - metadata › react cache › should have same title and page value when navigating
 
 </details>
 
@@ -455,12 +436,6 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 
 </details>
 
-<details><summary>1 × A path that `generateStaticParams` does not list, of a route with `dynamicParams = false`. Next answers 404 for it from the paths its build prerendered. Here no build lists them, and the page renders.</summary>
-
-- `root-layout`: app-dir root layout › Should do a mpa navigation when switching root layout › should work with static routes
-
-</details>
-
 <details><summary>1 × A navigation of Next's router to a route handler that answers with JSON, which a browser shows in place of the app. The tab cannot leave the test, so the page stays, with an uncaught error.</summary>
 
 - `searchparams-reuse-loading`: searchparams-reuse-loading › when aliasing is skipped › should work for route handlers
@@ -473,7 +448,7 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 
 </details>
 
-### Not Applicable: 164 Tests
+### Not Applicable: 172 Tests
 
 <details><summary>37 × Reads the output of `next build`: a manifest, a chunk or a prerendered file in `.next`.</summary>
 
@@ -554,10 +529,33 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 
 </details>
 
-<details><summary>16 × The test itself needs Node.js: it starts a server, or removes a directory.</summary>
+<details><summary>17 × Reads what the Next.js CLI prints: the table of routes of a build, a warning when it starts, or what Tailwind logs as the build compiles the CSS.</summary>
+
+- `interception-dynamic-segment`: interception-dynamic-segment › should correctly prerender segments with generateStaticParams
+- `interception-dynamic-segment`: interception-dynamic-segment › should prerender a dynamic intercepted route
+- `metadata-static-file`: metadata-files-static-output-dynamic-route › should display static metadata files with "-" placeholder in build output
+- `no-double-tailwind-execution`: no-double-tailwind-execution › should run tailwind only once initially and per change
+- `revalidate-dynamic`: app-dir revalidate-dynamic › should correctly mark a route handler that uses revalidateTag as dynamic
+- `unstable-rethrow`: unstable-rethrow › should correctly mark the dynamic page as dynamic
+- `use-cache`: use-cache › should warn that the `experimental.useCache` config option is deprecated
+- `app-middleware`: app-dir with middleware › should warn when deprecated middleware file is used
+- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › cannot be called in a prerendered page › with `dynamic = "error"`
+- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › cannot be called in a prerendered page › with `dynamic = "force-static"`
+- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › can be called in a prerendered route handler with `dynamic = "force-static"`
+- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › can be called in a prerendered route handler with `dynamic = "error" (but throw, because dynamic should error)`
+- `next-after-app-api-usage`: nextjs APIs in after() › draftMode status is readable, but cannot be changed › static page
+- `next-after-app-api-usage`: nextjs APIs in after() › draftMode status is readable, but cannot be changed › static route handler
+- `dynamic-data__main`: dynamic-data › should track dynamic apis when rendering app routes
+- `dynamic-data__require-static`: dynamic-data with dynamic = "error" › error when the build when `dynamic = "error"` and dynamic data is read
+- `dynamic-data__cache-scoped`: dynamic-data inside cache scope › error when the build when accessing dynamic data inside a cache scope
+
+</details>
+
+<details><summary>17 × The test itself needs Node.js: it starts a server, or removes a directory.</summary>
 
 - `rewrite-with-search-params`: rewrite-with-search-params › should not contain params in search params after rewrite
 - `metadata`: app dir - metadata › icons › should support root level of favicon.ico
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › social image routes › should support params as argument in dynamic routes
 - `metadata-static-file`: metadata-files-static-output-dynamic-route › should serve static files when requested with placeholder for dynamic page
 - `metadata-static-file`: metadata-files-static-output-group-route › should serve static files when requested to its route for group page
 - `metadata-static-file`: metadata-files-static-output-intercepting-route › should serve static files when requested to its route for intercepting page
@@ -630,21 +628,6 @@ Of the 1147 tests that apply, 956 pass: **83%**.
 - `use-cache`: use-cache › should not read nor write cached data when draft mode is enabled › js disabled, with cookies
 - `use-cache`: use-cache › should not read nor write cached data when draft mode is enabled › js disabled, without cookies
 - `use-cache`: use-cache › should allow nested short-lived caches after connection()
-
-</details>
-
-<details><summary>10 × Reads what the Next.js CLI prints: the table of routes of a build, a warning when it starts, or what Tailwind logs as the build compiles the CSS.</summary>
-
-- `interception-dynamic-segment`: interception-dynamic-segment › should correctly prerender segments with generateStaticParams
-- `interception-dynamic-segment`: interception-dynamic-segment › should prerender a dynamic intercepted route
-- `metadata-static-file`: metadata-files-static-output-dynamic-route › should display static metadata files with "-" placeholder in build output
-- `no-double-tailwind-execution`: no-double-tailwind-execution › should run tailwind only once initially and per change
-- `revalidate-dynamic`: app-dir revalidate-dynamic › should correctly mark a route handler that uses revalidateTag as dynamic
-- `unstable-rethrow`: unstable-rethrow › should correctly mark the dynamic page as dynamic
-- `use-cache`: use-cache › should warn that the `experimental.useCache` config option is deprecated
-- `app-middleware`: app-dir with middleware › should warn when deprecated middleware file is used
-- `dynamic-data__require-static`: dynamic-data with dynamic = "error" › error when the build when `dynamic = "error"` and dynamic data is read
-- `dynamic-data__cache-scoped`: dynamic-data inside cache scope › error when the build when accessing dynamic data inside a cache scope
 
 </details>
 

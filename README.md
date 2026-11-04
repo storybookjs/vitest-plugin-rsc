@@ -45,7 +45,7 @@ That also makes it a nice loop for coding agents: edit, run, fix, repeat.
 
 ### Is it really Next.js?
 
-Yes. The plugin doesn't reimplement Next. It swaps the bundler for Vite and runs Next's runtime unchanged. To keep that honest, the repo runs Next's own e2e tests against the plugin: **402 of the 474 that apply pass (85%)** on `next@16.4.0`. Every failure is listed with a reason in the [conformance report](docs/internals/next-conformance.md). CI also tests against `next@latest` and `next@canary`.
+Yes. The plugin doesn't reimplement Next. It swaps the bundler for Vite and runs Next's runtime unchanged. To keep that honest, the repo runs Next's own e2e tests against the plugin: **968 of the 1139 that apply pass (85%)** on `next@16.4.5`. Every failure is listed with a reason in the [conformance report](docs/internals/next-conformance.md). CI also tests against `next@latest` and `next@canary`.
 
 ## Quick start
 
