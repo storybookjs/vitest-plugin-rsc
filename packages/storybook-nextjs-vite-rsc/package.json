@@ -1,6 +1,6 @@
 {
   "name": "@storybook/nextjs-vite-rsc",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "A Storybook framework for Next.js apps with React Server Components, on Vite and vitest-plugin-rsc.",
   "keywords": [
     "nextjs",
