@@ -62,7 +62,7 @@
     "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@d5523e646c9ffd61eddd2eec1efcbd12e428dce6",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
-    "next": "16.4.0",
+    "next": "16.4.5",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@d5523e646c9ffd61eddd2eec1efcbd12e428dce6",
