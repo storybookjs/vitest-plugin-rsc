@@ -7,14 +7,14 @@
     "test": "node --test \"src/*.test.ts\" \"shim/*.test.ts\""
   },
   "dependencies": {
-    "@next/routing": "16.4.0",
-    "next": "16.4.0",
+    "@next/routing": "16.4.5",
+    "next": "16.4.5",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
   "devDependencies": {
     "@mdx-js/loader": "2.3.0",
-    "@next/mdx": "16.4.0",
+    "@next/mdx": "16.4.5",
     "@picocss/pico": "1.5.7",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^24.12.4",

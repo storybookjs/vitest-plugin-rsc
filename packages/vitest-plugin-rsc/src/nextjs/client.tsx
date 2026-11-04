@@ -182,9 +182,9 @@ export async function start(
           resolve();
         };
         // What Next's `app-next.js` does, minus the webpack chunk loading. No
-        // `instrumentation-client` modules yet. Next 16.4 passes the asset
-        // prefix, and its `hydrate()` takes it; from 16.5 neither does, and
-        // the prefix it is passed is undefined.
+        // `instrumentation-client` modules yet. Next up to 16.4.3 passes the
+        // asset prefix, and its `hydrate()` takes it; from 16.4.4 neither does,
+        // and the prefix it is passed is undefined.
         appBootstrap((assetPrefix?: string) => {
           (hydrate as (instrumentationModules: never, assetPrefix?: string) => Promise<void>)(
             [] as never,

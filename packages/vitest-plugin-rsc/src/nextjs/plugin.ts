@@ -193,7 +193,7 @@ export function extractInfoFromServerReferenceId(id) {
 }
 `;
 
-// Since Next 16.5 a module of Next reads the asset prefix of the dev
+// Since Next 16.4.4 a module of Next reads the asset prefix of the dev
 // server's WebSocket when it is evaluated, off `document.currentScript`. Next's
 // entry evaluates it first, on the dev server. Without the dev server Next's
 // router imports it on its first navigation, where nothing runs as a script,

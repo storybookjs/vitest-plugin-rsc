@@ -127,7 +127,7 @@
       "failed": {}
     },
     "navigation": {
-      "passed": 41,
+      "passed": 42,
       "failed": {
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in pages": "pages-router",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url": "another-origin",
@@ -139,8 +139,7 @@
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not contain _rsc query while navigating from pages to app": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not omit the hash while navigating from app to pages": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not continously initiate a mpa navigation to the same URL when router state changes": "page-load-requests",
-        "navigation.test.ts > app dir - navigation > browser back after a push followed by a refresh > should load the previous page": "shared-history",
-        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch was pending": "verdict-at-first-request"
+        "navigation.test.ts > app dir - navigation > browser back after a push followed by a refresh > should load the previous page": "shared-history"
       }
     },
     "shallow-routing": {
@@ -531,10 +530,8 @@
       "failed": {}
     },
     "router-autoscroll": {
-      "passed": 19,
-      "failed": {
-        "router-autoscroll.test.ts > router autoscrolling on navigation > bugs > Should apply scroll when loading.js is used": "one-request-at-a-time"
-      }
+      "passed": 20,
+      "failed": {}
     },
     "root-layout": {
       "passed": 8,
