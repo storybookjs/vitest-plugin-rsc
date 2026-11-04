@@ -45,6 +45,12 @@ export function withQuery(pathname: string, query: Query): string {
 const buildOutput = /^\/?\.next(\/|$)/;
 
 export class NextInstance {
+  /**
+   * The variables of the server's process, which a test with `skipStart`
+   * sets before `next.start()`: the server is in the tab, so the tab's.
+   */
+  env: Record<string, string> = {};
+  private envBefore = new Map<string, string | undefined>();
   private outputStart = consoleCapture.output.length;
   private stopListening = new Map<unknown, () => void>();
   private readonly unavailable: string | undefined;
@@ -191,7 +197,13 @@ export class NextInstance {
   // src/fixtures.ts. Nothing is printed for a build here.
   build = async () =>
     prepared.includes("skipStart") ? { exitCode: 0, cliOutput: "" } : this.runsNext("next.build()");
-  start = async () => (prepared.includes("skipStart") ? undefined : this.runsNext("next.start()"));
+  start = async () => {
+    if (!prepared.includes("skipStart")) this.runsNext("next.start()");
+    for (const [name, value] of Object.entries(this.env)) {
+      if (!this.envBefore.has(name)) this.envBefore.set(name, process.env[name]);
+      process.env[name] = value;
+    }
+  };
   stop = async () => this.runsNext("next.stop()");
   clean = async () => this.runsNext("next.clean()");
   runCommand = async () => this.runsNext("next.runCommand()");
@@ -199,6 +211,11 @@ export class NextInstance {
   async destroy(): Promise<void> {
     for (const stop of this.stopListening.values()) stop();
     this.stopListening.clear();
+    for (const [name, value] of this.envBefore) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    this.envBefore.clear();
   }
 }
 

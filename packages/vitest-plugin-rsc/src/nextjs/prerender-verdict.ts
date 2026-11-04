@@ -29,6 +29,9 @@ import { registry, type PrerenderVerdict } from "./registry.ts";
 // (`build/utils.js:876-916`), which is no module to import here: it sets a
 // Node.js process up as it loads.
 
+// The methods of a route handler that Next's build does not prerender.
+const nonStaticMethods = ["POST", "PUT", "DELETE", "PATCH", "OPTIONS"];
+
 type RouteEntry = Parameters<typeof buildAppStaticPaths>[0]["ComponentMod"];
 
 export async function prerenderVerdictOf(
@@ -59,6 +62,14 @@ export async function prerenderVerdictOf(
     // without a `GET` answers that with 405 (`auto-implement-methods.js`):
     // `next start` runs its `POST` at every request.
     if (typeof (userland as { GET?: unknown }).GET !== "function") return undefined;
+    // A route handler with a method that a build cannot prerender: its
+    // prerender throws a `DynamicServerError` before it calls the `GET`
+    // (`hasNonStaticMethods` in `route-modules/app-route/module.js`), and the
+    // build leaves it to every request, also with Cache Components.
+    const handlers = userland as Partial<Record<string, unknown>>;
+    if (nonStaticMethods.some((method) => typeof handlers[method] === "function")) {
+      return undefined;
+    }
   }
 
   // What `isPageStatic()` does with the route module: `build/utils.js:736-805`.

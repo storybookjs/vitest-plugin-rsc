@@ -146,6 +146,7 @@ export function conformance(options: ConformanceOptions): Plugin {
     "e2e-utils": shim("e2e-utils.ts"),
     "next-test-utils": testUtilsId,
     "next-webdriver": shim("next-webdriver.ts"),
+    "test-data-service/writer": shim("test-data-service.ts"),
   };
   // For a test file only: an app that imports `path` has to get what the
   // plugin gives it.

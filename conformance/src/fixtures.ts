@@ -393,7 +393,11 @@ export const fixtures: Fixture[] = [
   appDir("use-cache-private", "use-cache", ["use-cache-private.test.ts"]),
   appDir("use-cache-root-param-metadata", "use-cache", ["use-cache-root-param-metadata.test.ts"]),
   appDir("use-cache-route-handler-only", "use-cache", ["use-cache-route-handler-only.test.ts"]),
-  appDir("use-cache-swr", "use-cache", ["use-cache-swr.test.ts"]),
+  // The test starts the app itself, with `next.start()`, after it set the
+  // URL of its data server in `next.env`.
+  appDir("use-cache-swr", "use-cache", ["use-cache-swr.test.ts"], {
+    prepared: { options: ["skipStart"] },
+  }),
   appDir("use-cache-with-server-function-props", "use-cache", [
     "use-cache-with-server-function-props.test.ts",
   ]),

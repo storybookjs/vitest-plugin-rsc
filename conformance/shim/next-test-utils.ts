@@ -15,6 +15,7 @@ import { isUnsupported } from "./unsupported.ts";
 const setTimeout = globalThis.setTimeout;
 
 export { withQuery };
+export { findPort } from "./test-data-service.ts";
 export { gate } from "./gate.ts";
 
 export const debugPrint = (..._args: unknown[]) => {};
@@ -277,3 +278,16 @@ export function trimEndMultiline(str: string): string {
     .map((line) => line.trimEnd())
     .join("\n");
 }
+
+// The directives of a header like `Cache-Control`, in any order.
+export const expectDirectives = (header: string | null, directives: Array<string | RegExp>) => {
+  const split = (header ?? "").split(",").map((directive) => directive.trim());
+  expect(split).toEqual(
+    expect.arrayContaining(
+      directives.map((directive) =>
+        directive instanceof RegExp ? expect.stringMatching(directive) : directive,
+      ),
+    ),
+  );
+  expect(split).toHaveLength(directives.length);
+};
