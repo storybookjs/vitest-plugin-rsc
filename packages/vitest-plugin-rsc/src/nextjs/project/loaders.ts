@@ -414,6 +414,22 @@ export function createLoaders(
   // with an origin is another server.
   const emittedPath = `${config.assetPrefix.startsWith("/") ? config.assetPrefix : ""}/_next/`;
   const { images } = config;
+  // From Next 16.5 the image optimizer takes the options of its transform,
+  // which `getImageOptimizerTransformOptions()` reads off the config, and
+  // `fetchInternalImage()` takes the images config after the function that
+  // serves the image, to follow a redirect of it. Up to 16.4 the optimizer
+  // takes the config, and `fetchInternalImage()` the largest body of a
+  // response before that function. The calls are cast, so that the plugin
+  // type-checks against both.
+  const takesTransformOptions = "getImageOptimizerTransformOptions" in imageOptimizer;
+  const transformOptions = takesTransformOptions
+    ? (imageOptimizer.getImageOptimizerTransformOptions as (nextConfig: typeof config) => unknown)(
+        config,
+      )
+    : config;
+  const fetchInternalImage = imageOptimizer.fetchInternalImage as (
+    ...args: unknown[]
+  ) => ReturnType<typeof imageOptimizer.fetchInternalImage>;
 
   return {
     runLoader,
@@ -489,17 +505,18 @@ export function createLoaders(
               images.maximumResponseBody,
               images.maximumRedirects,
             )
-          : await imageOptimizer.fetchInternalImage(
+          : await fetchInternalImage(
               params.href,
               request,
               response,
-              images.maximumResponseBody,
-              serveFile,
+              ...(takesTransformOptions
+                ? [serveFile, images]
+                : [images.maximumResponseBody, serveFile]),
             );
         const { buffer, contentType, maxAge, etag } = await imageOptimizer.imageOptimizer(
           upstream,
           params,
-          config,
+          transformOptions as never,
           { isDev: false },
         );
         imageOptimizer.sendResponse(
